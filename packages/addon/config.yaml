@@ -7,7 +7,6 @@ image: "ghcr.io/craig-b/{arch}-addon-ts_entities"
 arch:
   - amd64
   - aarch64
-  - armv7
 init: false
 homeassistant_api: true
 map:
