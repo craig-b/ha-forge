@@ -6,7 +6,6 @@ url: https://github.com/craig-b/ha-ts-entities
 image: "ghcr.io/craig-b/{arch}-addon-ts_entities"
 arch:
   - amd64
-  - aarch64
 init: false
 homeassistant_api: true
 map:
