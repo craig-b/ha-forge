@@ -3,14 +3,19 @@ import { createMiddleware } from 'hono/factory';
 /**
  * Ingress middleware: restricts access to HA Supervisor's ingress gateway
  * and extracts ingress headers.
+ *
+ * The guard checks the TCP remote address via c.env (set by @hono/node-server).
+ * Port 8099 is not exposed outside the container — only the Supervisor ingress
+ * gateway (172.30.32.2) can reach it.
  */
 export function ingressGuard() {
   return createMiddleware(async (c, next) => {
-    // In production, only allow requests from the Supervisor ingress gateway
-    // Skip in development mode
-    if (process.env.NODE_ENV !== 'development') {
-      const remoteAddr = c.req.header('x-forwarded-for') ?? '';
-      if (remoteAddr && !remoteAddr.includes('172.30.32.2')) {
+    if (process.env.NODE_ENV !== 'development' && process.env.NODE_ENV !== 'test') {
+      // c.env.incoming is set by @hono/node-server at runtime
+      const socket = (c.env as Record<string, unknown>)?.incoming as
+        { socket?: { remoteAddress?: string } } | undefined;
+      const addr = socket?.socket?.remoteAddress ?? '';
+      if (addr && !addr.includes('172.30.32.2')) {
         return c.text('Forbidden', 403);
       }
     }
