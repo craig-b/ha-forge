@@ -25,7 +25,7 @@ jobs:
       - name: Generate version
         id: version
         run: |
-          VERSION=$(date -u +%Y.%-m.%-d).${{ github.run_number }}
+          VERSION=$(date -u +%Y.%-m.%-d)-$(echo ${{ github.sha }} | head -c7)
           echo "version=${VERSION}" >> $GITHUB_OUTPUT
           echo "Version: ${VERSION}"
 
