@@ -9,11 +9,12 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@ha-ts-entities/runtime": "workspace:*",
     "@ha-ts-entities/build": "workspace:*",
+    "@ha-ts-entities/runtime": "workspace:*",
     "@ha-ts-entities/web": "workspace:*"
   },
   "devDependencies": {
+    "@types/node": "^25.5.0",
     "tsup": "^8.0.0",
     "typescript": "^5.7.0"
   }
