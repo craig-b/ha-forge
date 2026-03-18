@@ -1,4 +1,5 @@
-import Database from 'better-sqlite3';
+import { createRequire } from 'node:module';
+import type BetterSqlite3 from 'better-sqlite3';
 import type { LifecycleLogger } from './lifecycle.js';
 
 export interface SQLiteLoggerOptions {
@@ -33,8 +34,8 @@ const LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const;
  * All SQL queries use parameterized statements to prevent injection.
  */
 export class SQLiteLogger implements LifecycleLogger {
-  private db: Database.Database;
-  private insertStmt: Database.Statement;
+  private db: BetterSqlite3.Database;
+  private insertStmt: BetterSqlite3.Statement;
   private batch: LogEntry[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
   private minLevel: number;
@@ -45,6 +46,10 @@ export class SQLiteLogger implements LifecycleLogger {
   private entityId: string | null = null;
 
   constructor(opts: SQLiteLoggerOptions) {
+    // Lazy-load better-sqlite3 to avoid crashing at module import time
+    // if the native module isn't available (e.g. Node version mismatch)
+    const require = createRequire(import.meta.url);
+    const Database = require('better-sqlite3') as typeof BetterSqlite3;
     this.db = new Database(opts.dbPath);
     this.minLevel = LEVEL_ORDER[opts.minLevel ?? 'debug'];
     this.maxBatchSize = opts.maxBatchSize ?? 50;
