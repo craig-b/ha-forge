@@ -1,6 +1,6 @@
 name: TS Entities
 description: Define Home Assistant entities in TypeScript
-version: 0.1.0
+version: 0.1.1
 slug: ts_entities
 url: https://github.com/craig-b/ha-ts-entities
 image: ghcr.io/craig-b/ha-ts-entities-{arch}
