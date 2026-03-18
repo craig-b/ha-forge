@@ -3,10 +3,13 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { bundle } from '../packages/build/src/bundler.js';
+import { runBuild } from '../packages/build/src/orchestrator.js';
 import { loadBundles } from '../packages/runtime/src/loader.js';
 import { EntityLifecycleManager } from '../packages/runtime/src/lifecycle.js';
+import { BuildManager } from '../packages/runtime/src/build-manager.js';
 import type { Transport } from '../packages/runtime/src/transport.js';
 import type { ResolvedEntity } from '../packages/sdk/src/types.js';
+import type { RegistryWSClient } from '../packages/build/src/registry-fetcher.js';
 
 function createMockTransport() {
   const registered: ResolvedEntity[] = [];
@@ -262,5 +265,150 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     expect(transport.deregister).toHaveBeenCalledWith('v1');
 
     fs.rmSync(outputDir2, { recursive: true, force: true });
+  });
+});
+
+describe('Full pipeline: orchestrator → BuildManager → deploy', () => {
+  let tmpDir: string;
+  let scriptsDir: string;
+  let generatedDir: string;
+  let bundleOutputDir: string;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-e2e-'));
+    scriptsDir = path.join(tmpDir, 'scripts');
+    generatedDir = path.join(tmpDir, '.generated');
+    bundleOutputDir = path.join(tmpDir, 'dist');
+    fs.mkdirSync(scriptsDir, { recursive: true });
+  });
+
+  function createMockWSClient(): RegistryWSClient {
+    return {
+      sendCommand: vi.fn(async (type: string) => {
+        switch (type) {
+          case 'get_services': return {
+            light: { turn_on: { fields: {} }, turn_off: { fields: {} } },
+            sensor: {},
+          };
+          case 'get_states': return [
+            { entity_id: 'light.test', state: 'on', attributes: {}, last_changed: '', last_updated: '' },
+          ];
+          case 'config/entity_registry/list': return [];
+          case 'config/device_registry/list': return [];
+          case 'config/area_registry/list': return [];
+          case 'config/label_registry/list': return [];
+          default: return null;
+        }
+      }),
+      getHAVersion: vi.fn(() => '2024.3.0'),
+    };
+  }
+
+  it('orchestrator builds, then BuildManager deploys', async () => {
+    // Write user scripts
+    fs.writeFileSync(
+      path.join(scriptsDir, 'monitor.ts'),
+      `
+      export const cpuTemp = {
+        id: 'sensor.cpu_temp',
+        name: 'CPU Temperature',
+        type: 'sensor' as const,
+        init() { return 45.2; },
+      };
+      export const memUsage = {
+        id: 'sensor.mem_usage',
+        name: 'Memory Usage',
+        type: 'sensor' as const,
+        init() { return 67; },
+      };
+      `,
+      'utf-8',
+    );
+
+    // Step 1: Run build pipeline
+    const buildResult = await runBuild({
+      scriptsDir,
+      generatedDir,
+      outputDir: bundleOutputDir,
+      wsClient: createMockWSClient(),
+      skipNpmInstall: true,
+      skipTscCheck: true,
+    });
+
+    expect(buildResult.success).toBe(true);
+    expect(buildResult.typeGen).not.toBeNull();
+    expect(buildResult.typeGen!.success).toBe(true);
+    expect(buildResult.bundle).not.toBeNull();
+    expect(buildResult.bundle!.success).toBe(true);
+
+    // Generated types should exist
+    expect(fs.existsSync(path.join(generatedDir, 'ha-registry.d.ts'))).toBe(true);
+
+    // Step 2: Deploy via BuildManager
+    const { transport, states } = createMockTransport();
+    const logger = createMockLogger();
+
+    const manager = new BuildManager({
+      bundleDir: bundleOutputDir,
+      transport,
+      logger,
+    });
+
+    const deployResult = await manager.deploy();
+
+    expect(deployResult.success).toBe(true);
+    expect(deployResult.entityCount).toBe(2);
+    expect(deployResult.errors).toHaveLength(0);
+
+    // Both entities should be running with initial states
+    expect(manager.getEntityIds().sort()).toEqual(['sensor.cpu_temp', 'sensor.mem_usage']);
+    expect(manager.getEntityState('sensor.cpu_temp')).toBe(45.2);
+    expect(manager.getEntityState('sensor.mem_usage')).toBe(67);
+
+    // Step 3: Verify all pipeline steps ran
+    const stepNames = buildResult.steps.map((s) => s.step);
+    expect(stepNames).toContain('type-gen');
+    expect(stepNames).toContain('bundle');
+  });
+
+  it('handles full pipeline with type gen failure gracefully', async () => {
+    fs.writeFileSync(
+      path.join(scriptsDir, 'simple.ts'),
+      `export const s = { id: 'sensor.ok', name: 'OK', type: 'sensor' as const, init() { return 1; } };`,
+      'utf-8',
+    );
+
+    const failingClient: RegistryWSClient = {
+      sendCommand: vi.fn(async () => { throw new Error('disconnected'); }),
+      getHAVersion: vi.fn(() => null),
+    };
+
+    // Build still produces bundles even when type gen fails
+    const buildResult = await runBuild({
+      scriptsDir,
+      generatedDir,
+      outputDir: bundleOutputDir,
+      wsClient: failingClient,
+      skipNpmInstall: true,
+      skipTscCheck: true,
+    });
+
+    // Build reports failure (type-gen is blocking)
+    expect(buildResult.success).toBe(false);
+
+    // But bundle was still produced
+    expect(buildResult.bundle).not.toBeNull();
+    expect(buildResult.bundle!.success).toBe(true);
+
+    // Deploy can still work with existing/stale types
+    const { transport } = createMockTransport();
+    const manager = new BuildManager({
+      bundleDir: bundleOutputDir,
+      transport,
+      logger: createMockLogger(),
+    });
+
+    const deployResult = await manager.deploy();
+    expect(deployResult.entityCount).toBe(1);
   });
 });
