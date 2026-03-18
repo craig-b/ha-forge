@@ -1,7 +1,5 @@
-build_from:
-  amd64: node:20-alpine
-  aarch64: node:20-alpine
-  armv7: node:20-alpine
+args:
+  BUILD_VERSION: "0.1.0"
 labels:
   org.opencontainers.image.title: TS Entities for Home Assistant
   org.opencontainers.image.source: https://github.com/craig-b/ha-ts-entities
