@@ -18,3 +18,9 @@ export type { LoadResult, LoadError } from './loader.js';
 
 export { BuildManager } from './build-manager.js';
 export type { BuildDeployOptions, DeployResult } from './build-manager.js';
+
+export { SQLiteLogger } from './sqlite-logger.js';
+export type { SQLiteLoggerOptions, LogEntry } from './sqlite-logger.js';
+
+export { HealthEntities } from './health-entities.js';
+export type { TscDiagnostic } from './health-entities.js';

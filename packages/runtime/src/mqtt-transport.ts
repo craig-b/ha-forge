@@ -28,6 +28,9 @@ export interface MqttTransportOptions {
   onConnect?: () => void;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
+  onReconnect?: () => void;
+  /** Max consecutive failures before marking an entity unavailable (default: 3) */
+  maxFailuresBeforeUnavailable?: number;
 }
 
 export class MqttTransport implements Transport {
@@ -35,10 +38,14 @@ export class MqttTransport implements Transport {
   private registeredEntities = new Map<string, ResolvedEntity>();
   private commandHandlers = new Map<string, (command: unknown) => void>();
   private deviceConfigs = new Map<string, Record<string, unknown>>();
+  private entityFailures = new Map<string, number>();
+  private entityAvailability = new Map<string, boolean>();
   private options: MqttTransportOptions;
+  private maxFailures: number;
 
   constructor(options: MqttTransportOptions) {
     this.options = options;
+    this.maxFailures = options.maxFailuresBeforeUnavailable ?? 3;
   }
 
   async connect(): Promise<void> {
@@ -74,7 +81,16 @@ export class MqttTransport implements Transport {
       });
 
       this.client.on('reconnect', () => {
-        // Will re-publish availability and discovery on reconnect
+        this.options.onReconnect?.();
+      });
+
+      // On successful reconnection, re-publish everything
+      let firstConnect = true;
+      this.client.on('connect', () => {
+        if (!firstConnect) {
+          this.republishAll().catch(() => {});
+        }
+        firstConnect = false;
       });
 
       this.client.on('close', () => {
@@ -240,14 +256,62 @@ export class MqttTransport implements Transport {
     // Re-publish availability
     await this.publishAvailability('online');
 
+    // Re-subscribe to HA status
+    this.subscribeHAStatus();
+
     // Re-publish all device discovery configs
     for (const [deviceId, config] of this.deviceConfigs) {
       const topic = `homeassistant/device/${deviceId}/config`;
       await this.publish(topic, JSON.stringify(config), { retain: true });
     }
 
-    // Re-publish all entity states
-    // (The lifecycle manager should handle re-publishing current states)
+    // Re-subscribe to command topics for all registered entities
+    for (const [, entity] of this.registeredEntities) {
+      if ('onCommand' in entity.definition) {
+        const id = entity.definition.id;
+        this.client?.subscribe(`ts-entities/${id}/set`);
+      }
+    }
+  }
+
+  /**
+   * Record a failure for an entity. After maxFailures consecutive failures,
+   * the entity is marked unavailable.
+   */
+  recordEntityFailure(entityId: string): void {
+    const count = (this.entityFailures.get(entityId) ?? 0) + 1;
+    this.entityFailures.set(entityId, count);
+
+    if (count >= this.maxFailures && this.entityAvailability.get(entityId) !== false) {
+      this.entityAvailability.set(entityId, false);
+      // Publish entity-specific unavailability
+      this.publish(
+        `ts-entities/${entityId}/availability`,
+        'offline',
+        { retain: true },
+      ).catch(() => {});
+    }
+  }
+
+  /**
+   * Clear failure count for an entity (e.g., after a successful state publish).
+   */
+  clearEntityFailure(entityId: string): void {
+    const wasUnavailable = this.entityAvailability.get(entityId) === false;
+    this.entityFailures.delete(entityId);
+    this.entityAvailability.set(entityId, true);
+
+    if (wasUnavailable) {
+      this.publish(
+        `ts-entities/${entityId}/availability`,
+        'online',
+        { retain: true },
+      ).catch(() => {});
+    }
+  }
+
+  isEntityAvailable(entityId: string): boolean {
+    return this.entityAvailability.get(entityId) !== false;
   }
 
   async disconnect(): Promise<void> {

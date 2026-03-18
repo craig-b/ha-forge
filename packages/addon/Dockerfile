@@ -1,7 +1,7 @@
 ARG BUILD_FROM=node:20-alpine
 FROM ${BUILD_FROM}
 
-# Install build dependencies for native modules
+# Install build dependencies for native modules (better-sqlite3)
 RUN apk add --no-cache python3 make g++
 
 WORKDIR /app
@@ -32,14 +32,18 @@ COPY packages/addon/run.sh /app/
 # Make run script executable
 RUN chmod a+x /app/run.sh
 
-# Remove build dependencies
+# Remove build dependencies to shrink image
 RUN apk del python3 make g++
+
+# Ensure /data and /config directories exist
+RUN mkdir -p /data /config
 
 # Labels for HA add-on
 LABEL \
   io.hass.name="TS Entities" \
   io.hass.description="Define Home Assistant entities in TypeScript" \
   io.hass.type="addon" \
-  io.hass.version="0.1.0"
+  io.hass.version="0.1.0" \
+  io.hass.arch="amd64|aarch64|armv7"
 
 CMD [ "/app/run.sh" ]

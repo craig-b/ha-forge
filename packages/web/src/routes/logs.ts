@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 
 export interface LogEntry {
-  id: number;
+  id?: number;
   timestamp: number;
   level: 'debug' | 'info' | 'warn' | 'error';
   entity_id: string | null;

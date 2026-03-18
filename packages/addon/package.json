@@ -11,7 +11,9 @@
   "dependencies": {
     "@ha-ts-entities/build": "workspace:*",
     "@ha-ts-entities/runtime": "workspace:*",
-    "@ha-ts-entities/web": "workspace:*"
+    "@ha-ts-entities/web": "workspace:*",
+    "@hono/node-server": "^1.19.11",
+    "hono": "^4.12.8"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
