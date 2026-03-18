@@ -170,6 +170,68 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     expect(logger.error).toHaveBeenCalled();
   });
 
+  it('builds and deploys a switch that receives commands', async () => {
+    const switchScript = `
+      export const pump = {
+        id: 'pump',
+        name: 'Pump',
+        type: 'switch' as const,
+        config: { device_class: 'switch' },
+        onCommand(cmd) {
+          if (cmd === 'ON') {
+            this.update('on');
+          } else {
+            this.update('off');
+          }
+        },
+        init() {
+          return 'off';
+        },
+      };
+    `;
+    fs.writeFileSync(path.join(inputDir, 'pump.ts'), switchScript);
+
+    const bundleResult = await bundle({ inputDir, outputDir });
+    expect(bundleResult.success).toBe(true);
+
+    const loadResult = await loadBundles(outputDir);
+    expect(loadResult.entities).toHaveLength(1);
+    expect(loadResult.entities[0].definition.type).toBe('switch');
+    expect(typeof (loadResult.entities[0].definition as any).onCommand).toBe('function');
+
+    const { transport, states, commandHandlers } = createMockTransport();
+    const lifecycle = new EntityLifecycleManager(transport, createMockLogger());
+
+    await lifecycle.deploy(loadResult.entities);
+
+    // Initial state from init()
+    expect(states).toHaveLength(1);
+    expect(states[0]).toEqual({ entityId: 'pump', state: 'off', attributes: undefined });
+
+    // Simulate HA sending ON command via transport
+    const handler = commandHandlers.get('pump');
+    expect(handler).toBeDefined();
+    handler!('ON');
+
+    // The onCommand calls this.update('on'), which triggers publishState
+    await Promise.resolve(); // flush microtask
+    expect(states.length).toBeGreaterThanOrEqual(2);
+    expect(states[states.length - 1]).toEqual({
+      entityId: 'pump',
+      state: 'on',
+      attributes: undefined,
+    });
+
+    // Toggle off
+    handler!('OFF');
+    await Promise.resolve();
+    expect(states[states.length - 1]).toEqual({
+      entityId: 'pump',
+      state: 'off',
+      attributes: undefined,
+    });
+  });
+
   it('redeploy tears down old entities and loads new ones', async () => {
     // First deploy
     const v1 = `export const s = { id: 'v1', name: 'V1', type: 'sensor' as const, init() { return 1; } };`;
