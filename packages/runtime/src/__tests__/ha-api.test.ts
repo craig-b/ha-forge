@@ -186,6 +186,63 @@ describe('HAApiImpl', () => {
     });
   });
 
+  describe('callService() — runtime validation', () => {
+    it('validates parameters using generated validators before dispatch', async () => {
+      const validators = {
+        'light.turn_on': {
+          brightness: (v: unknown) => {
+            if (typeof v !== 'number' || v < 0 || v > 255) {
+              throw new RangeError(`brightness must be 0-255, got ${v}`);
+            }
+            return v;
+          },
+        },
+      };
+      const validatedApi = new HAApiImpl(wsClient, validators);
+      await validatedApi.init();
+
+      // Valid call
+      await validatedApi.callService('light.living_room', 'turn_on', { brightness: 200 });
+      expect(wsClient.sendCommand).toHaveBeenCalled();
+
+      // Invalid call — should throw before sending
+      wsClient.sendCommand.mockClear();
+      await expect(
+        validatedApi.callService('light.living_room', 'turn_on', { brightness: 999 }),
+      ).rejects.toThrow(RangeError);
+
+      // sendCommand should NOT have been called for invalid data
+      const callServiceCalls = wsClient.sendCommand.mock.calls.filter(
+        (c: unknown[]) => c[0] === 'call_service',
+      );
+      expect(callServiceCalls).toHaveLength(0);
+
+      await validatedApi.destroy();
+    });
+
+    it('skips validation for fields not present in data', async () => {
+      const validators = {
+        'light.turn_on': {
+          brightness: vi.fn((v: unknown) => v),
+        },
+      };
+      const validatedApi = new HAApiImpl(wsClient, validators);
+      await validatedApi.init();
+
+      // Call without brightness — validator should not be called
+      await validatedApi.callService('light.living_room', 'turn_on', { transition: 5 });
+      expect(validators['light.turn_on'].brightness).not.toHaveBeenCalled();
+
+      await validatedApi.destroy();
+    });
+
+    it('skips validation when no validators configured', async () => {
+      // Default api has no validators
+      await api.callService('light.living_room', 'turn_on', { brightness: 999 });
+      expect(wsClient.sendCommand).toHaveBeenCalled();
+    });
+  });
+
   describe('getState()', () => {
     it('fetches states via get_states and returns matching entity', async () => {
       wsClient.sendCommand.mockResolvedValueOnce([

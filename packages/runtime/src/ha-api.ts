@@ -43,6 +43,8 @@ export interface HAApi {
 
 // ---- Implementation ----
 
+export type ValidatorMap = Record<string, Record<string, (value: unknown) => unknown>>;
+
 export class HAApiImpl implements HAApi {
   private wsClient: HAWebSocketClient;
   private subscriptionId: number | null = null;
@@ -50,9 +52,11 @@ export class HAApiImpl implements HAApi {
   private domainCallbacks = new Map<string, Set<StateChangedCallback>>();
   private reactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private stateCache = new Map<string, HAStateObject>();
+  private validators: ValidatorMap | null;
 
-  constructor(wsClient: HAWebSocketClient) {
+  constructor(wsClient: HAWebSocketClient, validators?: ValidatorMap | null) {
     this.wsClient = wsClient;
+    this.validators = validators ?? null;
   }
 
   /**
@@ -143,11 +147,25 @@ export class HAApiImpl implements HAApi {
 
   async callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void> {
     const domain = entity.split('.')[0];
+    const serviceData = data ?? {};
+
+    // Validate parameters using generated validators if available
+    if (this.validators) {
+      const serviceKey = `${domain}.${service}`;
+      const serviceValidators = this.validators[serviceKey];
+      if (serviceValidators) {
+        for (const [field, validator] of Object.entries(serviceValidators)) {
+          if (field in serviceData) {
+            validator(serviceData[field]); // throws on invalid input
+          }
+        }
+      }
+    }
 
     await this.wsClient.sendCommand('call_service', {
       domain,
       service,
-      service_data: data ?? {},
+      service_data: serviceData,
       target: { entity_id: entity },
     });
   }
