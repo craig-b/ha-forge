@@ -72,5 +72,19 @@ export function createServer(config: WebServerConfig) {
     return c.html(generateUIHtml(ingressBase));
   });
 
+  // Catch-all: return debug info for unmatched routes
+  app.all('*', (c) => {
+    return c.json({
+      path: c.req.path,
+      method: c.req.method,
+      url: c.req.url,
+      headers: Object.fromEntries(
+        [...c.req.raw.headers.entries()].filter(([k]) =>
+          k.startsWith('x-') || k === 'host'
+        )
+      ),
+    }, 404);
+  });
+
   return { app, wsHub };
 }
