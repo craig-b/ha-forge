@@ -1,0 +1,33 @@
+name: TS Entities
+description: Define Home Assistant entities in TypeScript
+version: 0.1.0
+slug: ts_entities
+url: https://github.com/craig-b/ha-ts-entities
+image: ghcr.io/craig-b/ha-ts-entities-{arch}
+arch:
+  - amd64
+  - aarch64
+  - armv7
+init: false
+homeassistant_api: true
+map:
+  - addon_config:rw
+services:
+  - mqtt:need
+ingress: true
+ingress_port: 8099
+ingress_entry: /
+panel_icon: mdi:language-typescript
+panel_title: TS Entities
+options:
+  log_level: info
+  log_retention_days: 7
+  validation_schedule_minutes: 60
+  auto_build_on_save: false
+  auto_rebuild_on_registry_change: false
+schema:
+  log_level: list(debug|info|warn|error)
+  log_retention_days: int
+  validation_schedule_minutes: int
+  auto_build_on_save: bool
+  auto_rebuild_on_registry_change: bool
