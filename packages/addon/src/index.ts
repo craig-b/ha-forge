@@ -60,17 +60,30 @@ async function main(): Promise<void> {
   // 9. Subscribe to homeassistant/status for HA restart re-discovery
 
   // Step 2: SQLite Logger
-  const { SQLiteLogger } = await import('@ha-ts-entities/runtime');
-  const logger = new SQLiteLogger({
-    dbPath: '/data/logs.db',
-    minLevel: options.log_level,
-    retentionDays: options.log_retention_days,
-  });
+  let logger: import('@ha-ts-entities/runtime').SQLiteLogger;
+  try {
+    const { SQLiteLogger } = await import('@ha-ts-entities/runtime');
+    logger = new SQLiteLogger({
+      dbPath: '/data/logs.db',
+      minLevel: options.log_level,
+      retentionDays: options.log_retention_days,
+    });
 
-  // Run retention cleanup on startup
-  const cleaned = logger.cleanup();
-  if (cleaned.deleted > 0) {
-    logger.info(`Cleaned ${cleaned.deleted} old log entries`);
+    // Run retention cleanup on startup
+    const cleaned = logger.cleanup();
+    if (cleaned.deleted > 0) {
+      logger.info(`Cleaned ${cleaned.deleted} old log entries`);
+    }
+  } catch (err) {
+    console.error('[ts-entities] Failed to initialize SQLite logger:', err);
+    console.error('[ts-entities] Continuing without persistent logging');
+    // Create a minimal console-based fallback
+    const { SQLiteLogger } = await import('@ha-ts-entities/runtime');
+    logger = new SQLiteLogger({
+      dbPath: ':memory:',
+      minLevel: options.log_level,
+      retentionDays: 0,
+    });
   }
 
   logger.info('Add-on starting', { log_level: options.log_level });
@@ -314,6 +327,12 @@ async function main(): Promise<void> {
 const isMain = process.argv[1]?.endsWith('addon/dist/index.js') ||
                process.argv[1]?.endsWith('addon/src/index.ts');
 if (isMain) {
+  process.on('uncaughtException', (err) => {
+    console.error('[ts-entities] Uncaught exception:', err);
+  });
+  process.on('unhandledRejection', (err) => {
+    console.error('[ts-entities] Unhandled rejection:', err);
+  });
   main().catch((err) => {
     console.error('[ts-entities] Fatal error:', err);
     process.exit(1);
