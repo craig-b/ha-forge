@@ -15,3 +15,6 @@ export type { LifecycleLogger } from './lifecycle.js';
 
 export { loadBundles } from './loader.js';
 export type { LoadResult, LoadError } from './loader.js';
+
+export { BuildManager } from './build-manager.js';
+export type { BuildDeployOptions, DeployResult } from './build-manager.js';
