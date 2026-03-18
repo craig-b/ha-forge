@@ -3,11 +3,11 @@ ARG BUILD_ARCH
 ARG BUILD_VERSION
 FROM ${BUILD_FROM}
 
-# Install Node.js 20 LTS and build tools for native modules (better-sqlite3)
+# Install Node.js and build tools for native modules (better-sqlite3)
 RUN apk add --no-cache nodejs npm python3 make g++
 
-# Enable corepack for pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Install pnpm
+RUN npm install -g pnpm
 
 WORKDIR /app
 
