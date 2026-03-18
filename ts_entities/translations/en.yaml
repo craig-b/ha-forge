@@ -1,0 +1,16 @@
+configuration:
+  log_level:
+    name: Log level
+    description: Minimum log level to record (debug, info, warn, error).
+  log_retention_days:
+    name: Log retention days
+    description: Number of days to keep log entries before cleanup.
+  validation_schedule_minutes:
+    name: Validation interval
+    description: Minutes between scheduled type validation runs (0 to disable).
+  auto_build_on_save:
+    name: Auto-build on save
+    description: Automatically build and deploy when files are saved in the editor.
+  auto_rebuild_on_registry_change:
+    name: Auto-rebuild on registry change
+    description: Rebuild when Home Assistant entity or service registries change.
