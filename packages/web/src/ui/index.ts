@@ -860,11 +860,18 @@ const APP_JS = `
         theme: 'vs-dark',
         fontSize: 13,
         fontFamily: "'Cascadia Code', 'Fira Code', monospace",
-        minimap: { enabled: false },
+        minimap: { enabled: true },
         automaticLayout: true,
         tabSize: 2,
-        scrollBeyondLastLine: false,
+        scrollBeyondLastLine: true,
         padding: { top: 8 },
+        'bracketPairColorization.enabled': true,
+        guides: { bracketPairs: true },
+        renderWhitespace: 'selection',
+        wordWrap: 'on',
+        stickyScroll: { enabled: true },
+        suggestOnTriggerCharacters: true,
+        quickSuggestions: { other: true, comments: false, strings: true },
       });
 
       loadExtraTypes();
