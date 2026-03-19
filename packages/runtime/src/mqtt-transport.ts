@@ -651,6 +651,37 @@ export class MqttTransport implements Transport {
     await this.publish(AVAILABILITY_TOPIC, status, { retain: true });
   }
 
+  /**
+   * Publish a message to an arbitrary MQTT topic.
+   * For use by entity context `mqtt.publish()`.
+   */
+  publishRaw(topic: string, payload: string, opts?: { retain?: boolean }): void {
+    if (!this.client?.connected) return;
+    this.client.publish(topic, payload, { qos: 1, retain: opts?.retain ?? false });
+  }
+
+  /**
+   * Subscribe to an arbitrary MQTT topic.
+   * Returns an unsubscribe function. For use by entity context `mqtt.subscribe()`.
+   */
+  subscribeRaw(topic: string, handler: (payload: string) => void): () => void {
+    if (!this.client) return () => {};
+
+    const listener = (receivedTopic: string, message: Buffer) => {
+      if (receivedTopic === topic) {
+        handler(message.toString());
+      }
+    };
+
+    this.client.subscribe(topic);
+    this.client.on('message', listener);
+
+    return () => {
+      this.client?.unsubscribe(topic);
+      this.client?.removeListener('message', listener);
+    };
+  }
+
   private publish(topic: string, payload: string, opts: { retain: boolean }): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.client?.connected) {

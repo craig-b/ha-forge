@@ -26,7 +26,13 @@ interface TrackedHandles {
   timeouts: ReturnType<typeof globalThis.setTimeout>[];
   intervals: ReturnType<typeof globalThis.setInterval>[];
   pollIntervals: ReturnType<typeof globalThis.setInterval>[];
-  mqttSubscriptions: string[];
+  mqttSubscriptions: Array<() => void>;
+}
+
+/** Raw MQTT access for entity context. */
+export interface RawMqttAccess {
+  publishRaw(topic: string, payload: string, opts?: { retain?: boolean }): void;
+  subscribeRaw(topic: string, handler: (payload: string) => void): () => void;
 }
 
 function createEmptyHandles(): TrackedHandles {
@@ -43,11 +49,13 @@ export class EntityLifecycleManager {
   private transport: Transport;
   private logger: LifecycleLogger;
   private haClient: HAClient | null;
+  private rawMqtt: RawMqttAccess | null;
 
-  constructor(transport: Transport, logger: LifecycleLogger, haClient?: HAClient | null) {
+  constructor(transport: Transport, logger: LifecycleLogger, haClient?: HAClient | null, rawMqtt?: RawMqttAccess | null) {
     this.transport = transport;
     this.logger = logger;
     this.haClient = haClient ?? null;
+    this.rawMqtt = rawMqtt ?? null;
   }
 
   async deploy(entities: ResolvedEntity[]): Promise<void> {
@@ -176,6 +184,7 @@ export class EntityLifecycleManager {
     for (const t of handles.timeouts) clearTimeout(t);
     for (const i of handles.intervals) clearInterval(i);
     for (const p of handles.pollIntervals) clearInterval(p);
+    for (const unsub of handles.mqttSubscriptions) unsub();
     handles.timeouts = [];
     handles.intervals = [];
     handles.pollIntervals = [];
@@ -187,6 +196,7 @@ export class EntityLifecycleManager {
     const transport = this.transport;
     const logger = this.logger;
     const haClient = this.haClient;
+    const rawMqtt = this.rawMqtt;
     const entityId = entity.definition.id;
 
     // Use scoped child logger if available (SQLiteLogger), otherwise prefix messages
@@ -275,11 +285,20 @@ export class EntityLifecycleManager {
       ha,
 
       mqtt: {
-        publish(_topic, _payload, _opts) {
-          entityLogger.warn('Direct MQTT publish not yet implemented');
+        publish(topic, payload, opts) {
+          if (!rawMqtt) {
+            entityLogger.warn('mqtt.publish() unavailable — no MQTT connection');
+            return;
+          }
+          rawMqtt.publishRaw(topic, payload, opts);
         },
-        subscribe(_topic, _handler) {
-          entityLogger.warn('Direct MQTT subscribe not yet implemented');
+        subscribe(topic, handler) {
+          if (!rawMqtt) {
+            entityLogger.warn('mqtt.subscribe() unavailable — no MQTT connection');
+            return;
+          }
+          const unsub = rawMqtt.subscribeRaw(topic, handler);
+          handles.mqttSubscriptions.push(unsub);
         },
       },
     };

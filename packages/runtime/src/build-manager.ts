@@ -1,5 +1,5 @@
 import type { ResolvedEntity } from '@ha-ts-entities/sdk';
-import type { LifecycleLogger } from './lifecycle.js';
+import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 import { EntityLifecycleManager } from './lifecycle.js';
 import { loadBundles } from './loader.js';
 import type { Transport } from './transport.js';
@@ -14,6 +14,8 @@ export interface BuildDeployOptions {
   logger: LifecycleLogger;
   /** Optional HA client for reactive API */
   haClient?: HAClient | null;
+  /** Optional raw MQTT access for entity context */
+  rawMqtt?: RawMqttAccess | null;
 }
 
 export interface DeployResult {
@@ -37,6 +39,7 @@ export class BuildManager {
       opts.transport,
       opts.logger,
       opts.haClient,
+      opts.rawMqtt,
     );
     this.logger = opts.logger;
     this.bundleDir = opts.bundleDir;

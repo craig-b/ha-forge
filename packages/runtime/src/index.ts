@@ -11,7 +11,7 @@ export { HAApiImpl } from './ha-api.js';
 export type { HAApi, StateChangedEvent, StateChangedCallback, ReactionRule, ValidatorMap } from './ha-api.js';
 
 export { EntityLifecycleManager } from './lifecycle.js';
-export type { LifecycleLogger } from './lifecycle.js';
+export type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 
 export { loadBundles, installGlobals } from './loader.js';
 export type { LoadResult, LoadError } from './loader.js';

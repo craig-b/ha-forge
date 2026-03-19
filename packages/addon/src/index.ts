@@ -160,7 +160,7 @@ async function main(): Promise<void> {
     }
 
     const buildManager = mqttTransport
-      ? new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, haClient: haApi })
+      ? new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, haClient: haApi, rawMqtt: mqttTransport })
       : null;
 
     let building = false;
@@ -261,7 +261,7 @@ async function main(): Promise<void> {
   if (fs.existsSync('/data/last-build') && mqttTransport) {
     try {
       const { BuildManager } = await import('@ha-ts-entities/runtime');
-      const cached = new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger });
+      const cached = new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport });
       const result = await cached.deploy();
       log(`Cached build loaded: ${result.entityCount} entities`);
     } catch (err) {
