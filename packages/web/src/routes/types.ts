@@ -87,6 +87,7 @@ interface HAClient extends HAClientBase {
   on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
   callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void>;
   getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string; } | null>;
+  reactions(rules: Record<string, ReactionRule>): () => void;
 }
 `;
 
