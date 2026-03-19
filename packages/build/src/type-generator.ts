@@ -339,9 +339,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
   const getStateOverloads: string[] = [];
   const callServiceOverloads: string[] = [];
 
-  const typedEntityIds = entityIds;
-
-  for (const entityId of typedEntityIds) {
+  for (const entityId of entityIds) {
     const state = stateMap.get(entityId);
     if (!state) continue;
 
@@ -360,37 +358,14 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
       `  getState(entityId: '${escapedId}'): Promise<{ state: ${stateType}; attributes: ${attrsType}; last_changed: string; last_updated: string; } | null>;`,
     );
 
-    // callService() overloads — one per service for this entity's domain
+    // callService() overload — one generic overload per entity, mapped data type via HAEntityMap
     const domainServices = servicesByDomain.get(domain);
-    if (domainServices) {
-      for (const [serviceName, service] of domainServices) {
-        const fields: string[] = [];
-        for (const [fieldName, field] of Object.entries(service.fields)) {
-          if (!field.selector) {
-            fields.push(`${safeKey(fieldName)}?: unknown`);
-            continue;
-          }
-          const { tsType } = selectorToType(field.selector, entityIds);
-          const optional = field.required ? '' : '?';
-          fields.push(`${safeKey(fieldName)}${optional}: ${tsType}`);
-        }
-        const dataType = fields.length > 0
-          ? `{ ${fields.join('; ')}; }`
-          : 'Record<string, never>';
-        callServiceOverloads.push(
-          `  callService(entity: '${escapedId}', service: '${escapeQuotes(serviceName)}', data?: ${dataType}): Promise<void>;`,
-        );
-      }
+    if (domainServices && domainServices.size > 0) {
+      callServiceOverloads.push(
+        `  callService<S extends keyof HAEntityMap['${escapedId}']['services']>(entity: '${escapedId}', service: S, data?: HAEntityMap['${escapedId}']['services'][S]): Promise<void>;`,
+      );
     }
   }
-
-  // Deduplicate callService overloads (same domain entities share identical service signatures)
-  const seenCallService = new Set<string>();
-  const dedupedCallServiceOverloads = callServiceOverloads.filter((line) => {
-    if (seenCallService.has(line)) return false;
-    seenCallService.add(line);
-    return true;
-  });
 
   // ---- Generate ha-registry.d.ts (ambient — no import/export) ----
   const dtsContent = [
@@ -420,8 +395,8 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `  // --- String fallback on() (must be last) ---`,
     `  on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;`,
     ``,
-    `  // --- Typed callService() overloads ---`,
-    ...dedupedCallServiceOverloads,
+    `  // --- Typed callService() overloads (generic — service narrows via HAEntityMap) ---`,
+    ...callServiceOverloads,
     ``,
     `  // --- String fallback callService() (must be last) ---`,
     `  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void>;`,

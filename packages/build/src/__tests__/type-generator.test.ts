@@ -392,13 +392,16 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed callService() overloads per entity+service', () => {
+    it('generates typed callService() overloads with generic service parameter per entity', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain("callService(entity: 'light.living_room', service: 'turn_on',");
-      expect(content).toContain("callService(entity: 'light.living_room', service: 'turn_off',");
+      // One generic overload per entity (service narrows via HAEntityMap)
+      expect(content).toContain("callService<S extends keyof HAEntityMap['light.living_room']['services']>(entity: 'light.living_room', service: S, data?: HAEntityMap['light.living_room']['services'][S]): Promise<void>;");
+      // Entities without services for their domain should not have callService overloads
+      // sensor.temperature has no sensor services in this test data
+      expect(content).not.toContain("callService<S extends keyof HAEntityMap['sensor.temperature']");
       cleanup();
     });
 
@@ -424,7 +427,7 @@ describe('generateTypes()', () => {
       expect(fallbackOnIdx).toBeGreaterThan(typedOnIdx);
 
       // Typed callService() overloads must appear before string fallback
-      const typedCallIdx = content.indexOf("callService(entity: 'light.living_room',");
+      const typedCallIdx = content.indexOf("callService<S extends keyof HAEntityMap['light.living_room']");
       const fallbackCallIdx = content.indexOf('callService(entity: string, service: string,');
       expect(typedCallIdx).toBeGreaterThan(-1);
       expect(fallbackCallIdx).toBeGreaterThan(typedCallIdx);
