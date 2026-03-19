@@ -797,29 +797,13 @@ const APP_JS = `
 
   // ---- Load SDK + generated types into Monaco ----
   function loadExtraTypes() {
-    // Load SDK types
+    // Load SDK types as a single self-contained declaration
     api('GET', '/api/types/sdk').then(function(sdkResult) {
-      if (sdkResult && sdkResult.files) {
-        var files = sdkResult.files;
-        // Register a virtual package.json so Monaco resolves the types field
+      if (sdkResult && sdkResult.declaration) {
         monaco.languages.typescript.typescriptDefaults.addExtraLib(
-          JSON.stringify({ name: '@ha-ts-entities/sdk', types: './dist/index.d.ts' }),
-          'file:///node_modules/@ha-ts-entities/sdk/package.json'
+          sdkResult.declaration,
+          'ts:sdk/globals.d.ts'
         );
-        Object.keys(files).forEach(function(filename) {
-          if (filename === 'globals.d.ts') {
-            // Globals go at the package root so declare global works
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(
-              files[filename],
-              'file:///node_modules/@ha-ts-entities/sdk/globals.d.ts'
-            );
-          } else {
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(
-              files[filename],
-              'file:///node_modules/@ha-ts-entities/sdk/dist/' + filename
-            );
-          }
-        });
       }
     }).catch(function() {});
 

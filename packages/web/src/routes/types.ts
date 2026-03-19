@@ -27,14 +27,14 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
     }
   });
 
-  // Serve SDK type definitions for Monaco editor
+  // Serve a self-contained declaration for Monaco editor.
+  // Includes all SDK types + global function declarations so users
+  // get full autocomplete without needing any imports.
   app.get('/sdk', (c) => {
     try {
-      // Find SDK dist directory — resolve from the runtime package location
       const sdkDistPaths = [
         path.resolve('/app/node_modules/@ha-ts-entities/sdk/dist'),
         path.resolve('node_modules/@ha-ts-entities/sdk/dist'),
-        // Development: resolve relative to this package
         path.resolve(import.meta.dirname ?? __dirname, '../../sdk/dist'),
       ];
 
@@ -50,21 +50,39 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
         return c.json({ error: 'SDK types not found' }, 404);
       }
 
-      // Read all .d.ts files from the SDK dist
-      const files: Record<string, string> = {};
-      for (const file of fs.readdirSync(sdkDist)) {
-        if (file.endsWith('.d.ts')) {
-          files[file] = fs.readFileSync(path.join(sdkDist, file), 'utf-8');
-        }
+      // Find the types chunk file (contains all interface/type definitions)
+      const typesChunk = fs.readdirSync(sdkDist).find(f => f.startsWith('types-') && f.endsWith('.d.ts'));
+      if (!typesChunk) {
+        return c.json({ error: 'SDK types chunk not found' }, 404);
       }
 
-      // Also include globals.d.ts from the SDK package root
-      const globalsPath = path.join(sdkDist, '..', 'globals.d.ts');
-      if (fs.existsSync(globalsPath)) {
-        files['globals.d.ts'] = fs.readFileSync(globalsPath, 'utf-8');
-      }
+      // Read the chunk and strip the mangled export line at the end
+      let types = fs.readFileSync(path.join(sdkDist, typesChunk), 'utf-8');
+      types = types.replace(/^export type \{.*\};\s*$/m, '');
 
-      return c.json({ files });
+      // Read index.d.ts to get the SensorOptions etc. (function parameter types)
+      const indexDts = fs.readFileSync(path.join(sdkDist, 'index.d.ts'), 'utf-8');
+      // Extract the interface blocks (SensorOptions, SwitchOptions, etc.)
+      const optionInterfaces = indexDts
+        .split('\n')
+        .filter(line => !line.startsWith('import ') && !line.startsWith('export '))
+        .join('\n');
+
+      // Build a single self-contained declaration
+      const declaration = `// TS Entities SDK types (auto-generated)
+${types}
+${optionInterfaces}
+
+declare function sensor(options: SensorOptions): SensorDefinition;
+declare function defineSwitch(options: SwitchOptions): SwitchDefinition;
+declare function light(options: LightOptions): LightDefinition;
+declare function cover(options: CoverOptions): CoverDefinition;
+declare function climate(options: ClimateOptions): ClimateDefinition;
+declare function entityFactory(factory: () => EntityDefinition[] | Promise<EntityDefinition[]>): EntityFactory;
+declare const ha: HAClient;
+`;
+
+      return c.json({ declaration });
     } catch {
       return c.json({ error: 'Failed to read SDK types' }, 500);
     }
