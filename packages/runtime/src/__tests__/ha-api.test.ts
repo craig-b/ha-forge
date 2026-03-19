@@ -189,6 +189,19 @@ describe('HAApiImpl', () => {
         target: { entity_id: 'switch.pump' },
       });
     });
+
+    it('omits target for domain-only calls (no dot)', async () => {
+      await api.callService('light', 'turn_on', { brightness: 255 });
+
+      expect(wsClient.sendCommand).toHaveBeenCalledWith('call_service', {
+        domain: 'light',
+        service: 'turn_on',
+        service_data: { brightness: 255 },
+      });
+      // Should NOT have target key at all
+      const payload = wsClient.sendCommand.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload).not.toHaveProperty('target');
+    });
   });
 
   describe('callService() — runtime validation', () => {
