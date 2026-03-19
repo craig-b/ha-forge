@@ -24,6 +24,18 @@ export function ingressGuard() {
 }
 
 /**
+ * Custom getPath for Hono that normalizes double-slash paths from HA ingress.
+ * Supervisor proxies to http://addon:port/{path} where path includes a leading
+ * slash, resulting in URLs like http://addon:8099//api/files.
+ */
+export function getIngressPath(req: Request): string {
+  const url = req.url;
+  const start = url.indexOf('/', url.indexOf('://') + 3);
+  const path = start === -1 ? '/' : url.slice(start, url.indexOf('?', start) === -1 ? undefined : url.indexOf('?', start));
+  return path.replace(/^\/+/, '/');
+}
+
+/**
  * Extract ingress path from header and attach to context.
  */
 export function ingressPath() {

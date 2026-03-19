@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { ingressGuard, ingressPath } from './middleware.js';
+import { ingressGuard, ingressPath, getIngressPath } from './middleware.js';
 import { createFilesRoutes } from './routes/files.js';
 import { createBuildRoutes } from './routes/build.js';
 import type { BuildTriggerFn, BuildStatusFn } from './routes/build.js';
@@ -44,7 +44,7 @@ type Env = {
 };
 
 export function createServer(config: WebServerConfig) {
-  const app = new Hono<Env>();
+  const app = new Hono<Env>({ getPath: getIngressPath });
   const wsHub = new WSHub();
 
   // Middleware
@@ -71,20 +71,5 @@ export function createServer(config: WebServerConfig) {
     const ingressBase = c.get('ingressPath') as string | undefined ?? '';
     return c.html(generateUIHtml(ingressBase));
   });
-
-  // Catch-all: return debug info for unmatched routes
-  app.all('*', (c) => {
-    return c.json({
-      path: c.req.path,
-      method: c.req.method,
-      url: c.req.url,
-      headers: Object.fromEntries(
-        [...c.req.raw.headers.entries()].filter(([k]) =>
-          k.startsWith('x-') || k === 'host'
-        )
-      ),
-    }, 404);
-  });
-
   return { app, wsHub };
 }
