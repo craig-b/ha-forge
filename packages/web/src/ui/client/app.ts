@@ -63,7 +63,7 @@ export class TseApp extends LitElement {
   @state() private _buildMessages: string[] = [];
   @state() private _entities: EntityInfo[] = [];
   @state() private _logs: LogEntry[] = [];
-  private _logFilter: { level?: string; search?: string } = {};
+  private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
 
   private _editor: MonacoEditorInstance | null = null;
   private _base = (window as Record<string, unknown>).__INGRESS_PATH__ as string || '';
@@ -365,9 +365,10 @@ export class TseApp extends LitElement {
 
   // ---- Logs ----
 
-  private async _loadLogs(filter?: { level?: string; search?: string }) {
+  private async _loadLogs(filter?: { level?: string; entity_id?: string; search?: string }) {
     const params: string[] = [];
     if (filter?.level) params.push('level=' + encodeURIComponent(filter.level));
+    if (filter?.entity_id) params.push('entity_id=' + encodeURIComponent(filter.entity_id));
     if (filter?.search) params.push('search=' + encodeURIComponent(filter.search));
     params.push('limit=200');
     const data = await this._api('GET', '/api/logs?' + params.join('&'));

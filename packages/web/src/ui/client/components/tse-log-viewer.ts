@@ -5,8 +5,10 @@ import type { LogEntry } from '../types.js';
 @customElement('tse-log-viewer')
 export class TseLogViewer extends LitElement {
   @property({ type: Array }) logs: LogEntry[] = [];
+  @property({ type: Array }) entityIds: string[] = [];
   @state() private _level = '';
   @state() private _search = '';
+  @state() private _entityId = '';
   private _debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   createRenderRoot() { return this; }
@@ -21,6 +23,11 @@ export class TseLogViewer extends LitElement {
           <option value="info">Info+</option>
           <option value="debug">Debug+</option>
         </select>
+        <input type="text" placeholder="Filter by entity..." list="log-entity-list"
+          @input=${this._onEntityInput} />
+        <datalist id="log-entity-list">
+          ${this.entityIds.map((id) => html`<option value=${id}></option>`)}
+        </datalist>
         <input type="text" placeholder="Search logs..." @input=${this._onSearchInput} />
       </div>
       <div>
@@ -43,6 +50,15 @@ export class TseLogViewer extends LitElement {
     this._emitFilter();
   }
 
+  private _onEntityInput(e: Event) {
+    const value = (e.target as HTMLInputElement).value;
+    if (this._debounceTimer) clearTimeout(this._debounceTimer);
+    this._debounceTimer = setTimeout(() => {
+      this._entityId = value;
+      this._emitFilter();
+    }, 300);
+  }
+
   private _onSearchInput(e: Event) {
     const value = (e.target as HTMLInputElement).value;
     if (this._debounceTimer) clearTimeout(this._debounceTimer);
@@ -55,7 +71,7 @@ export class TseLogViewer extends LitElement {
   private _emitFilter() {
     this.dispatchEvent(new CustomEvent('tse-filter-change', {
       bubbles: true, composed: true,
-      detail: { level: this._level, search: this._search },
+      detail: { level: this._level, entity_id: this._entityId, search: this._search },
     }));
   }
 }

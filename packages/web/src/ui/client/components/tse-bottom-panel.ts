@@ -34,7 +34,7 @@ export class TseBottomPanel extends LitElement {
         <tse-entity-table .entities=${this.entities}></tse-entity-table>
       </div>
       <div class="panel-content ${this._activePanel === 'logs' ? 'active' : ''}">
-        <tse-log-viewer .logs=${this.logs}></tse-log-viewer>
+        <tse-log-viewer .logs=${this.logs} .entityIds=${this.entities.map((e) => e.id)}></tse-log-viewer>
       </div>
     `;
   }
