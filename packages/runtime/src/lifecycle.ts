@@ -222,6 +222,10 @@ export class EntityLifecycleManager {
       async fireEvent() {
         entityLogger.warn('ha.fireEvent() unavailable — no WebSocket connection');
       },
+      reactions() {
+        entityLogger.warn('ha.reactions() unavailable — no WebSocket connection');
+        return () => {};
+      },
     };
 
     const context: EntityContext = {
