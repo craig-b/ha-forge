@@ -83,10 +83,20 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
 
       // When no generated types, append an untyped HAClient fallback
       const untypedFallback = hasGeneratedTypes ? '' : `
+/**
+ * Home Assistant client API. Provides entity state subscriptions, service calls,
+ * state queries, and declarative reactions.
+ *
+ * Generate types from your HA instance for typed entity IDs and service parameters.
+ */
 interface HAClient extends HAClientBase {
+  /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
   on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
+  /** Call a Home Assistant service on an entity or domain. */
   callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void>;
+  /** Get the current state of a Home Assistant entity. Returns \`null\` if not found. */
   getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string; } | null>;
+  /** Set up declarative reaction rules. Returns a cleanup function. */
   reactions(rules: Record<string, ReactionRule>): () => void;
 }
 `;
@@ -96,12 +106,19 @@ interface HAClient extends HAClientBase {
 ${types}
 ${optionInterfaces}
 ${untypedFallback}
+/** Define a read-only sensor entity. */
 declare function sensor(options: SensorOptions): SensorDefinition;
+/** Define a controllable on/off switch entity. */
 declare function defineSwitch(options: SwitchOptions): SwitchDefinition;
+/** Define a controllable light entity with optional brightness, color, and effects. */
 declare function light(options: LightOptions): LightDefinition;
+/** Define a controllable cover entity (blind, garage door, curtain, etc.). */
 declare function cover(options: CoverOptions): CoverDefinition;
+/** Define a climate entity (thermostat, AC unit, heater, etc.). */
 declare function climate(options: ClimateOptions): ClimateDefinition;
+/** Create an entity factory for dynamic entity generation at runtime. */
 declare function entityFactory(factory: () => EntityDefinition[] | Promise<EntityDefinition[]>): EntityFactory;
+/** Home Assistant client API — subscribe to state changes, call services, query state, and set up reactions. */
 declare const ha: HAClient;
 `;
 
