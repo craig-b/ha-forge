@@ -795,8 +795,22 @@ const APP_JS = `
     }
   }
 
-  // ---- Load generated types into Monaco ----
+  // ---- Load SDK + generated types into Monaco ----
   function loadExtraTypes() {
+    // Load SDK types
+    api('GET', '/api/types/sdk').then(function(sdkResult) {
+      if (sdkResult && sdkResult.files) {
+        var files = sdkResult.files;
+        Object.keys(files).forEach(function(filename) {
+          monaco.languages.typescript.typescriptDefaults.addExtraLib(
+            files[filename],
+            'file:///node_modules/@ha-ts-entities/sdk/dist/' + filename
+          );
+        });
+      }
+    }).catch(function() {});
+
+    // Load generated HA registry types
     api('GET', '/api/types/status').then(function(typesStatus) {
       if (typesStatus.generated) {
         return api('GET', '/api/files/.generated/ha-registry.d.ts');
