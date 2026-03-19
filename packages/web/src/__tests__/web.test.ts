@@ -234,7 +234,7 @@ describe('Logs API', () => {
     expect(data.logs).toHaveLength(1);
     expect(data.count).toBe(1);
     expect(queryLogs).toHaveBeenCalledWith(expect.objectContaining({
-      level: ['info'],
+      level: ['info', 'warn', 'error'],
       search: 'Init',
     }));
 

@@ -63,6 +63,7 @@ export class TseApp extends LitElement {
   @state() private _buildMessages: string[] = [];
   @state() private _entities: EntityInfo[] = [];
   @state() private _logs: LogEntry[] = [];
+  private _logFilter: { level?: string; search?: string } = {};
 
   private _editor: MonacoEditorInstance | null = null;
   private _base = (window as Record<string, unknown>).__INGRESS_PATH__ as string || '';
@@ -82,7 +83,10 @@ export class TseApp extends LitElement {
     this.addEventListener('tse-activate-file', ((e: CustomEvent) => this._activateFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-close-file', ((e: CustomEvent) => this._closeFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-panel-change', ((e: CustomEvent) => this._onPanelChange(e.detail.panel)) as EventListener);
-    this.addEventListener('tse-filter-change', ((e: CustomEvent) => this._loadLogs(e.detail)) as EventListener);
+    this.addEventListener('tse-filter-change', ((e: CustomEvent) => {
+      this._logFilter = e.detail;
+      this._loadLogs(e.detail);
+    }) as EventListener);
   }
 
   render() {
@@ -374,7 +378,7 @@ export class TseApp extends LitElement {
 
   private _onPanelChange(panel: string) {
     if (panel === 'entities') this._loadEntities();
-    if (panel === 'logs') this._loadLogs();
+    if (panel === 'logs') this._loadLogs(this._logFilter);
   }
 
   // ---- Keyboard shortcuts ----
@@ -398,7 +402,7 @@ export class TseApp extends LitElement {
         try {
           const msg = JSON.parse(event.data);
           if (msg.channel === 'entities') this._loadEntities();
-          if (msg.channel === 'logs') this._loadLogs();
+          if (msg.channel === 'logs') this._loadLogs(this._logFilter);
           if (msg.channel === 'build' && msg.event === 'step_complete' && msg.data) {
             this._buildSteps = [...this._buildSteps, msg.data as BuildStep];
           }

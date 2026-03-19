@@ -16,10 +16,10 @@ export class TseLogViewer extends LitElement {
       <div class="log-filters">
         <select @change=${this._onLevelChange}>
           <option value="">All levels</option>
-          <option value="error">Error</option>
-          <option value="warn">Warning</option>
-          <option value="info">Info</option>
-          <option value="debug">Debug</option>
+          <option value="error">Error+</option>
+          <option value="warn">Warning+</option>
+          <option value="info">Info+</option>
+          <option value="debug">Debug+</option>
         </select>
         <input type="text" placeholder="Search logs..." @input=${this._onSearchInput} />
       </div>

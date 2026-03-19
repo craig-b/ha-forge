@@ -79,18 +79,21 @@ async function main(): Promise<void> {
   // Step 1: SQLite Logger
   log('Initializing SQLite logger...');
   const { SQLiteLogger } = await import('@ha-ts-entities/runtime');
+  // Late-bound broadcast function — set after wsHub is created
+  let broadcastLog: ((entry: import('@ha-ts-entities/runtime').LogEntry) => void) | null = null;
   let logger: InstanceType<typeof SQLiteLogger>;
   try {
     logger = new SQLiteLogger({
       dbPath: '/data/logs.db',
       minLevel: options.log_level,
       retentionDays: options.log_retention_days,
+      onNewEntry: (entry) => broadcastLog?.(entry),
     });
     const cleaned = logger.cleanup();
     if (cleaned.deleted > 0) log(`Cleaned ${cleaned.deleted} old log entries`);
   } catch (err) {
     log(`SQLite /data/logs.db failed, using in-memory: ${err instanceof Error ? err.message : String(err)}`);
-    logger = new SQLiteLogger({ dbPath: ':memory:', minLevel: options.log_level, retentionDays: 0 });
+    logger = new SQLiteLogger({ dbPath: ':memory:', minLevel: options.log_level, retentionDays: 0, onNewEntry: (entry) => broadcastLog?.(entry) });
   }
   log('SQLite logger ready');
 
@@ -162,7 +165,7 @@ async function main(): Promise<void> {
       typeErrors: number; bundleErrors: number; entityCount: number;
     } | null = null;
 
-    const { app } = createServer({
+    const { app, wsHub } = createServer({
       scriptsDir: '/config',
       generatedDir: '/config/.generated',
       triggerBuild: async () => {
@@ -207,6 +210,9 @@ async function main(): Promise<void> {
         return generateTypes(data, '/config/.generated');
       },
     });
+
+    // Wire up real-time log broadcasting via WebSocket
+    broadcastLog = (entry) => wsHub.broadcast('logs', 'new', entry);
 
     const { serve } = await import('@hono/node-server');
     serve({ fetch: app.fetch, port: 8099 });
