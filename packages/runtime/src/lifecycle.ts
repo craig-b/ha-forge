@@ -12,6 +12,7 @@ export interface LifecycleLogger {
   info(message: string, data?: Record<string, unknown>): void;
   warn(message: string, data?: Record<string, unknown>): void;
   error(message: string, data?: Record<string, unknown>): void;
+  forEntity?(entityId: string, sourceFile?: string): LifecycleLogger;
 }
 
 interface EntityInstance {
@@ -188,11 +189,16 @@ export class EntityLifecycleManager {
     const haClient = this.haClient;
     const entityId = entity.definition.id;
 
+    // Use scoped child logger if available (SQLiteLogger), otherwise prefix messages
+    const scopedLogger = logger.forEntity
+      ? logger.forEntity(entityId, entity.sourceFile)
+      : logger;
+
     const entityLogger: EntityLogger = {
-      debug: (msg, data) => logger.debug(`[${entityId}] ${msg}`, data),
-      info: (msg, data) => logger.info(`[${entityId}] ${msg}`, data),
-      warn: (msg, data) => logger.warn(`[${entityId}] ${msg}`, data),
-      error: (msg, data) => logger.error(`[${entityId}] ${msg}`, data),
+      debug: (msg, data) => scopedLogger.debug(msg, data),
+      info: (msg, data) => scopedLogger.info(msg, data),
+      warn: (msg, data) => scopedLogger.warn(msg, data),
+      error: (msg, data) => scopedLogger.error(msg, data),
     };
 
     // Build ha API — delegates to the shared HAClient, or stubs if unavailable
