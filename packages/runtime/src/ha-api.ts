@@ -238,6 +238,12 @@ export class HAApiImpl implements HAApi {
     });
   }
 
+  friendlyName(entityId: string): string {
+    const cached = this.stateCache.get(entityId);
+    const name = cached?.attributes?.friendly_name;
+    return typeof name === 'string' ? name : entityId;
+  }
+
   /**
    * Set up declarative reaction rules.
    * Returns a cleanup function that cancels all pending timers.

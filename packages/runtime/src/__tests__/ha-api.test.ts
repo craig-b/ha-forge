@@ -479,4 +479,23 @@ describe('HAApiImpl', () => {
       expect(cb).not.toHaveBeenCalled();
     });
   });
+
+  describe('friendlyName', () => {
+    it('returns friendly_name from cached state', () => {
+      // Populate cache via handleEvent
+      api.handleEvent(42, makeStateChangedEvent('light.kitchen', 'off', 'on', {
+        friendly_name: 'Kitchen Light',
+      }));
+      expect(api.friendlyName('light.kitchen')).toBe('Kitchen Light');
+    });
+
+    it('returns entity ID when not in cache', () => {
+      expect(api.friendlyName('sensor.unknown')).toBe('sensor.unknown');
+    });
+
+    it('returns entity ID when friendly_name attribute missing', () => {
+      api.handleEvent(42, makeStateChangedEvent('sensor.bare', 'off', 'on', {}));
+      expect(api.friendlyName('sensor.bare')).toBe('sensor.bare');
+    });
+  });
 });

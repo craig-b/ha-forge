@@ -226,6 +226,10 @@ export class EntityLifecycleManager {
         entityLogger.warn('ha.reactions() unavailable — no WebSocket connection');
         return () => {};
       },
+      friendlyName(entityId: string) {
+        entityLogger.warn('ha.friendlyName() unavailable — no WebSocket connection');
+        return entityId;
+      },
     };
 
     const context: EntityContext = {

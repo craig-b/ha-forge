@@ -182,6 +182,19 @@ export interface HAClientBase {
    * @param eventData - Optional data payload attached to the event.
    */
   fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<void>;
+  /**
+   * Get the friendly name of a Home Assistant entity.
+   * Returns the `friendly_name` attribute from cached state, or the entity ID if unavailable.
+   * @param entityId - The entity ID (e.g. `'light.kitchen'`).
+   * @returns The friendly name string.
+   *
+   * @example
+   * ```ts
+   * const name = ha.friendlyName('light.kitchen');
+   * // 'Kitchen Light'
+   * ```
+   */
+  friendlyName(entityId: string): string;
 }
 
 // Full client interface used at compile time in the monorepo.
