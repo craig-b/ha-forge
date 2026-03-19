@@ -7,7 +7,9 @@ import * as path from 'node:path';
  * by esbuild at build time and inlined for single-request HA ingress loading.
  */
 export function generateUIHtml(ingressPath: string): string {
-  const distDir = path.resolve(import.meta.dirname ?? __dirname, '../../dist');
+  // At runtime, this file is bundled into dist/index.js by tsup.
+  // The client bundle lives alongside it in the same dist/ directory.
+  const distDir = path.resolve(import.meta.dirname ?? __dirname);
 
   let clientJS = '// client bundle not found — run pnpm build:client';
   let clientCSS = '/* styles not found */';
