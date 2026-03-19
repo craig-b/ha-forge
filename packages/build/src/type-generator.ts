@@ -339,15 +339,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
   const getStateOverloads: string[] = [];
   const callServiceOverloads: string[] = [];
 
-  // Limit to top 200 entities by service count if file would be too large
-  const entityServiceCounts = entityIds.map((id) => {
-    const domain = id.split('.')[0];
-    const svc = servicesByDomain.get(domain);
-    return { id, count: svc ? svc.size : 0 };
-  });
-  entityServiceCounts.sort((a, b) => b.count - a.count);
-  const maxEntities = 200;
-  const typedEntityIds = entityServiceCounts.slice(0, maxEntities).map((e) => e.id);
+  const typedEntityIds = entityIds;
 
   for (const entityId of typedEntityIds) {
     const state = stateMap.get(entityId);
