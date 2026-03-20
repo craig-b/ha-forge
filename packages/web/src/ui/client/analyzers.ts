@@ -34,7 +34,7 @@ export function runAllAnalyzers(sourceText: string, fileName?: string): Analyzer
 
 // ---- Built-in: Unexported Entity Definitions ----
 
-const FACTORY_NAMES = [
+export const FACTORY_NAMES = [
   'sensor', 'light', 'defineSwitch', 'cover', 'climate',
   'device', 'entityFactory', 'automation', 'task',
   'binarySensor', 'fan', 'lock', 'number', 'select',
@@ -104,6 +104,67 @@ export function analyzeUnexportedEntities(sourceText: string): AnalyzerDiagnosti
   }
 
   return diagnostics;
+}
+
+// ---- Entity Symbol Finder (for DocumentSymbolProvider) ----
+
+export interface EntitySymbol {
+  name: string;
+  factoryName: string;
+  isExported: boolean;
+  line: number;       // 1-based
+  startCol: number;   // 1-based
+  endCol: number;     // 1-based
+}
+
+// Matches both exported and unexported entity declarations
+const SYMBOL_PATTERN = new RegExp(
+  '^(export\\s+)?' +
+  '(?:const|let|var)\\s+' +
+  '(\\w+)\\s*=\\s*' +
+  '(?:\\w+\\.)?' +
+  '(' + FACTORY_NAMES.join('|') + ')' +
+  '\\s*\\(',
+  'gm'
+);
+
+export function findEntitySymbols(sourceText: string): EntitySymbol[] {
+  const symbols: EntitySymbol[] = [];
+  const lines = sourceText.split('\n');
+
+  // Collect re-exported names
+  const reExported = new Set<string>();
+  for (const line of lines) {
+    const reExportMatch = line.match(/export\s*\{([^}]+)\}/);
+    if (reExportMatch) {
+      for (const part of reExportMatch[1].split(',')) {
+        const name = part.trim().split(/\s+/)[0];
+        if (name) reExported.add(name);
+      }
+    }
+  }
+
+  SYMBOL_PATTERN.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = SYMBOL_PATTERN.exec(sourceText)) !== null) {
+    const isExported = !!match[1] || reExported.has(match[2]);
+    const varName = match[2];
+    const beforeMatch = sourceText.slice(0, match.index);
+    const lineNumber = beforeMatch.split('\n').length;
+    const line = lines[lineNumber - 1];
+    const varStart = line.indexOf(varName);
+
+    symbols.push({
+      name: varName,
+      factoryName: match[3],
+      isExported,
+      line: lineNumber,
+      startCol: varStart + 1,
+      endCol: varStart + 1 + varName.length,
+    });
+  }
+
+  return symbols;
 }
 
 // Register built-in analyzers

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { analyzeUnexportedEntities, runAllAnalyzers } from '../ui/client/analyzers.js';
+import { analyzeUnexportedEntities, runAllAnalyzers, findEntitySymbols } from '../ui/client/analyzers.js';
 
 describe('analyzeUnexportedEntities', () => {
   it('warns on unexported sensor()', () => {
@@ -99,6 +99,50 @@ describe('analyzeUnexportedEntities', () => {
     ].join('\n');
     const diags = analyzeUnexportedEntities(code);
     expect(diags).toHaveLength(2);
+  });
+});
+
+describe('findEntitySymbols', () => {
+  it('finds exported and unexported entities', () => {
+    const code = [
+      `export const a = sensor({ id: 'a', name: 'A' });`,
+      `const b = light({ id: 'b', name: 'B' });`,
+    ].join('\n');
+    const symbols = findEntitySymbols(code);
+    expect(symbols).toHaveLength(2);
+    expect(symbols[0].name).toBe('a');
+    expect(symbols[0].factoryName).toBe('sensor');
+    expect(symbols[0].isExported).toBe(true);
+    expect(symbols[1].name).toBe('b');
+    expect(symbols[1].factoryName).toBe('light');
+    expect(symbols[1].isExported).toBe(false);
+  });
+
+  it('detects re-exported symbols as exported', () => {
+    const code = [
+      `const temp = sensor({ id: 'temp', name: 'Temp' });`,
+      `export { temp };`,
+    ].join('\n');
+    const symbols = findEntitySymbols(code);
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0].isExported).toBe(true);
+  });
+
+  it('reports correct line and column', () => {
+    const code = [
+      `// header`,
+      `export const mySensor = sensor({ id: 's', name: 'S' });`,
+    ].join('\n');
+    const symbols = findEntitySymbols(code);
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0].line).toBe(2);
+    expect(symbols[0].startCol).toBe(14); // 'mySensor' starts at col 14
+    expect(symbols[0].endCol).toBe(22);   // 'mySensor' is 8 chars
+  });
+
+  it('returns empty for non-entity code', () => {
+    const code = `const x = someFunction();`;
+    expect(findEntitySymbols(code)).toHaveLength(0);
   });
 });
 
