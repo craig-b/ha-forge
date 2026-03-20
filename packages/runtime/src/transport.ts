@@ -6,6 +6,10 @@ export interface Transport {
   publishState(entityId: string, state: unknown, attributes?: Record<string, unknown>): Promise<void>;
   onCommand(entityId: string, handler: (command: unknown) => void): void;
   deregister(entityId: string): Promise<void>;
+  /** Record a publish failure for an entity (marks unavailable after repeated failures). */
+  recordEntityFailure?(entityId: string): void;
+  /** Clear failure count after a successful publish (restores availability). */
+  clearEntityFailure?(entityId: string): void;
 }
 
 export class UnsupportedEntityTypeError extends Error {

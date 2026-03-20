@@ -178,6 +178,7 @@ export class EntityLifecycleManager {
         if (initialState !== undefined) {
           instance.currentState = initialState;
           await this.transport.publishState(entity.definition.id, initialState);
+          this.transport.clearEntityFailure?.(entity.definition.id);
         }
         instance.initialized = true;
         this.logger.info(`Entity initialized: ${entity.definition.id}`, {
@@ -227,7 +228,10 @@ export class EntityLifecycleManager {
       const handle: { update: (value: unknown, attributes?: Record<string, unknown>) => void; onCommand?: (handler: (command: unknown) => void | Promise<void>) => void } = {
         update: (value: unknown, attributes?: Record<string, unknown>) => {
           entityInstance.currentState = value;
-          this.transport.publishState(entityId, value, attributes).catch((err) => {
+          this.transport.publishState(entityId, value, attributes).then(() => {
+            this.transport.clearEntityFailure?.(entityId);
+          }).catch((err) => {
+            this.transport.recordEntityFailure?.(entityId);
             this.logger.error(`Failed to publish state for ${entityId}`, {
               error: err instanceof Error ? err.message : String(err),
             });
@@ -505,7 +509,10 @@ export class EntityLifecycleManager {
     const context: EntityContext = {
       update(value: unknown, attributes?: Record<string, unknown>) {
         instance.currentState = value;
-        transport.publishState(entityId, value, attributes).catch((err) => {
+        transport.publishState(entityId, value, attributes).then(() => {
+          transport.clearEntityFailure?.(entityId);
+        }).catch((err) => {
+          transport.recordEntityFailure?.(entityId);
           entityLogger.error('Failed to publish state', {
             error: err instanceof Error ? err.message : String(err),
           });
