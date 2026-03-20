@@ -214,12 +214,18 @@ describe('EntityLifecycleManager', () => {
 
     await manager.deploy([entity]);
 
-    // Advance timers by 3 seconds to trigger poll 3 times
+    // poll() fires immediately on deploy, then repeats on interval
+    // Flush the immediate call
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(callCount).toBe(1);
+
+    // Advance timers by 3 seconds to trigger 3 more interval calls
     await vi.advanceTimersByTimeAsync(3000);
 
-    expect(callCount).toBe(3);
-    expect(transport.publishState).toHaveBeenCalledTimes(3);
-    expect(transport.publishState).toHaveBeenLastCalledWith('poller', 'tick-3', undefined);
+    expect(callCount).toBe(4);
+    expect(transport.publishState).toHaveBeenCalledTimes(4);
+    expect(transport.publishState).toHaveBeenLastCalledWith('poller', 'tick-4', undefined);
   });
 
   // 10. teardown clears all tracked timer handles

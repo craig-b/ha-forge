@@ -253,7 +253,7 @@ export class EntityLifecycleManager {
       },
 
       poll(fn: () => unknown | Promise<unknown>, opts: { interval: number }) {
-        const interval = globalThis.setInterval(async () => {
+        const run = async () => {
           try {
             const value = await fn();
             if (value !== undefined) {
@@ -264,7 +264,10 @@ export class EntityLifecycleManager {
               error: err instanceof Error ? err.message : String(err),
             });
           }
-        }, opts.interval);
+        };
+        // Run immediately, then repeat on interval
+        run();
+        const interval = globalThis.setInterval(run, opts.interval);
         handles.pollIntervals.push(interval);
       },
 
