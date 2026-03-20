@@ -70,11 +70,6 @@ async function main(): Promise<void> {
   const options = await readOptions();
   log(`Starting with log_level=${options.log_level}`);
   log(`Node ${process.version}`);
-  // Debug: log relevant env vars
-  const envKeys = Object.keys(process.env).filter(k =>
-    k.includes('SUPERVISOR') || k.includes('HASSIO') || k.includes('TOKEN') || k.includes('MQTT')
-  );
-  log(`Env vars: ${envKeys.map(k => `${k}=${process.env[k]?.slice(0, 8)}...`).join(', ') || 'none matching'}`);
 
   // Step 1: SQLite Logger
   log('Initializing SQLite logger...');
