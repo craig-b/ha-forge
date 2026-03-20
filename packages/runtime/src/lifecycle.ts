@@ -591,6 +591,16 @@ export class EntityLifecycleManager {
     return [...this.instances.keys()];
   }
 
+  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string } | undefined {
+    const instance = this.instances.get(entityId);
+    if (!instance) return undefined;
+    return {
+      type: instance.entity.definition.type,
+      name: instance.entity.definition.name || entityId,
+      sourceFile: instance.entity.sourceFile,
+    };
+  }
+
   isInitialized(entityId: string): boolean {
     return this.instances.get(entityId)?.initialized ?? false;
   }

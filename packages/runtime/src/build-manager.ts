@@ -143,4 +143,8 @@ export class BuildManager {
   getEntityState(entityId: string): unknown {
     return this.lifecycle.getEntityState(entityId);
   }
+
+  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string } | undefined {
+    return this.lifecycle.getEntityInfo(entityId);
+  }
 }

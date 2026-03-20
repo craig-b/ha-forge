@@ -198,9 +198,17 @@ async function main(): Promise<void> {
       getBuildStatus: () => ({ building, lastBuild: lastBuildResult }),
       getEntities: () => {
         if (!buildManager) return [];
-        return buildManager.getEntityIds().map((id) => ({
-          id, name: id, type: 'unknown', state: buildManager.getEntityState(id), sourceFile: '', status: 'healthy' as const,
-        }));
+        return buildManager.getEntityIds().map((id) => {
+          const info = buildManager.getEntityInfo(id);
+          return {
+            id,
+            name: info?.name ?? id,
+            type: info?.type ?? 'unknown',
+            state: buildManager.getEntityState(id),
+            sourceFile: info?.sourceFile ?? '',
+            status: 'healthy' as const,
+          };
+        });
       },
       queryLogs: (opts) => logger.query(opts),
       regenerateTypes: async () => {
