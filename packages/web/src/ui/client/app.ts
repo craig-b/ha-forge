@@ -419,6 +419,12 @@ export class TseApp extends LitElement {
         if (this._activeFile) this._saveFile(this._activeFile);
       }
     });
+
+    window.addEventListener('beforeunload', (e) => {
+      if (this._openFiles.some((f) => f.modified)) {
+        e.preventDefault();
+      }
+    });
   }
 
   // ---- WebSocket ----
