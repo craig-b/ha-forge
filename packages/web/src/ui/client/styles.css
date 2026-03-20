@@ -192,6 +192,10 @@ tse-bottom-panel {
   font-weight: 500;
   font-size: 11px;
   text-transform: uppercase;
+  position: sticky;
+  top: 0;
+  background: var(--bg-primary);
+  z-index: 1;
 }
 .entity-table td {
   padding: 4px 8px;
@@ -203,7 +207,15 @@ tse-bottom-panel {
 .entity-status.error { background: #4a2d2d; color: var(--error); }
 .entity-status.unavailable { background: var(--bg-tertiary); color: var(--text-secondary); }
 
-.log-filters { display: flex; gap: 8px; padding: 4px 0 8px; }
+.log-filters {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0 8px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-primary);
+}
 .log-filters select, .log-filters input {
   padding: 4px 8px;
   background: var(--bg-tertiary);
@@ -227,7 +239,7 @@ tse-bottom-panel {
 .log-entry .log-level.info { color: var(--info); }
 .log-entry .log-level.debug { color: var(--text-secondary); }
 .log-entry .log-entity { color: var(--accent); min-width: 140px; }
-.log-entry .log-caller { color: var(--text-muted); min-width: 100px; font-size: 0.85em; }
+.log-entry .log-caller { color: var(--text-secondary); min-width: 100px; font-size: 0.85em; }
 .log-entry .log-msg { color: var(--text-primary); flex: 1; }
 
 .empty-state {
@@ -238,3 +250,11 @@ tse-bottom-panel {
   color: var(--text-secondary);
   font-size: 13px;
 }
+
+/* Scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg-hover); border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--bg-hover) transparent; }
