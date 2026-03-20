@@ -17,8 +17,16 @@ export class TseBottomPanel extends LitElement {
 
   createRenderRoot() { return this; }
 
+  connectedCallback() {
+    super.connectedCallback();
+    this._onMouseMove = this._onMouseMove.bind(this);
+    this._onMouseUp = this._onMouseUp.bind(this);
+  }
+
   render() {
     return html`
+      <div class="panel-resize-handle"
+        @mousedown=${this._onResizeStart}></div>
       <div class="panel-tabs">
         ${['build-output', 'entities', 'exports', 'logs'].map((panel) => html`
           <button class="panel-tab ${this._activePanel === panel ? 'active' : ''}"
@@ -48,5 +56,33 @@ export class TseBottomPanel extends LitElement {
     this.dispatchEvent(new CustomEvent('tse-panel-change', {
       bubbles: true, composed: true, detail: { panel },
     }));
+  }
+
+  // ---- Resize ----
+
+  private _startY = 0;
+  private _startHeight = 0;
+
+  private _onResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    this._startY = e.clientY;
+    this._startHeight = this.getBoundingClientRect().height;
+    document.addEventListener('mousemove', this._onMouseMove);
+    document.addEventListener('mouseup', this._onMouseUp);
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  private _onMouseMove(e: MouseEvent) {
+    const delta = this._startY - e.clientY;
+    const newHeight = Math.max(100, Math.min(window.innerHeight - 200, this._startHeight + delta));
+    document.documentElement.style.setProperty('--panel-height', `${newHeight}px`);
+  }
+
+  private _onMouseUp() {
+    document.removeEventListener('mousemove', this._onMouseMove);
+    document.removeEventListener('mouseup', this._onMouseUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   }
 }
