@@ -16,7 +16,7 @@ export class TseHeader extends LitElement {
       </div>
       <div class="header-center">
         <button class="btn btn-primary" ?disabled=${this.building}
-          @click=${this._onBuild}>Build &amp; Deploy</button>
+          @click=${this._onBuild}>Rebuild All</button>
         <button class="btn" @click=${this._onRegenTypes}>Regen Types</button>
       </div>
       <div class="header-right">
