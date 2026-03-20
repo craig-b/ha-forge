@@ -262,6 +262,10 @@ export class TseApp extends LitElement {
     const idx = this._openFiles.findIndex((f) => f.path === filePath);
     if (idx === -1) return;
 
+    if (this._openFiles[idx].modified) {
+      if (!confirm(`"${filePath.split('/').pop()}" has unsaved changes. Close anyway?`)) return;
+    }
+
     this._openFiles[idx].model.dispose();
     const newFiles = [...this._openFiles];
     newFiles.splice(idx, 1);
