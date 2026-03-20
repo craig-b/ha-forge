@@ -8,6 +8,7 @@ export interface LogEntry {
   source_file: string | null;
   message: string;
   data: string | null;
+  caller: string | null;
 }
 
 export type QueryLogsFn = (opts: {

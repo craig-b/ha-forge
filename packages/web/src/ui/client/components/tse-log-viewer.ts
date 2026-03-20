@@ -38,6 +38,7 @@ export class TseLogViewer extends LitElement {
               <span class="log-time">${new Date(log.timestamp).toLocaleTimeString()}</span>
               <span class="log-level ${log.level}">${log.level.toUpperCase()}</span>
               <span class="log-entity">${log.entity_id ?? ''}</span>
+              <span class="log-caller">${log.caller ?? ''}</span>
               <span class="log-msg">${log.message}</span>
             </div>
           `)}

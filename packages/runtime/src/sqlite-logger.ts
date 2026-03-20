@@ -25,9 +25,33 @@ export interface LogEntry {
   entity_id: string | null;
   message: string;
   data: string | null;
+  /** Caller location from user code, e.g. "weather.ts:15" */
+  caller: string | null;
 }
 
 const LEVEL_ORDER = { debug: 0, info: 1, warn: 2, error: 3 } as const;
+
+/**
+ * Extract the first user-code caller from the stack trace.
+ * Looks for file:// URLs (user bundles loaded via dynamic import)
+ * and returns "filename:line" or null if no user frame found.
+ */
+function extractCaller(): string | null {
+  const stack = new Error().stack;
+  if (!stack) return null;
+
+  const lines = stack.split('\n');
+  for (const line of lines) {
+    // User bundles are loaded as file:// URLs (with ?t= cache buster)
+    const match = line.match(/file:\/\/.*\/([^/?]+\.js)(?:\?[^:]*)?:(\d+)/);
+    if (match) {
+      // Convert .js back to .ts for display
+      const file = match[1].replace(/\.js$/, '.ts');
+      return `${file}:${match[2]}`;
+    }
+  }
+  return null;
+}
 
 /**
  * SQLite-backed logger with batched writes and retention cleanup.
@@ -62,8 +86,8 @@ export class SQLiteLogger implements LifecycleLogger {
     this.initSchema();
 
     this.insertStmt = this.db.prepare(
-      `INSERT INTO logs (timestamp, level, source_file, entity_id, message, data)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO logs (timestamp, level, source_file, entity_id, message, data, caller)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
 
     // Start batch flush timer
@@ -80,13 +104,21 @@ export class SQLiteLogger implements LifecycleLogger {
         source_file TEXT NOT NULL,
         entity_id TEXT,
         message TEXT NOT NULL,
-        data TEXT
+        data TEXT,
+        caller TEXT
       )
     `);
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_logs_time ON logs(timestamp)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_logs_entity ON logs(entity_id, timestamp)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_logs_level ON logs(level, timestamp)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_logs_file ON logs(source_file, timestamp)');
+
+    // Migration: add caller column to existing databases
+    try {
+      this.db.exec('ALTER TABLE logs ADD COLUMN caller TEXT');
+    } catch {
+      // Column already exists — ignore
+    }
   }
 
   /**
@@ -134,6 +166,7 @@ export class SQLiteLogger implements LifecycleLogger {
       entity_id: this.entityId,
       message,
       data: data ? JSON.stringify(data) : null,
+      caller: extractCaller(),
     };
 
     this.batch.push(entry);
@@ -161,6 +194,7 @@ export class SQLiteLogger implements LifecycleLogger {
           row.entity_id,
           row.message,
           row.data,
+          row.caller,
         );
       }
     });
@@ -220,7 +254,7 @@ export class SQLiteLogger implements LifecycleLogger {
     const limit = opts.limit ?? 100;
     const offset = opts.offset ?? 0;
 
-    const sql = `SELECT id, timestamp, level, source_file, entity_id, message, data
+    const sql = `SELECT id, timestamp, level, source_file, entity_id, message, data, caller
                  FROM logs ${where}
                  ORDER BY timestamp DESC
                  LIMIT ? OFFSET ?`;

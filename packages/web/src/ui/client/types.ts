@@ -32,7 +32,10 @@ export interface LogEntry {
   timestamp: number;
   level: string;
   entity_id?: string;
+  source_file?: string;
   message: string;
+  data?: string;
+  caller?: string;
 }
 
 // Minimal Monaco types for what we use
