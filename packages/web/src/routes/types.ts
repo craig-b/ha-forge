@@ -75,20 +75,27 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
       // When no generated types, append an untyped HAClient fallback
       const untypedFallback = hasGeneratedTypes ? '' : `
 /**
- * Home Assistant client API. Provides entity state subscriptions, service calls,
- * state queries, and declarative reactions.
+ * Stateless Home Assistant client API. Provides service calls, state queries, and entity listing.
+ * Access via \`this.ha\` in entity/device callbacks. Safe to pass to utility functions.
  *
  * Generate types from your HA instance for typed entity IDs and service parameters.
  */
 interface HAClient extends HAClientBase {
   /** List entity IDs registered in Home Assistant, optionally filtered by domain. */
   getEntities(domain?: string): Promise<string[]>;
-  /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
-  on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
   /** Call a Home Assistant service on an entity or domain. */
   callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   /** Get the current state of a Home Assistant entity. Returns \`null\` if not found. */
   getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string; } | null>;
+}
+
+/**
+ * Scoped event subscription context. Access via \`this.events\` in entity/device callbacks.
+ * Subscriptions are automatically cleaned up when the owning entity/device is torn down.
+ */
+interface HAEventsContext extends EventsContext {
+  /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
+  on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
   /** Set up declarative reaction rules. Returns a cleanup function. */
   reactions(rules: Record<string, ReactionRule>): () => void;
 }
@@ -200,22 +207,23 @@ declare function entityFactory(factory: () => EntityDefinition[] | Promise<Entit
  */
 declare function device<TEntities extends Record<string, EntityDefinition>>(options: DeviceOptions<TEntities>): DeviceDefinition<TEntities>;
 /**
- * Home Assistant client API.
- * Subscribe to entity state changes, call services, query state, list entities, and set up declarative reactions.
+ * Global stateless Home Assistant client API.
+ * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
  *
  * @example
  * \`\`\`ts
- * // Subscribe to state changes
- * ha.on('binary_sensor.front_door', (event) => {
- *   if (event.new_state === 'on') ha.callService('light.porch', 'turn_on');
+ * // Inside entity init():
+ * // Subscribe to state changes (lifecycle-managed)
+ * this.events.on('binary_sensor.front_door', (event) => {
+ *   if (event.new_state === 'on') this.ha.callService('light.porch', 'turn_on');
  * });
  *
  * // Query current state
- * const state = await ha.getState('sensor.temperature');
+ * const state = await this.ha.getState('sensor.temperature');
  *
  * // List all lights
- * const lights = await ha.getEntities('light');
+ * const lights = await this.ha.getEntities('light');
  * \`\`\`
  */
 declare const ha: HAClient;
