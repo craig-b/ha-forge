@@ -108,6 +108,20 @@ tse-sidebar {
 .file-item.directory { color: var(--text-secondary); }
 .file-item.indent-1 { padding-left: 28px; }
 .file-item.indent-2 { padding-left: 40px; }
+.rename-input {
+  background: var(--bg-primary); color: var(--text-bright); border: 1px solid var(--accent);
+  font-size: 13px; padding: 1px 4px; flex: 1; min-width: 0; outline: none;
+}
+.ctx-menu {
+  position: fixed; z-index: 100; background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 4px; padding: 4px 0; min-width: 120px; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.ctx-item {
+  padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--text-primary);
+}
+.ctx-item:hover { background: var(--bg-hover); }
+.ctx-item.ctx-danger { color: #f44; }
+.ctx-item.ctx-danger:hover { background: rgba(255,68,68,0.15); }
 
 #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
@@ -119,6 +133,7 @@ tse-sidebar {
   min-height: 35px;
   overflow-x: auto;
 }
+tse-editor-tabs { display: contents; }
 .editor-tab {
   display: flex;
   align-items: center;

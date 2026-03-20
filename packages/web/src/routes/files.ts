@@ -61,6 +61,37 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
     }
   });
 
+  // Rename/move file
+  app.patch('/:path{.+}', async (c) => {
+    const filePath = c.req.param('path');
+    const fullPath = resolveSafe(opts.scriptsDir, filePath);
+    if (!fullPath) {
+      return c.json({ error: 'Invalid path' }, 400);
+    }
+
+    try {
+      const body = await c.req.json<{ newPath: string }>();
+      if (typeof body.newPath !== 'string') {
+        return c.json({ error: 'Missing newPath field' }, 400);
+      }
+      const newFullPath = resolveSafe(opts.scriptsDir, body.newPath);
+      if (!newFullPath) {
+        return c.json({ error: 'Invalid new path' }, 400);
+      }
+      if (!fs.existsSync(fullPath)) {
+        return c.json({ error: 'File not found' }, 404);
+      }
+      if (fs.existsSync(newFullPath)) {
+        return c.json({ error: 'Target file already exists' }, 409);
+      }
+      fs.mkdirSync(path.dirname(newFullPath), { recursive: true });
+      fs.renameSync(fullPath, newFullPath);
+      return c.json({ success: true, path: body.newPath });
+    } catch (err) {
+      return c.json({ error: 'Failed to rename file' }, 500);
+    }
+  });
+
   // Delete file
   app.delete('/:path{.+}', (c) => {
     const filePath = c.req.param('path');

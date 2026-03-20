@@ -68,11 +68,13 @@ export class EntityLifecycleManager {
   private transport: Transport;
   private logger: LifecycleLogger;
   private rawMqtt: RawMqttAccess | null;
+  private onStateChange: ((entityId: string, state: unknown) => void) | null;
 
-  constructor(transport: Transport, logger: LifecycleLogger, rawMqtt?: RawMqttAccess | null) {
+  constructor(transport: Transport, logger: LifecycleLogger, rawMqtt?: RawMqttAccess | null, onStateChange?: (entityId: string, state: unknown) => void) {
     this.transport = transport;
     this.logger = logger;
     this.rawMqtt = rawMqtt ?? null;
+    this.onStateChange = onStateChange ?? null;
   }
 
   async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
@@ -227,6 +229,7 @@ export class EntityLifecycleManager {
           entityInstance.currentState = value;
           this.transport.publishState(entityId, value, attributes).then(() => {
             this.transport.clearEntityFailure?.(entityId);
+            this.onStateChange?.(entityId, value);
           }).catch((err) => {
             this.transport.recordEntityFailure?.(entityId);
             this.logger.error(`Failed to publish state for ${entityId}`, {
@@ -368,6 +371,53 @@ export class EntityLifecycleManager {
     }
   }
 
+  /**
+   * Teardown entities from specific source files, leaving others untouched.
+   */
+  async teardownBySourceFiles(sourceFiles: Set<string>): Promise<void> {
+    // Teardown devices from these files first
+    for (const [deviceId, deviceInstance] of this.deviceInstances) {
+      if (!sourceFiles.has(deviceInstance.device.sourceFile)) continue;
+      if (deviceInstance.device.definition.destroy && deviceInstance.initialized && deviceInstance.context) {
+        try {
+          await deviceInstance.device.definition.destroy.call(deviceInstance.context);
+        } catch (err) {
+          this.logger.error(`Device destroy() failed for ${deviceId}`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      this.disposeHandles(deviceInstance.handles);
+      this.deviceInstances.delete(deviceId);
+    }
+
+    // Teardown entities from these files
+    for (const [id, instance] of this.instances) {
+      if (!sourceFiles.has(instance.entity.sourceFile)) continue;
+      await this.teardown(id);
+    }
+  }
+
+  /** Get set of source files that have running entities. */
+  getActiveSourceFiles(): Set<string> {
+    const files = new Set<string>();
+    for (const instance of this.instances.values()) {
+      files.add(instance.entity.sourceFile);
+    }
+    return files;
+  }
+
+  /** Get entity definitions for a given source file (for diffing). */
+  getEntitiesBySourceFile(sourceFile: string): ResolvedEntity[] {
+    const result: ResolvedEntity[] = [];
+    for (const instance of this.instances.values()) {
+      if (instance.entity.sourceFile === sourceFile) {
+        result.push(instance.entity);
+      }
+    }
+    return result;
+  }
+
   async teardownAll(): Promise<void> {
     // Teardown devices first (they may reference entity instances)
     for (const [deviceId, deviceInstance] of this.deviceInstances) {
@@ -455,11 +505,13 @@ export class EntityLifecycleManager {
       error: (msg, data) => scopedLogger.error(msg, data),
     };
 
+    const onStateChange = this.onStateChange;
     const context: EntityContext = {
       update(value: unknown, attributes?: Record<string, unknown>) {
         instance.currentState = value;
         transport.publishState(entityId, value, attributes).then(() => {
           transport.clearEntityFailure?.(entityId);
+          onStateChange?.(entityId, value);
         }).catch((err) => {
           transport.recordEntityFailure?.(entityId);
           entityLogger.error('Failed to publish state', {

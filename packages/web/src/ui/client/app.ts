@@ -82,6 +82,8 @@ export class TseApp extends LitElement {
     this.addEventListener('tse-new-file', () => this._createNewFile());
     this.addEventListener('tse-activate-file', ((e: CustomEvent) => this._activateFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-close-file', ((e: CustomEvent) => this._closeFile(e.detail.path)) as EventListener);
+    this.addEventListener('tse-delete-file', ((e: CustomEvent) => this._deleteFile(e.detail.path)) as EventListener);
+    this.addEventListener('tse-rename-file', ((e: CustomEvent) => this._renameFile(e.detail.oldPath, e.detail.newPath)) as EventListener);
     this.addEventListener('tse-panel-change', ((e: CustomEvent) => this._onPanelChange(e.detail.panel)) as EventListener);
     this.addEventListener('tse-filter-change', ((e: CustomEvent) => {
       this._logFilter = e.detail;
@@ -294,6 +296,26 @@ export class TseApp extends LitElement {
     this._api('PUT', '/api/files/' + encodeURIComponent(safeName), { content: '' })
       .then(() => this._loadFileTree())
       .then(() => this._openFile(safeName));
+  }
+
+  private async _deleteFile(filePath: string) {
+    await this._api('DELETE', '/api/files/' + encodeURIComponent(filePath));
+    this._closeFile(filePath);
+    this._loadFileTree();
+  }
+
+  private async _renameFile(oldPath: string, newPath: string) {
+    const result = await this._api('PATCH', '/api/files/' + encodeURIComponent(oldPath), { newPath });
+    if (result.error) return;
+
+    // Update open file reference if renamed file is open
+    const openFile = this._openFiles.find((f) => f.path === oldPath);
+    if (openFile) {
+      openFile.path = newPath;
+      if (this._activeFile === oldPath) this._activeFile = newPath;
+      this._openFiles = [...this._openFiles];
+    }
+    this._loadFileTree();
   }
 
   // ---- Build ----

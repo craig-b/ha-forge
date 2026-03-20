@@ -118,9 +118,13 @@ async function main(): Promise<void> {
   try {
     log('Connecting HA WebSocket...');
     const { HAWebSocketClient } = await import('@ha-forge/runtime');
+    const supervisorToken = process.env.SUPERVISOR_TOKEN;
+    if (!supervisorToken) {
+      throw new Error('SUPERVISOR_TOKEN environment variable is not set — cannot connect to HA WebSocket');
+    }
     wsClient = new HAWebSocketClient({
       url: 'ws://supervisor/core/websocket',
-      token: process.env.SUPERVISOR_TOKEN!,
+      token: supervisorToken,
       onEvent: (subId, event) => handleHAEvent?.(subId, event),
     });
     await wsClient.connect();
@@ -154,8 +158,13 @@ async function main(): Promise<void> {
       await healthEntities.register();
     }
 
+    // Late-bound entity state broadcast — set after wsHub is created
+    let broadcastEntityState: ((entityId: string, state: unknown) => void) | null = null;
     const buildManager = mqttTransport
-      ? new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport })
+      ? new BuildManager({
+          bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport,
+          onEntityStateChange: (entityId, state) => broadcastEntityState?.(entityId, state),
+        })
       : null;
 
     let building = false;
@@ -175,6 +184,7 @@ async function main(): Promise<void> {
           const result = await runBuild({
             scriptsDir: '/config', generatedDir: '/config/.generated',
             outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
           });
           if (healthEntities && result.tscCheck) {
             await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
@@ -182,6 +192,7 @@ async function main(): Promise<void> {
           let entityCount = 0;
           if (result.bundle?.success && buildManager) {
             entityCount = (await buildManager.deploy()).entityCount;
+            wsHub.broadcast('entities', 'deployed', { entityCount });
           }
           lastBuildResult = {
             success: result.success, timestamp: result.timestamp, totalDuration: result.totalDuration,
@@ -219,8 +230,9 @@ async function main(): Promise<void> {
       },
     });
 
-    // Wire up real-time log broadcasting via WebSocket
+    // Wire up real-time broadcasting via WebSocket
     broadcastLog = (entry) => wsHub.broadcast('logs', 'new', entry);
+    broadcastEntityState = (entityId, state) => wsHub.broadcast('entities', 'state_changed', { entityId, state });
 
     // Start HTTP server with WebSocket upgrade support
     const { createAdaptorServer } = await import('@hono/node-server');
@@ -248,6 +260,59 @@ async function main(): Promise<void> {
 
     server.listen(8099);
     log('Web server listening on port 8099');
+
+    // Step 5: Load cached build (reuses buildManager from step 4)
+    const fs = await import('node:fs');
+    if (fs.existsSync('/data/last-build') && buildManager) {
+      try {
+        const result = await buildManager.deploy();
+        log(`Cached build loaded: ${result.entityCount} entities`);
+      } catch (err) {
+        log(`Cached build failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
+    // Step 6: File watcher for auto-build on save
+    if (options.auto_build_on_save) {
+      const DEBOUNCE_MS = 500;
+      let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+      const triggerAutoBuild = async () => {
+        if (building) return;
+        building = true;
+        try {
+          const result = await runBuild({
+            scriptsDir: '/config', generatedDir: '/config/.generated',
+            outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
+          });
+          if (healthEntities && result.tscCheck) {
+            await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
+          }
+          if (result.bundle?.success && buildManager) {
+            const deployResult = await buildManager.smartDeploy();
+            wsHub.broadcast('entities', 'deployed', { entityCount: deployResult.entityCount });
+            logger.info('Auto-build complete', { entityCount: deployResult.entityCount, duration: result.totalDuration });
+          }
+        } catch (err) {
+          logger.error('Auto-build failed', { error: err instanceof Error ? err.message : String(err) });
+        } finally { building = false; }
+      };
+
+      try {
+        fs.watch('/config', { recursive: true }, (_event, filename) => {
+          if (!filename) return;
+          const name = String(filename);
+          if (!name.endsWith('.ts')) return;
+          if (name.startsWith('.') || name.includes('node_modules') || name.includes('.generated')) return;
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = globalThis.setTimeout(triggerAutoBuild, DEBOUNCE_MS);
+        });
+        log('File watcher active on /config (auto-build on save)');
+      } catch (err) {
+        log(`File watcher failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   } catch (err) {
     log(`Web server failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
     // Fallback: keep process alive with basic HTTP
@@ -259,20 +324,7 @@ async function main(): Promise<void> {
     log('Fallback web server on port 8099');
   }
 
-  // Step 5: Load cached build
-  const fs = await import('node:fs');
-  if (fs.existsSync('/data/last-build') && mqttTransport) {
-    try {
-      const { BuildManager } = await import('@ha-forge/runtime');
-      const cached = new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport });
-      const result = await cached.deploy();
-      log(`Cached build loaded: ${result.entityCount} entities`);
-    } catch (err) {
-      log(`Cached build failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-
-  // Step 6: Scheduled validation
+  // Step 7: Scheduled validation
   if (options.validation_schedule_minutes > 0 && wsClient) {
     const { runValidation } = await import('@ha-forge/build');
     const intervalMs = options.validation_schedule_minutes * 60 * 1000;
