@@ -340,6 +340,53 @@ async function main(): Promise<void> {
         log(`File watcher failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+
+    // Step 6b: Auto-rebuild on registry change (validation only — no entity redeploy)
+    if (options.auto_rebuild_on_registry_change && wsClient && haApi) {
+      const REGISTRY_CHECK_INTERVAL = 60_000; // Check every 60s
+      let knownEntityIds: Set<string> | null = null;
+
+      const checkRegistryChange = async () => {
+        try {
+          const currentEntities = await haApi!.getEntities();
+          const currentSet = new Set(currentEntities);
+
+          if (knownEntityIds === null) {
+            // First run — just store the baseline
+            knownEntityIds = currentSet;
+            return;
+          }
+
+          // Detect additions or removals
+          const added = currentEntities.filter((id) => !knownEntityIds!.has(id));
+          const removed = [...knownEntityIds].filter((id) => !currentSet.has(id));
+
+          if (added.length === 0 && removed.length === 0) return;
+
+          logger.info('HA entity registry changed', { added: added.length, removed: removed.length });
+          knownEntityIds = currentSet;
+
+          // Regenerate types and run validation
+          const { generateTypes, fetchRegistryData, runValidation } = await import('@ha-forge/build');
+          const data = await fetchRegistryData(wsClient!);
+          const typeResult = generateTypes(data, '/config/.generated');
+          logger.info('Types regenerated', { entityCount: typeResult.entityCount, serviceCount: typeResult.serviceCount });
+
+          const valResult = await runValidation({ scriptsDir: '/config', generatedDir: '/config/.generated', wsClient: wsClient! });
+          if (healthEntities && valResult.diagnostics) {
+            await healthEntities.update({ diagnostics: valResult.diagnostics, trigger: 'registry_change' });
+          }
+          logger.info('Validation after registry change', { success: valResult.success, diagnostics: valResult.diagnostics.length });
+        } catch (err) {
+          logger.error('Registry change check failed', { error: err instanceof Error ? err.message : String(err) });
+        }
+      };
+
+      setInterval(checkRegistryChange, REGISTRY_CHECK_INTERVAL);
+      // Run initial baseline after a short delay (let HA settle)
+      globalThis.setTimeout(checkRegistryChange, 5000);
+      log('Registry change watcher active (validation only, 60s interval)');
+    }
   } catch (err) {
     log(`Web server failed: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
     // Fallback: keep process alive with basic HTTP
