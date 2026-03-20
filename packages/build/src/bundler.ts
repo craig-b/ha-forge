@@ -52,7 +52,8 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
     };
   }
 
-  // Ensure output directory exists
+  // Clean and recreate output directory to remove stale bundles from deleted/renamed files
+  fs.rmSync(options.outputDir, { recursive: true, force: true });
   fs.mkdirSync(options.outputDir, { recursive: true });
 
   const external = ['@ha-ts-entities/sdk', ...(options.external ?? [])];
