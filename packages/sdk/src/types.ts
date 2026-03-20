@@ -275,8 +275,13 @@ export interface EntityContext<TState = unknown> {
 export interface BaseEntity<TState, TConfig = Record<string, never>> {
   /** Unique entity identifier. Used as the object_id in MQTT topics. */
   id: string;
-  /** Human-readable name shown in the HA UI. */
-  name: string;
+  /**
+   * Human-readable name shown in the HA UI.
+   * When grouped under a device, HA prepends the device name — so set this to
+   * just the distinguishing part (e.g. `'Temperature'` under a `'Weather Station'` device).
+   * Set to `null` to use the device name as the entity name (for single-entity devices).
+   */
+  name: string | null;
   /** Entity platform type. */
   type: EntityType;
   /** Optional device to group this entity under. */

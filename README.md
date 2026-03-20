@@ -124,6 +124,124 @@ export default entityFactory(async () => {
 });
 ```
 
+### Device Grouping
+
+Entities are grouped under a device in HA. By default the file name is used. Set `device` explicitly to control grouping. HA prepends the device name to the entity name, so `name` should be just the distinguishing part. Set `name: null` for single-entity devices to inherit the device name.
+
+```typescript
+// weather-station.ts — multiple sensors grouped under one device
+
+const device = { id: 'weather_station', name: 'Weather Station' };
+
+// Shows as "Weather Station Temperature" in HA
+export const temp = sensor({
+  id: 'ws_temperature',
+  name: 'Temperature',
+  device,
+  config: { device_class: 'temperature', unit_of_measurement: '°C' },
+  init() {
+    this.poll(async () => {
+      const data = await this.fetch('http://192.168.1.80/api').then(r => r.json());
+      return data.temperature;
+    }, { interval: 60_000 });
+    return 0;
+  },
+});
+
+// Shows as "Weather Station Humidity" in HA
+export const humidity = sensor({
+  id: 'ws_humidity',
+  name: 'Humidity',
+  device,
+  config: { device_class: 'humidity', unit_of_measurement: '%' },
+  init() {
+    this.poll(async () => {
+      const data = await this.fetch('http://192.168.1.80/api').then(r => r.json());
+      return data.humidity;
+    }, { interval: 60_000 });
+    return 0;
+  },
+});
+```
+
+```typescript
+// pool.ts — single sensor that IS the device
+
+// Shows as "Pool" in HA
+export default sensor({
+  id: 'pool_temp',
+  name: null,
+  device: { id: 'pool', name: 'Pool' },
+  config: { device_class: 'temperature', unit_of_measurement: '°C' },
+  init() {
+    this.poll(async () => {
+      const resp = await this.fetch('http://192.168.1.90/temp');
+      return (await resp.json()).celsius;
+    }, { interval: 30_000 });
+    return 0;
+  },
+});
+```
+
+```typescript
+// fish-tank.ts — mixed entity types under one device
+
+const device = { id: 'fish_tank', name: 'Fish Tank' };
+
+// "Fish Tank Temperature" — read-only sensor
+export const temp = sensor({
+  id: 'tank_temp',
+  name: 'Temperature',
+  device,
+  config: { device_class: 'temperature', unit_of_measurement: '°C' },
+  init() {
+    this.poll(async () => {
+      const resp = await this.fetch('http://192.168.1.42/api/sensors');
+      return (await resp.json()).water_temp;
+    }, { interval: 10_000 });
+    return 0;
+  },
+});
+
+// "Fish Tank Heater" — controllable switch
+export const heater = defineSwitch({
+  id: 'tank_heater',
+  name: 'Heater',
+  device,
+  onCommand(command) {
+    this.fetch('http://192.168.1.42/api/heater', {
+      method: 'POST',
+      body: JSON.stringify({ state: command }),
+    });
+    this.update(command === 'ON' ? 'on' : 'off');
+  },
+  init() {
+    return 'off';
+  },
+});
+
+// "Fish Tank Light" — dimmable light
+export const lamp = light({
+  id: 'tank_light',
+  name: 'Light',
+  device,
+  config: { supported_color_modes: ['brightness'] },
+  onCommand(command) {
+    this.fetch('http://192.168.1.42/api/light', {
+      method: 'POST',
+      body: JSON.stringify(command),
+    });
+    this.update({
+      state: command.state === 'ON' ? 'on' : 'off',
+      brightness: command.brightness,
+    });
+  },
+  init() {
+    return { state: 'off' };
+  },
+});
+```
+
 ## Reactive Patterns
 
 ### Subscribing to State Changes
