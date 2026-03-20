@@ -381,6 +381,15 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
+    it('generates HAEventsContext interface extending EventsContext', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain('interface HAEventsContext extends EventsContext');
+      cleanup();
+    });
+
     it('generates typed getEntities() with domain-narrowed return', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
@@ -391,7 +400,7 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed on() overloads for each entity with entity_id literal', () => {
+    it('generates typed on() overloads on HAEventsContext (not HAClient)', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
@@ -401,6 +410,9 @@ describe('generateTypes()', () => {
       expect(content).toContain('TypedStateChangedEvent<');
       // Entity ID literal should be the third type parameter
       expect(content).toContain("'light.living_room'>) => void): () => void;");
+      // on() should be inside HAEventsContext, not HAClient
+      const haClientBlock = content.match(/interface HAClient extends HAClientBase \{[\s\S]*?\n\}/)?.[0] ?? '';
+      expect(haClientBlock).not.toContain('on(entity:');
       cleanup();
     });
 
@@ -469,8 +481,9 @@ describe('generateTypes()', () => {
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      // Typed overloads exist
+      // Typed overloads exist (on HAEventsContext)
       expect(content).toContain("on(entity: 'light.living_room',");
+      // Typed overloads exist (on HAClient)
       expect(content).toContain("callService<S extends keyof HAEntityMap['light.living_room']");
       expect(content).toContain("getState(entityId: 'light.living_room'):");
 
@@ -517,7 +530,7 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed reactions() overload', () => {
+    it('generates typed reactions() overload on HAEventsContext', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
@@ -527,6 +540,9 @@ describe('generateTypes()', () => {
       expect(content).toContain("to?: HAEntityMap[E]['state']");
       // No string fallback
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>): () => void;');
+      // reactions() should be inside HAEventsContext, not HAClient
+      const haClientBlock = content.match(/interface HAClient extends HAClientBase \{[\s\S]*?\n\}/)?.[0] ?? '';
+      expect(haClientBlock).not.toContain('reactions<K');
       cleanup();
     });
   });
