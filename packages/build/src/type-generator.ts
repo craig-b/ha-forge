@@ -433,7 +433,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     ` * Generated from the live HA registry — entity IDs, services, and state types`,
     ` * are all derived from your actual Home Assistant instance.`,
     ` */`,
-    `interface HAClient extends HAClientBase {`,
+    `interface HAClient extends StatelessHAApi {`,
     `  /**`,
     `   * List entity IDs registered in Home Assistant, optionally filtered by domain.`,
     `   * When a domain is specified, returns a typed union of entity IDs in that domain.`,

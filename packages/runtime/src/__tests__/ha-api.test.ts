@@ -465,7 +465,7 @@ describe('HAApiImpl', () => {
   });
 
   describe('asStateless()', () => {
-    it('returns object with query/action methods but no subscriptions', () => {
+    it('returns object with query/action methods but no subscriptions or log', () => {
       const stateless = api.asStateless();
 
       expect(typeof stateless.callService).toBe('function');
@@ -473,10 +473,10 @@ describe('HAApiImpl', () => {
       expect(typeof stateless.getEntities).toBe('function');
       expect(typeof stateless.fireEvent).toBe('function');
       expect(typeof stateless.friendlyName).toBe('function');
-      expect(stateless.log).toBeDefined();
-      // Should not have on() or reactions()
+      // Should not have on(), reactions(), or log
       expect((stateless as Record<string, unknown>).on).toBeUndefined();
       expect((stateless as Record<string, unknown>).reactions).toBeUndefined();
+      expect((stateless as Record<string, unknown>).log).toBeUndefined();
     });
 
     it('delegates callService to the underlying API', async () => {

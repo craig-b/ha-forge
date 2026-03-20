@@ -209,15 +209,27 @@ export interface EventsContext {
 
 /**
  * Stateless HA API — safe to pass to utility functions.
- * Contains only query/action methods, no subscriptions.
+ * Contains only query/action methods, no subscriptions or logging.
  */
-export interface StatelessHAApi extends HAClientBase {
+export interface StatelessHAApi {
   /** Call a Home Assistant service on an entity or domain. */
   callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   /** Get the current state of a Home Assistant entity. Returns `null` if not found. */
   getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string } | null>;
   /** List entity IDs registered in Home Assistant, optionally filtered by domain. */
   getEntities(domain?: string): Promise<string[]>;
+  /**
+   * Fire a custom event on the HA event bus.
+   * @param eventType - Event type name (e.g. `'my_custom_event'`).
+   * @param eventData - Optional data payload attached to the event.
+   */
+  fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<void>;
+  /**
+   * Get the friendly name of a Home Assistant entity.
+   * Returns the `friendly_name` attribute from cached state, or the entity ID if unavailable.
+   * @param entityId - The entity ID (e.g. `'light.kitchen'`).
+   */
+  friendlyName(entityId: string): string;
 }
 
 // HAClient is NOT defined in the SDK — it comes from either:
@@ -262,7 +274,7 @@ export interface EntityContext<TState = unknown> {
   attr(attributes: Record<string, unknown>): void;
   /**
    * Stateless HA API — safe to pass to utility functions.
-   * Provides callService, getState, getEntities, fireEvent, and friendlyName.
+   * Provides callService, getState, getEntities, fireEvent, friendlyName.
    */
   ha: StatelessHAApi;
   /**
@@ -811,7 +823,7 @@ export interface DeviceContext<TEntities extends Record<string, EntityDefinition
   entities: { [K in keyof TEntities]: EntityHandleFor<TEntities[K]> };
   /**
    * Stateless HA API — safe to pass to utility functions.
-   * Provides callService, getState, getEntities, fireEvent, and friendlyName.
+   * Provides callService, getState, getEntities, fireEvent, friendlyName.
    */
   ha: StatelessHAApi;
   /**

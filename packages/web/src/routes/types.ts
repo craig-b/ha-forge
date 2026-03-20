@@ -80,14 +80,7 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
  *
  * Generate types from your HA instance for typed entity IDs and service parameters.
  */
-interface HAClient extends HAClientBase {
-  /** List entity IDs registered in Home Assistant, optionally filtered by domain. */
-  getEntities(domain?: string): Promise<string[]>;
-  /** Call a Home Assistant service on an entity or domain. */
-  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
-  /** Get the current state of a Home Assistant entity. Returns \`null\` if not found. */
-  getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string; } | null>;
-}
+interface HAClient extends StatelessHAApi {}
 
 /**
  * Scoped event subscription context. Access via \`this.events\` in entity/device callbacks.

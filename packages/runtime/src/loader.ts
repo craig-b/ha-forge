@@ -48,7 +48,6 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   } else {
     const stubLog = logger ?? noopLogger;
     g.ha = {
-      log: stubLog,
       async callService() { stubLog.warn('ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { stubLog.warn('ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { stubLog.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },

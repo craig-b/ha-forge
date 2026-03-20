@@ -297,7 +297,6 @@ export class EntityLifecycleManager {
     const haApi = this.haApi;
 
     const stubStatelessApi: StatelessHAApi = {
-      log: entityLogger,
       async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
@@ -536,7 +535,6 @@ export class EntityLifecycleManager {
     const haApi = this.haApi;
 
     const stubStatelessApi: StatelessHAApi = {
-      log: entityLogger,
       async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },

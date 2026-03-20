@@ -372,12 +372,12 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed HAClient interface extending HAClientBase', () => {
+    it('generates typed HAClient interface extending StatelessHAApi', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain('interface HAClient extends HAClientBase');
+      expect(content).toContain('interface HAClient extends StatelessHAApi');
       cleanup();
     });
 
@@ -411,7 +411,7 @@ describe('generateTypes()', () => {
       // Entity ID literal should be the third type parameter
       expect(content).toContain("'light.living_room'>) => void): () => void;");
       // on() should be inside HAEventsContext, not HAClient
-      const haClientBlock = content.match(/interface HAClient extends HAClientBase \{[\s\S]*?\n\}/)?.[0] ?? '';
+      const haClientBlock = content.match(/interface HAClient extends StatelessHAApi \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('on(entity:');
       cleanup();
     });
@@ -541,7 +541,7 @@ describe('generateTypes()', () => {
       // No string fallback
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>): () => void;');
       // reactions() should be inside HAEventsContext, not HAClient
-      const haClientBlock = content.match(/interface HAClient extends HAClientBase \{[\s\S]*?\n\}/)?.[0] ?? '';
+      const haClientBlock = content.match(/interface HAClient extends StatelessHAApi \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('reactions<K');
       cleanup();
     });

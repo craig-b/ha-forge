@@ -329,10 +329,9 @@ export class HAApiImpl implements HAApi {
     };
   }
 
-  /** Returns a stateless view — no subscriptions, safe to pass around. */
+  /** Returns a stateless view — no subscriptions or logging, safe to pass around. */
   asStateless(): StatelessHAApi {
     return {
-      log: this.log,
       callService: this.callService.bind(this),
       getState: this.getState.bind(this),
       getEntities: this.getEntities.bind(this),
