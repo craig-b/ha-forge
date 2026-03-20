@@ -2,7 +2,8 @@ import * as path from 'node:path';
 import * as fs from 'node:fs';
 import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { HAClient } from './ha-api.js';
+import type { HAApiImpl } from './ha-api.js';
+import type { StatelessHAApi } from '@ha-forge/sdk';
 
 /** A resolved device definition with its source file and entity IDs. */
 export interface ResolvedDevice {
@@ -26,7 +27,7 @@ export interface LoadError {
  * Install SDK functions as globals so user scripts can use sensor(), light(), etc.
  * without explicit imports. Call this before loading any user bundles.
  */
-export async function installGlobals(haClient?: HAClient, logger?: EntityLogger): Promise<void> {
+export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger): Promise<void> {
   const sdk = await import('@ha-forge/sdk');
   const g = globalThis as Record<string, unknown>;
   g.sensor = sdk.sensor;
@@ -37,24 +38,23 @@ export async function installGlobals(haClient?: HAClient, logger?: EntityLogger)
   g.entityFactory = sdk.entityFactory;
   g.device = sdk.device;
 
-  // Always provide ha global — with full client or stub with working log
+  // Always provide ha global — stateless only (no on/reactions).
+  // Use this.events for lifecycle-managed subscriptions instead.
   const noopLogger: EntityLogger = {
     debug() {}, info() {}, warn() {}, error() {},
   };
   if (haClient) {
-    g.ha = haClient;
+    g.ha = haClient.asStateless();
   } else {
     const stubLog = logger ?? noopLogger;
     g.ha = {
       log: stubLog,
-      on() { stubLog.warn('ha.on() unavailable — no WebSocket connection'); return () => {}; },
       async callService() { stubLog.warn('ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { stubLog.warn('ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { stubLog.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { stubLog.warn('ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(entityId: string) { return entityId; },
-      reactions() { stubLog.warn('ha.reactions() unavailable — no WebSocket connection'); return () => {}; },
-    } satisfies HAClient;
+    } satisfies StatelessHAApi;
   }
 }
 

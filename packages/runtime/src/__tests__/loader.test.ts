@@ -1,8 +1,8 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { loadBundles } from '../loader.js';
+import { loadBundles, installGlobals } from '../loader.js';
 
 let tmpDir: string;
 
@@ -133,5 +133,31 @@ describe('loadBundles()', () => {
     // but CONSTANT also lacks 'id' and 'name'. config lacks 'type'.
     expect(result.entities).toHaveLength(1);
     expect(result.entities[0].definition.id).toBe('s1');
+  });
+});
+
+describe('installGlobals()', () => {
+  let savedHa: unknown;
+
+  beforeEach(() => {
+    savedHa = (globalThis as Record<string, unknown>).ha;
+  });
+
+  afterEach(() => {
+    (globalThis as Record<string, unknown>).ha = savedHa;
+  });
+
+  it('installs stub ha global without on() or reactions() when no client', async () => {
+    await installGlobals(undefined, { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+    const ha = (globalThis as Record<string, unknown>).ha as Record<string, unknown>;
+    expect(typeof ha.callService).toBe('function');
+    expect(typeof ha.getState).toBe('function');
+    expect(typeof ha.getEntities).toBe('function');
+    expect(typeof ha.fireEvent).toBe('function');
+    expect(typeof ha.friendlyName).toBe('function');
+    // on() and reactions() should NOT be on the global ha
+    expect(ha.on).toBeUndefined();
+    expect(ha.reactions).toBeUndefined();
   });
 });

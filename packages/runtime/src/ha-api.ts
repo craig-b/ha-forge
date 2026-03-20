@@ -48,6 +48,12 @@ export interface HAApi extends HAClientBase {
  */
 export type HAClient = HAApi;
 
+/**
+ * Stateless HA client type — no on()/reactions() subscriptions.
+ * Used as the type for the global `ha` variable.
+ */
+export type { StatelessHAApi } from '@ha-forge/sdk';
+
 /** Minimal handle tracker interface for scoped event subscriptions. */
 export interface EventHandleTracker {
   eventSubscriptions: Array<() => void>;
