@@ -222,6 +222,30 @@ tse-bottom-panel {
 .entity-status.error { background: #4a2d2d; color: var(--error); }
 .entity-status.unavailable { background: var(--bg-tertiary); color: var(--text-secondary); }
 
+.exports-empty {
+  padding: 16px; color: var(--text-secondary); text-align: center; font-size: 13px;
+}
+.exports-list { padding: 4px 0; }
+.exports-file-group { margin-bottom: 2px; }
+.exports-file-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 8px; cursor: pointer; font-size: 13px;
+  color: var(--text-bright); background: var(--bg-secondary);
+}
+.exports-file-header:hover { background: var(--bg-hover); }
+.exports-file-name { font-family: 'Cascadia Code', 'Fira Code', monospace; }
+.exports-file-count { font-size: 11px; color: var(--text-secondary); }
+.exports-entity {
+  display: flex; gap: 12px; padding: 3px 8px 3px 20px; font-size: 12px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+.exports-entity-type {
+  min-width: 80px; color: var(--accent); font-size: 11px;
+  text-transform: uppercase;
+}
+.exports-entity-id { color: var(--text-primary); }
+.exports-entity-name { color: var(--text-secondary); font-style: italic; }
+
 .log-filters {
   display: flex;
   gap: 8px;

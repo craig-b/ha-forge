@@ -406,7 +406,7 @@ export class TseApp extends LitElement {
   // ---- Panel changes ----
 
   private _onPanelChange(panel: string) {
-    if (panel === 'entities') this._loadEntities();
+    if (panel === 'entities' || panel === 'exports') this._loadEntities();
     if (panel === 'logs') this._loadLogs(this._logFilter);
   }
 

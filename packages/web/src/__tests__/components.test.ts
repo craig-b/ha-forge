@@ -12,6 +12,7 @@ import '../ui/client/components/tse-sidebar.js';
 import '../ui/client/components/tse-editor-tabs.js';
 import '../ui/client/components/tse-build-output.js';
 import '../ui/client/components/tse-entity-table.js';
+import '../ui/client/components/tse-exports-panel.js';
 import '../ui/client/components/tse-log-viewer.js';
 import '../ui/client/components/tse-bottom-panel.js';
 import type { FileEntry, BuildStep, EntityInfo, LogEntry, OpenFile } from '../ui/client/types.js';
@@ -42,7 +43,7 @@ describe('tse-header', () => {
 
   it('renders build button and status badge', async () => {
     const el = await renderElement('tse-header');
-    expect(el.querySelector('.btn-primary')?.textContent).toContain('Build');
+    expect(el.querySelector('.btn-primary')?.textContent).toContain('Rebuild All');
     expect(el.querySelector('.status-badge')?.textContent).toBe('Ready');
   });
 
@@ -242,6 +243,54 @@ describe('tse-log-viewer', () => {
   });
 });
 
+// ---- tse-exports-panel ----
+
+describe('tse-exports-panel', () => {
+  beforeEach(cleanup);
+
+  it('groups entities by source file', async () => {
+    const entities: EntityInfo[] = [
+      { id: 'sensor.temp', name: 'Temperature', type: 'sensor', state: '22', sourceFile: 'sensors.ts', status: 'healthy' },
+      { id: 'sensor.humidity', name: 'Humidity', type: 'sensor', state: '55', sourceFile: 'sensors.ts', status: 'healthy' },
+      { id: 'light.living', name: 'Living Room', type: 'light', state: 'on', sourceFile: 'lights.ts', status: 'healthy' },
+    ];
+    const el = await renderElement('tse-exports-panel', { entities });
+    const groups = el.querySelectorAll('.exports-file-group');
+    expect(groups.length).toBe(2);
+    // lights.ts comes first alphabetically
+    expect(groups[0].querySelector('.exports-file-name')?.textContent).toBe('lights.ts');
+    expect(groups[0].querySelectorAll('.exports-entity').length).toBe(1);
+    expect(groups[1].querySelector('.exports-file-name')?.textContent).toBe('sensors.ts');
+    expect(groups[1].querySelectorAll('.exports-entity').length).toBe(2);
+  });
+
+  it('shows empty state', async () => {
+    const el = await renderElement('tse-exports-panel', { entities: [] });
+    expect(el.querySelector('.exports-empty')?.textContent).toContain('No exports found');
+  });
+
+  it('dispatches tse-open-file on file header click', async () => {
+    const entities: EntityInfo[] = [
+      { id: 'sensor.temp', name: 'Temp', type: 'sensor', state: '22', sourceFile: 'sensors.ts', status: 'healthy' },
+    ];
+    const el = await renderElement('tse-exports-panel', { entities });
+    const handler = vi.fn();
+    el.addEventListener('tse-open-file', handler);
+    (el.querySelector('.exports-file-header') as HTMLElement).click();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler.mock.calls[0][0].detail.path).toBe('sensors.ts');
+  });
+
+  it('shows entity count per file', async () => {
+    const entities: EntityInfo[] = [
+      { id: 'sensor.a', name: 'A', type: 'sensor', state: '', sourceFile: 'a.ts', status: 'healthy' },
+      { id: 'sensor.b', name: 'B', type: 'sensor', state: '', sourceFile: 'a.ts', status: 'healthy' },
+    ];
+    const el = await renderElement('tse-exports-panel', { entities });
+    expect(el.querySelector('.exports-file-count')?.textContent).toBe('2 entities');
+  });
+});
+
 // ---- tse-bottom-panel ----
 
 describe('tse-bottom-panel', () => {
@@ -250,10 +299,11 @@ describe('tse-bottom-panel', () => {
   it('renders panel tabs', async () => {
     const el = await renderElement('tse-bottom-panel');
     const tabs = el.querySelectorAll('.panel-tab');
-    expect(tabs.length).toBe(3);
+    expect(tabs.length).toBe(4);
     expect(tabs[0].textContent).toContain('Build Output');
     expect(tabs[1].textContent).toContain('Entities');
-    expect(tabs[2].textContent).toContain('Logs');
+    expect(tabs[2].textContent).toContain('Exports');
+    expect(tabs[3].textContent).toContain('Logs');
   });
 
   it('switches active panel on tab click', async () => {
@@ -269,7 +319,7 @@ describe('tse-bottom-panel', () => {
     const handler = vi.fn();
     el.addEventListener('tse-panel-change', handler);
     const tabs = el.querySelectorAll('.panel-tab');
-    (tabs[2] as HTMLButtonElement).click();
+    (tabs[3] as HTMLButtonElement).click();
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0].detail.panel).toBe('logs');
   });
