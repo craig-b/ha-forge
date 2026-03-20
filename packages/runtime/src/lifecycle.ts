@@ -1,4 +1,6 @@
 import type {
+  AutomationContext,
+  AutomationDefinition,
   DeviceContext,
   DeviceDefinition,
   EntityContext,
@@ -6,9 +8,11 @@ import type {
   EntityLogger,
   EventsContext,
   StatelessHAApi,
+  TaskContext,
+  TaskDefinition,
 } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedDevice } from './loader.js';
+import type { ResolvedAutomation, ResolvedDevice, ResolvedTask } from './loader.js';
 import type { Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 
@@ -37,6 +41,21 @@ interface DeviceInstance {
   commandHandlers: Map<string, (command: unknown) => void | Promise<void>>;
   /** Stored context for calling destroy(). */
   context?: DeviceContext<Record<string, EntityDefinition>>;
+}
+
+interface AutomationInstance {
+  automation: ResolvedAutomation;
+  handles: TrackedHandles;
+  initialized: boolean;
+  /** Stored context for calling destroy(). */
+  context?: AutomationContext;
+}
+
+interface TaskInstance {
+  task: ResolvedTask;
+  handles: TrackedHandles;
+  /** Whether the task is currently executing run(). */
+  running: boolean;
 }
 
 interface PollRef {
@@ -70,6 +89,8 @@ function createEmptyHandles(): TrackedHandles {
 export class EntityLifecycleManager {
   private instances = new Map<string, EntityInstance>();
   private deviceInstances = new Map<string, DeviceInstance>();
+  private automationInstances = new Map<string, AutomationInstance>();
+  private taskInstances = new Map<string, TaskInstance>();
   private transport: Transport;
   private logger: LifecycleLogger;
   private rawMqtt: RawMqttAccess | null;
@@ -84,17 +105,17 @@ export class EntityLifecycleManager {
     this.haApi = haApi ?? null;
   }
 
-  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
+  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[]): Promise<void> {
     // Full deploy: teardown everything first, then register new entities
     await this.teardownAll();
-    await this.deployAdditive(entities, devices);
+    await this.deployAdditive(entities, devices, automations, tasks);
   }
 
   /**
-   * Register and init entities/devices without tearing down existing ones.
+   * Register and init entities/devices/automations/tasks without tearing down existing ones.
    * Used by BuildManager which handles teardown separately to support per-file isolation.
    */
-  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
+  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[]): Promise<void> {
     // Collect entity IDs owned by devices so we skip individual init for them
     const deviceOwnedEntityIds = new Set<string>();
     if (devices) {
@@ -126,6 +147,34 @@ export class EntityLifecycleManager {
           this.logger.error(`Failed to initialize device ${dev.definition.id}`, {
             error: err instanceof Error ? err.message : String(err),
             sourceFile: dev.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init automations
+    if (automations) {
+      for (const auto of automations) {
+        try {
+          await this.initAutomation(auto);
+        } catch (err) {
+          this.logger.error(`Failed to initialize automation ${auto.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: auto.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init tasks
+    if (tasks) {
+      for (const t of tasks) {
+        try {
+          await this.initTask(t);
+        } catch (err) {
+          this.logger.error(`Failed to initialize task ${t.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: t.sourceFile,
           });
         }
       }
@@ -395,6 +444,126 @@ export class EntityLifecycleManager {
     }
   }
 
+  private async initAutomation(resolved: ResolvedAutomation): Promise<void> {
+    const def = resolved.definition;
+    const handles = createEmptyHandles();
+
+    const instance: AutomationInstance = {
+      automation: resolved,
+      handles,
+      initialized: false,
+    };
+
+    this.automationInstances.set(def.id, instance);
+
+    // If entity: true, register a binary_sensor to track automation state
+    if (def.entity) {
+      const syntheticEntity: ResolvedEntity = {
+        definition: {
+          id: def.id,
+          name: def.id,
+          type: 'binary_sensor',
+          config: { device_class: 'running' },
+        } as EntityDefinition,
+        sourceFile: resolved.sourceFile,
+        deviceId: def.id,
+      };
+      await this.transport.register(syntheticEntity);
+    }
+
+    const context = this.createAutomationContext(instance);
+    instance.context = context;
+
+    try {
+      await def.init.call(context);
+      instance.initialized = true;
+
+      if (def.entity) {
+        await this.transport.publishState(def.id, 'ON');
+      }
+
+      this.logger.info(`Automation initialized: ${def.id}`, {
+        sourceFile: resolved.sourceFile,
+      });
+    } catch (err) {
+      if (def.entity) {
+        await this.transport.publishState(def.id, 'OFF').catch(() => {});
+      }
+      this.logger.error(`Automation init() failed for ${def.id}`, {
+        error: err instanceof Error ? err.message : String(err),
+        sourceFile: resolved.sourceFile,
+      });
+      this.disposeHandles(handles);
+      this.automationInstances.delete(def.id);
+      throw err;
+    }
+  }
+
+  private async initTask(resolved: ResolvedTask): Promise<void> {
+    const def = resolved.definition;
+    const handles = createEmptyHandles();
+
+    const instance: TaskInstance = {
+      task: resolved,
+      handles,
+      running: false,
+    };
+
+    this.taskInstances.set(def.id, instance);
+
+    // Register a button entity in HA
+    const syntheticEntity: ResolvedEntity = {
+      definition: {
+        id: def.id,
+        name: def.name,
+        type: 'button',
+        ...(def.device && { device: def.device }),
+        ...(def.icon && { icon: def.icon }),
+      } as unknown as EntityDefinition,
+      sourceFile: resolved.sourceFile,
+      deviceId: def.device?.id ?? def.id,
+    };
+    await this.transport.register(syntheticEntity);
+
+    // Set up command handler for button press
+    const taskContext = this.createTaskContext(instance);
+    this.transport.onCommand(def.id, () => {
+      this.executeTask(instance, taskContext);
+    });
+
+    this.logger.info(`Task registered: ${def.id}`, {
+      sourceFile: resolved.sourceFile,
+    });
+
+    // Run on deploy if configured
+    if (def.runOnDeploy) {
+      this.executeTask(instance, taskContext);
+    }
+  }
+
+  private executeTask(instance: TaskInstance, context: TaskContext): void {
+    if (instance.running) {
+      this.logger.warn(`Task ${instance.task.definition.id} is already running, skipping`);
+      return;
+    }
+
+    instance.running = true;
+    const def = instance.task.definition;
+
+    Promise.resolve()
+      .then(() => def.run.call(context))
+      .then(() => {
+        instance.running = false;
+        this.logger.info(`Task completed: ${def.id}`);
+      })
+      .catch((err) => {
+        instance.running = false;
+        this.logger.error(`Task run() failed for ${def.id}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+  }
+
   /**
    * Teardown entities from specific source files, leaving others untouched.
    */
@@ -415,6 +584,18 @@ export class EntityLifecycleManager {
       this.deviceInstances.delete(deviceId);
     }
 
+    // Teardown automations from these files
+    for (const [id, instance] of this.automationInstances) {
+      if (!sourceFiles.has(instance.automation.sourceFile)) continue;
+      await this.teardownAutomation(id);
+    }
+
+    // Teardown tasks from these files
+    for (const [id, instance] of this.taskInstances) {
+      if (!sourceFiles.has(instance.task.sourceFile)) continue;
+      await this.teardownTask(id);
+    }
+
     // Teardown entities from these files
     for (const [id, instance] of this.instances) {
       if (!sourceFiles.has(instance.entity.sourceFile)) continue;
@@ -422,11 +603,17 @@ export class EntityLifecycleManager {
     }
   }
 
-  /** Get set of source files that have running entities. */
+  /** Get set of source files that have running entities/automations/tasks. */
   getActiveSourceFiles(): Set<string> {
     const files = new Set<string>();
     for (const instance of this.instances.values()) {
       files.add(instance.entity.sourceFile);
+    }
+    for (const instance of this.automationInstances.values()) {
+      files.add(instance.automation.sourceFile);
+    }
+    for (const instance of this.taskInstances.values()) {
+      files.add(instance.task.sourceFile);
     }
     return files;
   }
@@ -457,6 +644,18 @@ export class EntityLifecycleManager {
       this.disposeHandles(deviceInstance.handles);
     }
     this.deviceInstances.clear();
+
+    // Teardown automations
+    const autoIds = [...this.automationInstances.keys()];
+    for (const id of autoIds) {
+      await this.teardownAutomation(id);
+    }
+
+    // Teardown tasks
+    const taskIds = [...this.taskInstances.keys()];
+    for (const id of taskIds) {
+      await this.teardownTask(id);
+    }
 
     // Then teardown all entities
     const ids = [...this.instances.keys()];
@@ -495,6 +694,54 @@ export class EntityLifecycleManager {
     }
 
     this.instances.delete(entityId);
+  }
+
+  private async teardownAutomation(automationId: string): Promise<void> {
+    const instance = this.automationInstances.get(automationId);
+    if (!instance) return;
+
+    if (instance.automation.definition.destroy && instance.initialized && instance.context) {
+      try {
+        await instance.automation.definition.destroy.call(instance.context);
+      } catch (err) {
+        this.logger.error(`Automation destroy() failed for ${automationId}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.disposeHandles(instance.handles);
+
+    // Deregister entity if automation had entity: true
+    if (instance.automation.definition.entity) {
+      try {
+        await this.transport.deregister(automationId);
+      } catch (err) {
+        this.logger.error(`Deregister failed for automation entity ${automationId}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.automationInstances.delete(automationId);
+  }
+
+  private async teardownTask(taskId: string): Promise<void> {
+    const instance = this.taskInstances.get(taskId);
+    if (!instance) return;
+
+    this.disposeHandles(instance.handles);
+
+    // Deregister button entity
+    try {
+      await this.transport.deregister(taskId);
+    } catch (err) {
+      this.logger.error(`Deregister failed for task ${taskId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    this.taskInstances.delete(taskId);
   }
 
   private disposeHandles(handles: TrackedHandles): void {
@@ -642,22 +889,147 @@ export class EntityLifecycleManager {
     return context;
   }
 
+  private createAutomationContext(instance: AutomationInstance): AutomationContext {
+    const { automation, handles } = instance;
+    const rawMqtt = this.rawMqtt;
+    const haApi = this.haApi;
+
+    const scopedLogger = this.logger.forEntity
+      ? this.logger.forEntity(automation.definition.id, automation.sourceFile)
+      : this.logger;
+
+    const entityLogger: EntityLogger = {
+      debug: (msg, data) => scopedLogger.debug(msg, data),
+      info: (msg, data) => scopedLogger.info(msg, data),
+      warn: (msg, data) => scopedLogger.warn(msg, data),
+      error: (msg, data) => scopedLogger.error(msg, data),
+    };
+
+    const stubStatelessApi: StatelessHAApi = {
+      async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
+      async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
+      async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
+      async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
+      friendlyName(id: string) { return id; },
+    };
+
+    const stubEvents: EventsContext = {
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+    };
+
+    return {
+      ha: haApi ? haApi.asStateless() : stubStatelessApi,
+      events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
+      log: entityLogger,
+
+      setTimeout(fn: () => void, ms: number) {
+        const t = globalThis.setTimeout(fn, ms);
+        handles.timeouts.push(t);
+      },
+
+      setInterval(fn: () => void, ms: number) {
+        const i = globalThis.setInterval(fn, ms);
+        handles.intervals.push(i);
+      },
+
+      mqtt: {
+        publish(topic, payload, opts) {
+          if (!rawMqtt) { entityLogger.warn('mqtt.publish() unavailable — no MQTT connection'); return; }
+          rawMqtt.publishRaw(topic, payload, opts);
+        },
+        subscribe(topic, handler) {
+          if (!rawMqtt) { entityLogger.warn('mqtt.subscribe() unavailable — no MQTT connection'); return; }
+          const unsub = rawMqtt.subscribeRaw(topic, handler);
+          handles.mqttSubscriptions.push(unsub);
+        },
+      },
+    };
+  }
+
+  private createTaskContext(instance: TaskInstance): TaskContext {
+    const { task, handles } = instance;
+    const rawMqtt = this.rawMqtt;
+    const haApi = this.haApi;
+
+    const scopedLogger = this.logger.forEntity
+      ? this.logger.forEntity(task.definition.id, task.sourceFile)
+      : this.logger;
+
+    const entityLogger: EntityLogger = {
+      debug: (msg, data) => scopedLogger.debug(msg, data),
+      info: (msg, data) => scopedLogger.info(msg, data),
+      warn: (msg, data) => scopedLogger.warn(msg, data),
+      error: (msg, data) => scopedLogger.error(msg, data),
+    };
+
+    const stubStatelessApi: StatelessHAApi = {
+      async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
+      async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
+      async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
+      async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
+      friendlyName(id: string) { return id; },
+    };
+
+    return {
+      ha: haApi ? haApi.asStateless() : stubStatelessApi,
+      log: entityLogger,
+
+      mqtt: {
+        publish(topic, payload, opts) {
+          if (!rawMqtt) { entityLogger.warn('mqtt.publish() unavailable — no MQTT connection'); return; }
+          rawMqtt.publishRaw(topic, payload, opts);
+        },
+        subscribe(topic, handler) {
+          if (!rawMqtt) { entityLogger.warn('mqtt.subscribe() unavailable — no MQTT connection'); return; }
+          const unsub = rawMqtt.subscribeRaw(topic, handler);
+          handles.mqttSubscriptions.push(unsub);
+        },
+      },
+    };
+  }
+
   getEntityState(entityId: string): unknown {
     return this.instances.get(entityId)?.currentState;
   }
 
   getEntityIds(): string[] {
-    return [...this.instances.keys()];
+    return [
+      ...this.instances.keys(),
+      ...this.automationInstances.keys(),
+      ...this.taskInstances.keys(),
+    ];
   }
 
   getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string } | undefined {
     const instance = this.instances.get(entityId);
-    if (!instance) return undefined;
-    return {
-      type: instance.entity.definition.type,
-      name: instance.entity.definition.name || entityId,
-      sourceFile: instance.entity.sourceFile,
-    };
+    if (instance) {
+      return {
+        type: instance.entity.definition.type,
+        name: instance.entity.definition.name || entityId,
+        sourceFile: instance.entity.sourceFile,
+      };
+    }
+
+    const autoInstance = this.automationInstances.get(entityId);
+    if (autoInstance) {
+      return {
+        type: 'automation',
+        name: entityId,
+        sourceFile: autoInstance.automation.sourceFile,
+      };
+    }
+
+    const taskInstance = this.taskInstances.get(entityId);
+    if (taskInstance) {
+      return {
+        type: 'task',
+        name: taskInstance.task.definition.name,
+        sourceFile: taskInstance.task.sourceFile,
+      };
+    }
+
+    return undefined;
   }
 
   isInitialized(entityId: string): boolean {
