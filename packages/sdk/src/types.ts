@@ -237,7 +237,7 @@ export interface EntityContext<TState = unknown> {
    * @param fn - Function to call each interval. Return a value to auto-publish state.
    * @param opts - Polling options.
    */
-  poll(fn: () => TState | Promise<TState>, opts: { interval: number }): void;
+  poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void;
   /** Scoped logger for this entity. Messages appear in the web UI log viewer. */
   log: EntityLogger;
   /**
@@ -744,7 +744,7 @@ export interface DeviceContext<TEntities extends Record<string, EntityDefinition
    * Unlike entity poll(), this does NOT auto-update a state — call
    * `this.entities.xxx.update()` inside the callback.
    */
-  poll(fn: () => void | Promise<void>, opts: { interval: number }): void;
+  poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void;
   /** Scoped logger for this device. */
   log: EntityLogger;
   /** Home Assistant client for state subscriptions, service calls, and more. */

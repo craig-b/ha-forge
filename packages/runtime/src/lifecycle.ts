@@ -75,9 +75,16 @@ export class EntityLifecycleManager {
   }
 
   async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
-    // Teardown existing entities and devices
+    // Full deploy: teardown everything first, then register new entities
     await this.teardownAll();
+    await this.deployAdditive(entities, devices);
+  }
 
+  /**
+   * Register and init entities/devices without tearing down existing ones.
+   * Used by BuildManager which handles teardown separately to support per-file isolation.
+   */
+  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
     // Collect entity IDs owned by devices so we skip individual init for them
     const deviceOwnedEntityIds = new Set<string>();
     if (devices) {
@@ -288,7 +295,7 @@ export class EntityLifecycleManager {
     const context: DeviceContext<Record<string, EntityDefinition>> = {
       entities: entityHandles as DeviceContext<Record<string, EntityDefinition>>['entities'],
 
-      poll(fn: () => void | Promise<void>, opts: { interval: number }) {
+      poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }) {
         const run = async () => {
           try {
             await fn();
@@ -298,9 +305,17 @@ export class EntityLifecycleManager {
             });
           }
         };
-        run();
-        const interval = globalThis.setInterval(run, opts.interval);
-        handles.pollIntervals.push(interval);
+        const startPolling = () => {
+          run();
+          const interval = globalThis.setInterval(run, opts.interval);
+          handles.pollIntervals.push(interval);
+        };
+        if (opts.initialDelay) {
+          const t = globalThis.setTimeout(startPolling, opts.initialDelay);
+          handles.timeouts.push(t);
+        } else {
+          startPolling();
+        }
       },
 
       log: entityLogger,
@@ -480,7 +495,7 @@ export class EntityLifecycleManager {
         });
       },
 
-      poll(fn: () => unknown | Promise<unknown>, opts: { interval: number }) {
+      poll(fn: () => unknown | Promise<unknown>, opts: { interval: number; initialDelay?: number }) {
         const run = async () => {
           try {
             const value = await fn();
@@ -493,10 +508,17 @@ export class EntityLifecycleManager {
             });
           }
         };
-        // Run immediately, then repeat on interval
-        run();
-        const interval = globalThis.setInterval(run, opts.interval);
-        handles.pollIntervals.push(interval);
+        const startPolling = () => {
+          run();
+          const interval = globalThis.setInterval(run, opts.interval);
+          handles.pollIntervals.push(interval);
+        };
+        if (opts.initialDelay) {
+          const t = globalThis.setTimeout(startPolling, opts.initialDelay);
+          handles.timeouts.push(t);
+        } else {
+          startPolling();
+        }
       },
 
       log: entityLogger,

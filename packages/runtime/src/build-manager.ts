@@ -108,7 +108,7 @@ export class BuildManager {
     for (const [file, entities] of byFile) {
       try {
         const devices = devicesByFile.get(file) ?? [];
-        await this.lifecycle.deploy(entities, devices);
+        await this.lifecycle.deployAdditive(entities, devices);
         deployedCount += entities.length;
         this.logger.info(`Deployed ${entities.length} entities from ${file}`);
       } catch (err) {
