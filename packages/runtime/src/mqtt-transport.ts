@@ -406,6 +406,7 @@ export class MqttTransport implements Transport {
       p: definition.type,
       uniq_id: `ts_entities_${definition.id}`,
       name: definition.name,
+      def_ent_id: `${definition.type}.${definition.id}`,
       stat_t: stateTopic,
     };
 
