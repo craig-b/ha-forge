@@ -210,7 +210,7 @@ export class SQLiteLogger implements LifecycleLogger {
    * Query log entries with filters. All parameters are bound via ? placeholders.
    */
   query(opts: {
-    entity_id?: string;
+    entity_id?: string | string[];
     level?: string[];
     source_file?: string;
     since?: number;
@@ -225,8 +225,14 @@ export class SQLiteLogger implements LifecycleLogger {
     const params: unknown[] = [];
 
     if (opts.entity_id) {
-      conditions.push('entity_id = ?');
-      params.push(opts.entity_id);
+      const ids = Array.isArray(opts.entity_id) ? opts.entity_id : [opts.entity_id];
+      if (ids.length === 1) {
+        conditions.push('entity_id = ?');
+        params.push(ids[0]);
+      } else if (ids.length > 1) {
+        conditions.push(`entity_id IN (${ids.map(() => '?').join(',')})`);
+        params.push(...ids);
+      }
     }
     if (opts.level && opts.level.length > 0) {
       conditions.push(`level IN (${opts.level.map(() => '?').join(',')})`);

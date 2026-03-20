@@ -225,6 +225,77 @@ tse-bottom-panel {
   border-radius: 3px;
 }
 .log-filters input { flex: 1; }
+
+.filter-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+}
+.filter-input-wrap input { width: 100%; padding-right: 22px; }
+.filter-clear {
+  position: absolute;
+  right: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 14px;
+  line-height: 1;
+}
+.filter-clear:hover { color: var(--text-primary); }
+
+.entity-multiselect { position: relative; min-width: 180px; flex: 1; }
+.multiselect-toggle {
+  padding: 3px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  min-height: 26px;
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  overflow: hidden;
+}
+.multiselect-placeholder { color: var(--text-secondary); }
+.multiselect-tags { display: flex; gap: 4px; flex-wrap: wrap; }
+.multiselect-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: var(--bg-hover);
+  color: var(--text-bright);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+.tag-remove { cursor: pointer; opacity: 0.7; font-size: 13px; }
+.tag-remove:hover { opacity: 1; }
+.multiselect-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+  margin-top: 2px;
+}
+.multiselect-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.multiselect-option:hover { background: var(--bg-hover); }
+.multiselect-option.disabled { color: var(--text-secondary); cursor: default; }
+.multiselect-option input[type="checkbox"] { accent-color: var(--accent); }
 .log-entry {
   display: flex;
   gap: 8px;
@@ -241,6 +312,7 @@ tse-bottom-panel {
 .log-entry .log-entity { color: var(--accent); min-width: 140px; }
 .log-entry .log-caller { color: var(--text-secondary); min-width: 100px; font-size: 0.85em; }
 .log-entry .log-msg { color: var(--text-primary); flex: 1; }
+.log-entry .log-data { color: var(--text-secondary); cursor: help; font-size: 11px; padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; }
 
 .empty-state {
   display: flex;

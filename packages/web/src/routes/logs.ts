@@ -12,7 +12,7 @@ export interface LogEntry {
 }
 
 export type QueryLogsFn = (opts: {
-  entity_id?: string;
+  entity_id?: string | string[];
   level?: string[];
   source_file?: string;
   since?: number;
@@ -50,8 +50,11 @@ export function createLogsRoutes(queryLogs: QueryLogsFn) {
     const limit = params.limit ? parseInt(params.limit, 10) : 100;
     const offset = params.offset ? parseInt(params.offset, 10) : 0;
 
+    const entityIds = params.entity_id ? params.entity_id.split(',').filter(Boolean) : undefined;
+    const entityIdFilter = entityIds && entityIds.length === 1 ? entityIds[0] : entityIds;
+
     const logs = queryLogs({
-      entity_id: params.entity_id,
+      entity_id: entityIdFilter,
       level,
       source_file: params.source_file,
       since,

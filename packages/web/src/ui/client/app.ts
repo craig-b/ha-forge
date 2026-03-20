@@ -365,10 +365,12 @@ export class TseApp extends LitElement {
 
   // ---- Logs ----
 
-  private async _loadLogs(filter?: { level?: string; entity_id?: string; search?: string }) {
+  private async _loadLogs(filter?: { level?: string; entity_id?: string; entity_ids?: string[]; search?: string }) {
     const params: string[] = [];
     if (filter?.level) params.push('level=' + encodeURIComponent(filter.level));
-    if (filter?.entity_id) params.push('entity_id=' + encodeURIComponent(filter.entity_id));
+    // Support multi-entity filter (comma-separated)
+    const entityIds = filter?.entity_ids?.length ? filter.entity_ids : filter?.entity_id ? [filter.entity_id] : [];
+    if (entityIds.length > 0) params.push('entity_id=' + encodeURIComponent(entityIds.join(',')));
     if (filter?.search) params.push('search=' + encodeURIComponent(filter.search));
     params.push('limit=200');
     const data = await this._api('GET', '/api/logs?' + params.join('&'));
