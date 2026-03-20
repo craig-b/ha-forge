@@ -780,6 +780,60 @@ export type EntityDefinition =
  */
 export type EntityFactory = () => EntityDefinition[] | Promise<EntityDefinition[]>;
 
+// ---- Automation ----
+
+/**
+ * Context bound as `this` inside an automation's `init()` and `destroy()` callbacks.
+ * Like `EntityContext` but without state publishing (`update`, `attr`, `poll`).
+ */
+export type AutomationContext = Omit<EntityContext, 'update' | 'attr' | 'poll'>;
+
+/**
+ * A pure reactive script with managed lifecycle. No HA entity created by default.
+ * Created by the `automation()` factory function.
+ */
+export interface AutomationDefinition {
+  /** Discriminant for loader detection. */
+  __kind: 'automation';
+  /** Unique automation identifier. */
+  id: string;
+  /** Optional: surface as a `binary_sensor` in HA (ON = running, OFF = errored). */
+  entity?: boolean;
+  /** Called once when the automation is deployed. Set up subscriptions and reactive logic. */
+  init(this: AutomationContext): void | Promise<void>;
+  /** Called when the automation is torn down. Use for cleanup beyond auto-tracked handles. */
+  destroy?(this: AutomationContext): void | Promise<void>;
+}
+
+// ---- Task ----
+
+/**
+ * Context bound as `this` inside a task's `run()` callback.
+ * Minimal context: HA API, logging, and raw MQTT. No event subscriptions or timers.
+ */
+export type TaskContext = Pick<EntityContext, 'ha' | 'log' | 'mqtt'>;
+
+/**
+ * A one-shot script surfaced as a button entity in HA.
+ * Created by the `task()` factory function.
+ */
+export interface TaskDefinition {
+  /** Discriminant for loader detection. */
+  __kind: 'task';
+  /** Unique task identifier. Becomes the button entity's object_id. */
+  id: string;
+  /** Human-readable name shown in the HA UI. */
+  name: string;
+  /** Also execute `run()` on deploy (default: button-only). */
+  runOnDeploy?: boolean;
+  /** Optional device to group the button entity under. */
+  device?: DeviceInfo;
+  /** MDI icon override (e.g. `'mdi:play'`). */
+  icon?: string;
+  /** Called when the button is pressed (or on deploy if `runOnDeploy` is true). */
+  run(this: TaskContext): void | Promise<void>;
+}
+
 // ---- Device ----
 
 /**

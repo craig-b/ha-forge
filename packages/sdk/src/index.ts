@@ -5,12 +5,16 @@ export { cover } from './entities/cover.js';
 export { climate } from './entities/climate.js';
 export { entityFactory } from './entities/factory.js';
 export { device } from './entities/device.js';
+export { automation } from './entities/automation.js';
+export { task } from './entities/task.js';
 
 export type { SensorOptions } from './entities/sensor.js';
 export type { SwitchOptions } from './entities/switch.js';
 export type { LightOptions } from './entities/light.js';
 export type { CoverOptions } from './entities/cover.js';
 export type { ClimateOptions } from './entities/climate.js';
+export type { AutomationOptions } from './entities/automation.js';
+export type { TaskOptions } from './entities/task.js';
 
 export type {
   NumberInRange,
@@ -49,6 +53,10 @@ export type {
   ClimateCommand,
   ClimateState,
   ClimateDefinition,
+  AutomationContext,
+  AutomationDefinition,
+  TaskContext,
+  TaskDefinition,
   EntityDefinition,
   EntityFactory,
   DeviceEntityHandle,
