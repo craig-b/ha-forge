@@ -84,7 +84,7 @@ interface HAClient extends HAClientBase {
   /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
   on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
   /** Call a Home Assistant service on an entity or domain. */
-  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void>;
+  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   /** Get the current state of a Home Assistant entity. Returns \`null\` if not found. */
   getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string; } | null>;
   /** Set up declarative reaction rules. Returns a cleanup function. */

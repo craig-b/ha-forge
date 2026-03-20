@@ -47,7 +47,7 @@ export async function installGlobals(haClient?: HAClient, logger?: EntityLogger)
     g.ha = {
       log: stubLog,
       on() { stubLog.warn('ha.on() unavailable — no WebSocket connection'); return () => {}; },
-      async callService() { stubLog.warn('ha.callService() unavailable — no WebSocket connection'); },
+      async callService() { stubLog.warn('ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { stubLog.warn('ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { stubLog.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { stubLog.warn('ha.fireEvent() unavailable — no WebSocket connection'); },

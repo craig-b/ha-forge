@@ -288,7 +288,7 @@ export class EntityLifecycleManager {
     const ha: HAClient = haClient ?? {
       log: entityLogger,
       on() { entityLogger.warn('ha.on() unavailable — no WebSocket connection'); return () => {}; },
-      async callService() { entityLogger.warn('ha.callService() unavailable — no WebSocket connection'); },
+      async callService() { entityLogger.warn('ha.callService() unavailable — no WebSocket connection'); return null; },
       async getState() { entityLogger.warn('ha.getState() unavailable — no WebSocket connection'); return null; },
       async getEntities() { entityLogger.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('ha.fireEvent() unavailable — no WebSocket connection'); },
@@ -479,6 +479,7 @@ export class EntityLifecycleManager {
       },
       async callService() {
         entityLogger.warn('ha.callService() unavailable — no WebSocket connection');
+        return null;
       },
       async getState() {
         entityLogger.warn('ha.getState() unavailable — no WebSocket connection');

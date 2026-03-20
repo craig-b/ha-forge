@@ -31,7 +31,7 @@ export interface ReactionRule {
 
 export interface HAApi extends HAClientBase {
   on(entityOrDomain: string | string[], callback: StateChangedCallback): () => void;
-  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void>;
+  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
   getState(entityId: string): Promise<{
     state: string;
     attributes: Record<string, unknown>;
@@ -153,7 +153,7 @@ export class HAApiImpl implements HAApi {
     };
   }
 
-  async callService(entity: string, service: string, data?: Record<string, unknown>): Promise<void> {
+  async callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null> {
     const isEntity = entity.includes('.');
     const domain = isEntity ? entity.split('.')[0] : entity;
     const serviceData = data ?? {};
@@ -182,7 +182,12 @@ export class HAApiImpl implements HAApi {
       payload.target = { entity_id: entity };
     }
 
-    await this.wsClient.sendCommand('call_service', payload);
+    const result = await this.wsClient.sendCommand('call_service', {
+      ...payload,
+      return_response: true,
+    }) as { response?: Record<string, unknown> } | null;
+
+    return result?.response ?? null;
   }
 
   async getState(entityId: string): Promise<{
