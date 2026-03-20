@@ -433,12 +433,19 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     ` * are all derived from your actual Home Assistant instance.`,
     ` */`,
     `interface HAClient extends HAClientBase {`,
-    `  /** List entity IDs, optionally filtered by domain. Returns typed entity ID unions when a domain is specified. */`,
+    `  /**`,
+    `   * List entity IDs registered in Home Assistant, optionally filtered by domain.`,
+    `   * When a domain is specified, returns a typed union of entity IDs in that domain.`,
+    `   * @param domain - Domain to filter by (e.g. \`'light'\`, \`'sensor'\`).`,
+    `   * @returns Array of entity ID strings, typed per domain.`,
+    `   */`,
     `  getEntities<D extends HADomain>(domain: D): Promise<EntitiesInDomain<D>[]>;`,
     `  getEntities(domain?: string): Promise<HAEntityId[]>;`,
     ``,
+    `  // --- Per-entity on() overloads: subscribe to a specific entity's state changes ---`,
     ...onOverloads,
     ``,
+    `  // --- Per-domain on() overloads: subscribe to all entities in a domain ---`,
     ...domainOnOverloads,
     ``,
     `  /**`,
@@ -449,10 +456,13 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `   */`,
     `  on<E extends HAEntityId>(entities: E[], callback: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => void): () => void;`,
     ``,
+    `  // --- Per-entity callService() overloads: typed service data per entity ---`,
     ...callServiceOverloads,
     ``,
+    `  // --- Per-domain callService() overloads: call a service on all entities in a domain ---`,
     ...domainCallServiceOverloads,
     ``,
+    `  // --- Per-entity getState() overloads: typed state and attributes per entity ---`,
     ...getStateOverloads,
     ``,
     `  /**`,
@@ -574,12 +584,13 @@ function inferAttributesType(attributes: Record<string, unknown>): string {
 }
 
 function inferValueType(value: unknown): string {
-  if (value === null || value === undefined) return 'unknown';
+  if (value === null) return 'null';
+  if (value === undefined) return 'unknown';
   if (typeof value === 'boolean') return 'boolean';
   if (typeof value === 'number') return 'number';
   if (typeof value === 'string') return 'string';
   if (Array.isArray(value)) {
-    if (value.length === 0) return 'unknown[]';
+    if (value.length === 0) return 'never[]';
     const elemType = inferValueType(value[0]);
     return `${elemType}[]`;
   }
@@ -613,14 +624,15 @@ function generateServicesType(
     const validatorFields: string[] = [];
 
     for (const [fieldName, field] of Object.entries(service.fields)) {
+      const fieldDoc = field.description ? `      /** ${escapeQuotes(field.description)} */\n` : '';
       if (!field.selector) {
-        fields.push(`      ${safeKey(fieldName)}?: unknown;`);
+        fields.push(`${fieldDoc}      ${safeKey(fieldName)}?: unknown;`);
         continue;
       }
 
       const { tsType, validatorCode } = selectorToType(field.selector, entityIds);
       const optional = field.required ? '' : '?';
-      fields.push(`      ${safeKey(fieldName)}${optional}: ${tsType};`);
+      fields.push(`${fieldDoc}      ${safeKey(fieldName)}${optional}: ${tsType};`);
 
       if (validatorCode) {
         validatorFields.push(`    ${safeKey(fieldName)}: ${validatorCode},`);
