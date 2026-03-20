@@ -200,6 +200,47 @@ declare function entityFactory(factory: () => EntityDefinition[] | Promise<Entit
  */
 declare function device<TEntities extends Record<string, EntityDefinition>>(options: DeviceOptions<TEntities>): DeviceDefinition<TEntities>;
 /**
+ * Define a pure reactive automation with managed lifecycle.
+ * Automations subscribe to events and call services but don't publish their own state.
+ * Set \`entity: true\` to surface as a binary_sensor in HA (ON = running, OFF = errored).
+ * @param options - Automation configuration including id and init/destroy callbacks.
+ * @returns An automation definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const motionLights = automation({
+ *   id: 'motion_lights',
+ *   init() {
+ *     this.events.on('binary_sensor.hallway_motion', async (event) => {
+ *       if (event.new_state === 'on') {
+ *         await this.ha.callService('light.hallway', 'turn_on');
+ *       }
+ *     });
+ *   },
+ * });
+ * \`\`\`
+ */
+declare function automation(options: AutomationOptions): AutomationDefinition;
+/**
+ * Define a one-shot task surfaced as a button entity in HA.
+ * Press the button to trigger \`run()\`. Use \`runOnDeploy: true\` to also execute on deploy.
+ * @param options - Task configuration including id, name, and run callback.
+ * @returns A task definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const notifyAll = task({
+ *   id: 'notify_all',
+ *   name: 'Notify All Devices',
+ *   icon: 'mdi:bullhorn',
+ *   run() {
+ *     this.ha.callService('notify.all_devices', 'send_message', {
+ *       message: 'Hello from HA Forge!',
+ *     });
+ *   },
+ * });
+ * \`\`\`
+ */
+declare function task(options: TaskOptions): TaskDefinition;
+/**
  * Global stateless Home Assistant client API.
  * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
