@@ -49,7 +49,6 @@ export type {
   ClimateDefinition,
   EntityDefinition,
   EntityFactory,
-  ResolvedEntity,
   DeviceEntityHandle,
   DeviceCommandEntityHandle,
   EntityHandleFor,

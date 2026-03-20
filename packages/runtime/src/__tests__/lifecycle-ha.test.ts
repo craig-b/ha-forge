@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EntityLifecycleManager } from '../lifecycle.js';
 import type { Transport } from '../transport.js';
-import type { ResolvedEntity, SensorDefinition } from '@ha-ts-entities/sdk';
+import type { SensorDefinition } from '@ha-ts-entities/sdk';
+import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
 import type { HAClient } from '../ha-api.js';
 
 function createMockTransport(): Transport & {

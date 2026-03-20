@@ -12,6 +12,10 @@
     "./validate": {
       "import": "./dist/validate.js",
       "types": "./dist/validate.d.ts"
+    },
+    "./internal": {
+      "import": "./dist/internal.js",
+      "types": "./dist/internal.d.ts"
     }
   },
   "scripts": {

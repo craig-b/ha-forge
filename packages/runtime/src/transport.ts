@@ -1,4 +1,5 @@
-import type { EntityType, ResolvedEntity } from '@ha-ts-entities/sdk';
+import type { EntityType } from '@ha-ts-entities/sdk';
+import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
 
 export interface Transport {
   supports(type: EntityType): boolean;

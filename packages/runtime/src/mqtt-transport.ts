@@ -1,7 +1,6 @@
 import mqtt from 'mqtt';
 import type {
   EntityType,
-  ResolvedEntity,
   SensorDefinition,
   BinarySensorDefinition,
   SwitchDefinition,
@@ -9,6 +8,7 @@ import type {
   CoverDefinition,
   ClimateDefinition,
 } from '@ha-ts-entities/sdk';
+import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
 import type { Transport } from './transport.js';
 
 const AVAILABILITY_TOPIC = 'ts-entities/availability';

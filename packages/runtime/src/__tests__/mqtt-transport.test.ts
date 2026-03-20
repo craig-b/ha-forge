@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type {
-  ResolvedEntity,
   SensorDefinition,
   BinarySensorDefinition,
   SwitchDefinition,
@@ -8,6 +7,7 @@ import type {
   CoverDefinition,
   ClimateDefinition,
 } from '@ha-ts-entities/sdk';
+import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
 
 // Mock mqtt module
 vi.mock('mqtt', () => {
