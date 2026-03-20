@@ -62,7 +62,7 @@ export interface DeviceInfo {
 }
 
 /**
- * Logger available on `this.log` inside entity callbacks and on `ha.log` globally.
+ * Logger available on `this.log` inside entity callbacks and on `this.ha.log`.
  * Messages are stored in SQLite and visible in the web UI log viewer.
  */
 export interface EntityLogger {
@@ -107,7 +107,7 @@ export interface StateChangedEvent {
  *
  * @example
  * ```ts
- * ha.on('light.kitchen', (event) => {
+ * this.events.on('light.kitchen', (event) => {
  *   event.new_state;   // 'on' | 'off'
  *   event.entity_id;   // 'light.kitchen'
  * });
@@ -137,11 +137,11 @@ export type StateChangedCallback = (event: StateChangedEvent) => void;
  *
  * @example
  * ```ts
- * ha.reactions({
+ * this.events.reactions({
  *   'binary_sensor.front_door': {
  *     to: 'on',
  *     after: 5000,
- *     do: () => ha.callService('light.porch', 'turn_on'),
+ *     do: () => this.ha.callService('light.porch', 'turn_on'),
  *   },
  * });
  * ```
@@ -178,7 +178,7 @@ export interface HAClientBase {
    *
    * @example
    * ```ts
-   * const name = ha.friendlyName('light.kitchen');
+   * const name = this.ha.friendlyName('light.kitchen');
    * // 'Kitchen Light'
    * ```
    */
@@ -227,10 +227,8 @@ export interface StatelessHAApi extends HAClientBase {
 
 /**
  * Context object bound as `this` inside entity `init()`, `destroy()`, and `onCommand()` callbacks.
- * Provides methods for publishing state, polling, logging, timers, and MQTT access.
- *
- * For the HA client API (`on()`, `callService()`, `getState()`, etc.), use the global `ha` variable
- * which provides full typed autocomplete for your Home Assistant instance.
+ * Provides methods for publishing state, polling, logging, timers, MQTT access,
+ * HA API (`this.ha`), and lifecycle-managed event subscriptions (`this.events`).
  *
  * @typeParam TState - The entity's state type.
  *
@@ -345,7 +343,7 @@ export interface BaseEntity<TState, TConfig = Record<string, never>> {
   config?: TConfig;
   /**
    * Called once when the entity is deployed. Return the initial state value.
-   * Use `this.poll()`, `ha.on()`, etc. to set up ongoing state updates.
+   * Use `this.poll()`, `this.events.on()`, etc. to set up ongoing state updates.
    */
   init?(this: EntityContext<TState>): TState | Promise<TState>;
   /**
@@ -805,10 +803,8 @@ export type EntityHandleFor<T extends EntityDefinition> =
 
 /**
  * Context bound as `this` inside a device's `init()` and `destroy()` callbacks.
- * Provides typed entity handles, managed timers, and MQTT access.
- *
- * For the HA client API (`on()`, `callService()`, `getState()`, etc.), use the global `ha` variable
- * which provides full typed autocomplete for your Home Assistant instance.
+ * Provides typed entity handles, managed timers, MQTT access,
+ * HA API (`this.ha`), and lifecycle-managed event subscriptions (`this.events`).
  */
 export interface DeviceContext<TEntities extends Record<string, EntityDefinition>> {
   /** Typed handles for updating each entity in the device. */
