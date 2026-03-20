@@ -71,6 +71,9 @@ async function main(): Promise<void> {
   log(`Starting with log_level=${options.log_level}`);
   log(`Node ${process.version}`);
 
+  // Hoisted so scheduled validation can update health entities
+  let healthEntities: { update(opts: { diagnostics: Array<{ severity: string }>; trigger: string }): Promise<void> } | null = null;
+
   // Step 1: SQLite Logger
   log('Initializing SQLite logger...');
   const { SQLiteLogger } = await import('@ha-forge/runtime');
@@ -179,10 +182,9 @@ async function main(): Promise<void> {
       }
     }
 
-    let healthEntities: InstanceType<typeof HealthEntities> | null = null;
     if (mqttTransport) {
       healthEntities = new HealthEntities(mqttTransport);
-      await healthEntities.register();
+      await (healthEntities as InstanceType<typeof HealthEntities>).register();
     }
 
     // Late-bound entity state broadcast — set after wsHub is created
@@ -405,6 +407,9 @@ async function main(): Promise<void> {
     setInterval(async () => {
       try {
         const result = await runValidation({ scriptsDir: '/config', generatedDir: '/config/.generated', wsClient: wsClient! });
+        if (healthEntities) {
+          await healthEntities.update({ diagnostics: result.diagnostics, trigger: 'scheduled' });
+        }
         logger.info('Validation complete', { success: result.success, diagnostics: result.diagnostics.length });
       } catch (err) {
         logger.error('Validation failed', { error: err instanceof Error ? err.message : String(err) });
