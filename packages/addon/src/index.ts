@@ -152,6 +152,33 @@ async function main(): Promise<void> {
     // Install SDK globals (sensor, light, ha, etc.) before any user scripts run
     await installGlobals(haApi ?? undefined, haLogger);
 
+    // Run npm install on startup so user deps survive restarts
+    try {
+      const { npmInstall } = await import('@ha-forge/build');
+      const npmResult = await npmInstall('/config');
+      if (npmResult.skipped) {
+        log('npm install skipped (no changes)');
+      } else {
+        log(`npm install complete (${npmResult.duration}ms)`);
+      }
+    } catch (err) {
+      log(`npm install failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
+    // Generate types on first boot if .generated doesn't exist
+    const fsCheck = await import('node:fs');
+    if (!fsCheck.existsSync('/config/.generated/ha-registry.d.ts') && wsClient) {
+      try {
+        log('First boot: generating types...');
+        const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');
+        const data = await fetchRegistryData(wsClient);
+        const result = generateTypes(data, '/config/.generated');
+        log(`Types generated: ${result.entityCount} entities, ${result.serviceCount} services`);
+      } catch (err) {
+        log(`Type generation failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+
     let healthEntities: InstanceType<typeof HealthEntities> | null = null;
     if (mqttTransport) {
       healthEntities = new HealthEntities(mqttTransport);
