@@ -37,10 +37,14 @@ interface DeviceInstance {
   context?: DeviceContext<Record<string, EntityDefinition>>;
 }
 
+interface PollRef {
+  timer: ReturnType<typeof globalThis.setTimeout> | null;
+}
+
 interface TrackedHandles {
   timeouts: ReturnType<typeof globalThis.setTimeout>[];
   intervals: ReturnType<typeof globalThis.setInterval>[];
-  pollIntervals: ReturnType<typeof globalThis.setInterval>[];
+  pollRefs: PollRef[];
   mqttSubscriptions: Array<() => void>;
 }
 
@@ -54,7 +58,7 @@ function createEmptyHandles(): TrackedHandles {
   return {
     timeouts: [],
     intervals: [],
-    pollIntervals: [],
+    pollRefs: [],
     mqttSubscriptions: [],
   };
 }
@@ -305,11 +309,21 @@ export class EntityLifecycleManager {
             });
           }
         };
-        const startPolling = () => {
-          run();
-          const interval = globalThis.setInterval(run, opts.interval);
-          handles.pollIntervals.push(interval);
+        // Chained timeouts: wait for completion, then schedule next.
+        // Prevents overlapping executions when callback takes longer than interval.
+        const ref: { timer: ReturnType<typeof globalThis.setTimeout> | null } = { timer: null };
+        const scheduleNext = () => {
+          ref.timer = globalThis.setTimeout(async () => {
+            await run();
+            scheduleNext();
+          }, opts.interval);
         };
+        const startPolling = async () => {
+          await run();
+          scheduleNext();
+        };
+        // Track ref for cleanup — pollRefs checked in disposeHandles
+        handles.pollRefs.push(ref);
         if (opts.initialDelay) {
           const t = globalThis.setTimeout(startPolling, opts.initialDelay);
           handles.timeouts.push(t);
@@ -426,11 +440,13 @@ export class EntityLifecycleManager {
   private disposeHandles(handles: TrackedHandles): void {
     for (const t of handles.timeouts) clearTimeout(t);
     for (const i of handles.intervals) clearInterval(i);
-    for (const p of handles.pollIntervals) clearInterval(p);
+    for (const ref of handles.pollRefs) {
+      if (ref.timer) clearTimeout(ref.timer);
+    }
     for (const unsub of handles.mqttSubscriptions) unsub();
     handles.timeouts = [];
     handles.intervals = [];
-    handles.pollIntervals = [];
+    handles.pollRefs = [];
     handles.mqttSubscriptions = [];
   }
 
@@ -508,11 +524,18 @@ export class EntityLifecycleManager {
             });
           }
         };
-        const startPolling = () => {
-          run();
-          const interval = globalThis.setInterval(run, opts.interval);
-          handles.pollIntervals.push(interval);
+        const ref: { timer: ReturnType<typeof globalThis.setTimeout> | null } = { timer: null };
+        const scheduleNext = () => {
+          ref.timer = globalThis.setTimeout(async () => {
+            await run();
+            scheduleNext();
+          }, opts.interval);
         };
+        const startPolling = async () => {
+          await run();
+          scheduleNext();
+        };
+        handles.pollRefs.push(ref);
         if (opts.initialDelay) {
           const t = globalThis.setTimeout(startPolling, opts.initialDelay);
           handles.timeouts.push(t);

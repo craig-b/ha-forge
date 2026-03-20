@@ -246,10 +246,10 @@ describe('EntityLifecycleManager', () => {
     await manager.deploy([entity]);
     await manager.teardownAll();
 
-    // One clearTimeout for the setTimeout handle
-    expect(clearTimeoutSpy).toHaveBeenCalledTimes(1);
-    // Two clearInterval calls: one for setInterval + one for poll
-    expect(clearIntervalSpy).toHaveBeenCalledTimes(2);
+    // Two clearTimeout calls: one for setTimeout handle + one for poll ref
+    expect(clearTimeoutSpy).toHaveBeenCalledTimes(2);
+    // One clearInterval call for setInterval
+    expect(clearIntervalSpy).toHaveBeenCalledTimes(1);
   });
 
   // 11. onCommand is registered for switch entities
@@ -460,7 +460,7 @@ describe('EntityLifecycleManager', () => {
     });
 
     it('clears device timer handles on teardown', async () => {
-      const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+      const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
       const { entities, devices, initFn } = makeDeviceWithEntities();
 
       initFn.mockImplementation(function(this: { poll: (fn: () => void, opts: { interval: number }) => void }) {
@@ -470,8 +470,8 @@ describe('EntityLifecycleManager', () => {
       await manager.deploy(entities, devices);
       await manager.teardownAll();
 
-      // poll creates an interval that should be cleared
-      expect(clearIntervalSpy).toHaveBeenCalled();
+      // poll uses chained timeouts — clearTimeout should be called for the poll ref
+      expect(clearTimeoutSpy).toHaveBeenCalled();
     });
   });
 });
