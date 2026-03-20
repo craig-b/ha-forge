@@ -12,11 +12,21 @@ export interface OpenFile {
   model: MonacoModel | null;
 }
 
+export interface BuildDiagnostic {
+  file: string;
+  line: number;
+  column: number;
+  code: number;
+  message: string;
+  severity: 'error' | 'warning';
+}
+
 export interface BuildStep {
   step: string;
   success: boolean;
   duration: number;
   error?: string;
+  diagnostics?: BuildDiagnostic[];
 }
 
 export interface EntityInfo {

@@ -109,6 +109,8 @@ interface MonacoEditorInstance {
   setModel(model: MonacoModelInstance | null): void;
   getModel(): MonacoModelInstance | null;
   onDidChangeModelContent(listener: () => void): { dispose(): void };
+  setPosition(pos: { lineNumber: number; column: number }): void;
+  revealPositionInCenterIfOutsideViewport(pos: { lineNumber: number; column: number }): void;
 }
 
 interface OpenFileInternal {
@@ -151,6 +153,7 @@ export class TseApp extends LitElement {
     this.addEventListener('tse-close-file', ((e: CustomEvent) => this._closeFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-delete-file', ((e: CustomEvent) => this._deleteFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-rename-file', ((e: CustomEvent) => this._renameFile(e.detail.oldPath, e.detail.newPath)) as EventListener);
+    this.addEventListener('tse-open-diagnostic', ((e: CustomEvent) => this._openDiagnostic(e.detail.file, e.detail.line, e.detail.column)) as EventListener);
     this.addEventListener('tse-panel-change', ((e: CustomEvent) => this._onPanelChange(e.detail.panel)) as EventListener);
     this.addEventListener('tse-filter-change', ((e: CustomEvent) => {
       this._logFilter = e.detail;
@@ -526,6 +529,15 @@ export class TseApp extends LitElement {
       this._openFiles = [...this._openFiles];
     }
     this._loadFileTree();
+  }
+
+  private async _openDiagnostic(file: string, line: number, column: number) {
+    await this._openFile(file);
+    if (this._editor) {
+      const pos = { lineNumber: line, column };
+      this._editor.setPosition(pos);
+      this._editor.revealPositionInCenterIfOutsideViewport(pos);
+    }
   }
 
   // ---- Build ----

@@ -199,7 +199,7 @@ async function main(): Promise<void> {
     let building = false;
     let lastBuildResult: {
       success: boolean; timestamp: string; totalDuration: number;
-      steps: Array<{ step: string; success: boolean; duration: number; error?: string }>;
+      steps: Array<{ step: string; success: boolean; duration: number; error?: string; diagnostics?: Array<{ file: string; line: number; column: number; code: number; message: string; severity: 'error' | 'warning' }> }>;
       typeErrors: number; bundleErrors: number; entityCount: number;
     } | null = null;
 
@@ -223,9 +223,15 @@ async function main(): Promise<void> {
             entityCount = (await buildManager.deploy()).entityCount;
             wsHub.broadcast('entities', 'deployed', { entityCount });
           }
+          const stepsWithDiagnostics = result.steps.map((step) => {
+            if (step.step === 'tsc-check' && result.tscCheck?.diagnostics.length) {
+              return { ...step, diagnostics: result.tscCheck.diagnostics };
+            }
+            return step;
+          });
           lastBuildResult = {
             success: result.success, timestamp: result.timestamp, totalDuration: result.totalDuration,
-            steps: result.steps,
+            steps: stepsWithDiagnostics,
             typeErrors: result.tscCheck?.diagnostics.filter((d) => d.severity === 'error').length ?? 0,
             bundleErrors: result.bundle?.errors.length ?? 0, entityCount,
           };

@@ -14,6 +14,14 @@ export interface BuildStatusResponse {
       success: boolean;
       duration: number;
       error?: string;
+      diagnostics?: Array<{
+        file: string;
+        line: number;
+        column: number;
+        code: number;
+        message: string;
+        severity: 'error' | 'warning';
+      }>;
     }>;
     typeErrors: number;
     bundleErrors: number;

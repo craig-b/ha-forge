@@ -185,6 +185,43 @@ describe('tse-build-output', () => {
     });
     expect(el.querySelector('.build-step')?.textContent).toBe('Starting build...');
   });
+
+  it('renders clickable diagnostics', async () => {
+    const steps: BuildStep[] = [
+      {
+        step: 'tsc-check', success: true, duration: 300,
+        diagnostics: [
+          { file: 'sensors.ts', line: 10, column: 5, code: 2345, message: 'Type mismatch', severity: 'error' as const },
+          { file: 'lights.ts', line: 3, column: 1, code: 2304, message: 'Cannot find name', severity: 'warning' as const },
+        ],
+      },
+    ];
+    const el = await renderElement('tse-build-output', { steps });
+    const diags = el.querySelectorAll('.build-diagnostic');
+    expect(diags.length).toBe(2);
+    expect(diags[0].querySelector('.diag-location')?.textContent).toBe('sensors.ts:10:5');
+    expect(diags[0].querySelector('.diag-code')?.textContent).toBe('TS2345');
+    expect(diags[0].querySelector('.diag-message')?.textContent).toBe('Type mismatch');
+    expect(diags[0].classList.contains('error')).toBe(true);
+    expect(diags[1].classList.contains('warning')).toBe(true);
+  });
+
+  it('dispatches tse-open-diagnostic on click', async () => {
+    const steps: BuildStep[] = [
+      {
+        step: 'tsc-check', success: true, duration: 100,
+        diagnostics: [
+          { file: 'sensors.ts', line: 10, column: 5, code: 2345, message: 'err', severity: 'error' as const },
+        ],
+      },
+    ];
+    const el = await renderElement('tse-build-output', { steps });
+    const handler = vi.fn();
+    el.addEventListener('tse-open-diagnostic', handler);
+    (el.querySelector('.build-diagnostic') as HTMLElement).click();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(handler.mock.calls[0][0].detail).toEqual({ file: 'sensors.ts', line: 10, column: 5 });
+  });
 });
 
 // ---- tse-entity-table ----
@@ -322,5 +359,10 @@ describe('tse-bottom-panel', () => {
     (tabs[3] as HTMLButtonElement).click();
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0].detail.panel).toBe('logs');
+  });
+
+  it('renders resize handle', async () => {
+    const el = await renderElement('tse-bottom-panel');
+    expect(el.querySelector('.panel-resize-handle')).toBeTruthy();
   });
 });

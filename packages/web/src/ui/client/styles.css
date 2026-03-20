@@ -165,6 +165,13 @@ tse-bottom-panel {
   flex-direction: column;
   flex-shrink: 0;
 }
+.panel-resize-handle {
+  height: 4px;
+  cursor: ns-resize;
+  background: transparent;
+  flex-shrink: 0;
+}
+.panel-resize-handle:hover { background: var(--accent); }
 .panel-tabs {
   display: flex;
   background: var(--bg-secondary);
@@ -197,6 +204,25 @@ tse-bottom-panel {
 .build-step .step-name { color: var(--text-bright); min-width: 100px; }
 .build-step .step-duration { color: var(--text-secondary); }
 .build-step .step-error { color: var(--error); }
+
+.build-diagnostics { padding-left: 24px; }
+.build-diagnostic {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+.build-diagnostic:hover { background: var(--bg-hover); }
+.build-diagnostic .diag-location {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+}
+.build-diagnostic .diag-code { color: var(--text-secondary); }
+.build-diagnostic.error .diag-message { color: var(--error); }
+.build-diagnostic.warning .diag-message { color: var(--warning); }
 
 .entity-table { width: 100%; border-collapse: collapse; }
 .entity-table th {
