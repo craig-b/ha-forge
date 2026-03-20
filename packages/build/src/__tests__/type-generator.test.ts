@@ -381,6 +381,16 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
+    it('generates typed getEntities() with domain-narrowed return', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain('getEntities<D extends HADomain>(domain: D): Promise<EntitiesInDomain<D>[]>');
+      expect(content).toContain('getEntities(domain?: string): Promise<HAEntityId[]>');
+      cleanup();
+    });
+
     it('generates typed on() overloads for each entity with entity_id literal', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);

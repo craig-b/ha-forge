@@ -38,6 +38,7 @@ export interface HAApi extends HAClientBase {
     last_changed: string;
     last_updated: string;
   } | null>;
+  getEntities(domain?: string): Promise<string[]>;
   reactions(rules: Record<string, ReactionRule>): () => void;
 }
 

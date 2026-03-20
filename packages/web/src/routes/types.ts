@@ -81,6 +81,8 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
  * Generate types from your HA instance for typed entity IDs and service parameters.
  */
 interface HAClient extends HAClientBase {
+  /** List entity IDs registered in Home Assistant, optionally filtered by domain. */
+  getEntities(domain?: string): Promise<string[]>;
   /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
   on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
   /** Call a Home Assistant service on an entity or domain. */

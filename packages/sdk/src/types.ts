@@ -159,23 +159,11 @@ export interface ReactionRule {
 
 /**
  * Base HA client interface with methods that don't need generated registry types.
- * Extended by `HAClient` which adds `on()`, `callService()`, `getState()`, and `reactions()`.
+ * Extended by `HAClient` which adds `on()`, `callService()`, `getState()`, `getEntities()`, and `reactions()`.
  */
 export interface HAClientBase {
   /** Logger for top-level logging outside of entity callbacks. */
   log: EntityLogger;
-  /**
-   * List entity IDs registered in Home Assistant.
-   * @param domain - Optional domain filter (e.g. `'light'`). Returns all entities if omitted.
-   * @returns Array of entity ID strings.
-   *
-   * @example
-   * ```ts
-   * const lights = await ha.getEntities('light');
-   * // ['light.kitchen', 'light.bedroom', ...]
-   * ```
-   */
-  getEntities(domain?: string): Promise<string[]>;
   /**
    * Fire a custom event on the HA event bus.
    * @param eventType - Event type name (e.g. `'my_custom_event'`).
