@@ -6,7 +6,6 @@ import type {
   EntityLogger,
   ResolvedEntity,
 } from '@ha-ts-entities/sdk';
-import type { HAClient } from './ha-api.js';
 import type { ResolvedDevice } from './loader.js';
 import type { Transport } from './transport.js';
 
@@ -68,13 +67,11 @@ export class EntityLifecycleManager {
   private deviceInstances = new Map<string, DeviceInstance>();
   private transport: Transport;
   private logger: LifecycleLogger;
-  private haClient: HAClient | null;
   private rawMqtt: RawMqttAccess | null;
 
-  constructor(transport: Transport, logger: LifecycleLogger, haClient?: HAClient | null, rawMqtt?: RawMqttAccess | null) {
+  constructor(transport: Transport, logger: LifecycleLogger, rawMqtt?: RawMqttAccess | null) {
     this.transport = transport;
     this.logger = logger;
-    this.haClient = haClient ?? null;
     this.rawMqtt = rawMqtt ?? null;
   }
 
@@ -286,19 +283,7 @@ export class EntityLifecycleManager {
       error: (msg, data) => scopedLogger.error(msg, data),
     };
 
-    const haClient = this.haClient;
     const rawMqtt = this.rawMqtt;
-
-    const ha: HAClient = haClient ?? {
-      log: entityLogger,
-      on() { entityLogger.warn('ha.on() unavailable — no WebSocket connection'); return () => {}; },
-      async callService() { entityLogger.warn('ha.callService() unavailable — no WebSocket connection'); return null; },
-      async getState() { entityLogger.warn('ha.getState() unavailable — no WebSocket connection'); return null; },
-      async getEntities() { entityLogger.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },
-      async fireEvent() { entityLogger.warn('ha.fireEvent() unavailable — no WebSocket connection'); },
-      reactions() { entityLogger.warn('ha.reactions() unavailable — no WebSocket connection'); return () => {}; },
-      friendlyName(entityId: string) { return entityId; },
-    };
 
     const context: DeviceContext<Record<string, EntityDefinition>> = {
       entities: entityHandles as DeviceContext<Record<string, EntityDefinition>>['entities'],
@@ -347,9 +332,6 @@ export class EntityLifecycleManager {
         const i = globalThis.setInterval(fn, ms);
         handles.intervals.push(i);
       },
-
-      fetch: globalThis.fetch,
-      ha,
 
       mqtt: {
         publish(topic, payload, opts) {
@@ -458,7 +440,6 @@ export class EntityLifecycleManager {
     const { entity, handles } = instance;
     const transport = this.transport;
     const logger = this.logger;
-    const haClient = this.haClient;
     const rawMqtt = this.rawMqtt;
     const entityId = entity.definition.id;
 
@@ -472,38 +453,6 @@ export class EntityLifecycleManager {
       info: (msg, data) => scopedLogger.info(msg, data),
       warn: (msg, data) => scopedLogger.warn(msg, data),
       error: (msg, data) => scopedLogger.error(msg, data),
-    };
-
-    // Build ha API — delegates to the shared HAClient, or stubs if unavailable
-    const ha: HAClient = haClient ?? {
-      log: entityLogger,
-      on() {
-        entityLogger.warn('ha.on() unavailable — no WebSocket connection');
-        return () => {};
-      },
-      async callService() {
-        entityLogger.warn('ha.callService() unavailable — no WebSocket connection');
-        return null;
-      },
-      async getState() {
-        entityLogger.warn('ha.getState() unavailable — no WebSocket connection');
-        return null;
-      },
-      async getEntities() {
-        entityLogger.warn('ha.getEntities() unavailable — no WebSocket connection');
-        return [];
-      },
-      async fireEvent() {
-        entityLogger.warn('ha.fireEvent() unavailable — no WebSocket connection');
-      },
-      reactions() {
-        entityLogger.warn('ha.reactions() unavailable — no WebSocket connection');
-        return () => {};
-      },
-      friendlyName(entityId: string) {
-        entityLogger.warn('ha.friendlyName() unavailable — no WebSocket connection');
-        return entityId;
-      },
     };
 
     const context: EntityContext = {
@@ -563,10 +512,6 @@ export class EntityLifecycleManager {
         const i = globalThis.setInterval(fn, ms);
         handles.intervals.push(i);
       },
-
-      fetch: globalThis.fetch,
-
-      ha,
 
       mqtt: {
         publish(topic, payload, opts) {

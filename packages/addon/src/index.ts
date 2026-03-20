@@ -155,7 +155,7 @@ async function main(): Promise<void> {
     }
 
     const buildManager = mqttTransport
-      ? new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, haClient: haApi, rawMqtt: mqttTransport })
+      ? new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport })
       : null;
 
     let building = false;

@@ -99,30 +99,134 @@ interface HAClient extends HAClientBase {
 ${types}
 ${optionInterfaces}
 ${untypedFallback}
-/** Define a read-only sensor entity. */
+/**
+ * Define a read-only sensor entity.
+ * @param options - Sensor configuration including id, name, device_class, and lifecycle hooks.
+ * @returns A sensor entity definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const temp = sensor({
+ *   id: 'cpu_temp',
+ *   name: 'CPU Temperature',
+ *   config: { device_class: 'temperature', unit_of_measurement: '°C' },
+ *   init() {
+ *     this.poll(async () => {
+ *       const resp = await fetch('http://localhost/api/temp');
+ *       return (await resp.json()).value;
+ *     }, { interval: 30_000 });
+ *     return '0';
+ *   },
+ * });
+ * \`\`\`
+ */
 declare function sensor(options: SensorOptions): SensorDefinition;
-/** Define a controllable on/off switch entity. */
+/**
+ * Define a controllable on/off switch entity.
+ * @param options - Switch configuration including id, name, and onCommand handler.
+ * @returns A switch entity definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const pump = defineSwitch({
+ *   id: 'irrigation_pump',
+ *   name: 'Irrigation Pump',
+ *   onCommand(command) {
+ *     // command is 'ON' or 'OFF'
+ *     this.update(command === 'ON' ? 'on' : 'off');
+ *   },
+ * });
+ * \`\`\`
+ */
 declare function defineSwitch(options: SwitchOptions): SwitchDefinition;
-/** Define a controllable light entity with optional brightness, color, and effects. */
+/**
+ * Define a controllable light entity with optional brightness, color, and effects.
+ * @param options - Light configuration including id, name, supported_color_modes, and onCommand handler.
+ * @returns A light entity definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const lamp = light({
+ *   id: 'desk_lamp',
+ *   name: 'Desk Lamp',
+ *   config: { supported_color_modes: ['brightness', 'color_temp'] },
+ *   onCommand(command) {
+ *     // command.state is 'ON' or 'OFF', command.brightness is 0-255
+ *     this.update({ state: command.state === 'ON' ? 'on' : 'off', brightness: command.brightness });
+ *   },
+ * });
+ * \`\`\`
+ */
 declare function light(options: LightOptions): LightDefinition;
-/** Define a controllable cover entity (blind, garage door, curtain, etc.). */
+/**
+ * Define a controllable cover entity (blind, garage door, curtain, etc.).
+ * @param options - Cover configuration including id, name, and onCommand handler.
+ * @returns A cover entity definition to export from your script.
+ */
 declare function cover(options: CoverOptions): CoverDefinition;
-/** Define a climate entity (thermostat, AC unit, heater, etc.). */
+/**
+ * Define a climate entity (thermostat, AC unit, heater, etc.).
+ * @param options - Climate configuration including id, name, hvac_modes, and onCommand handler.
+ * @returns A climate entity definition to export from your script.
+ */
 declare function climate(options: ClimateOptions): ClimateDefinition;
-/** Create an entity factory for dynamic entity generation at runtime. */
+/**
+ * Create an entity factory for dynamic entity generation at runtime.
+ * The factory function is called during deploy to produce entity definitions.
+ * @param factory - A function that returns an array of entity definitions (sync or async).
+ * @returns An entity factory to export from your script.
+ */
 declare function entityFactory(factory: () => EntityDefinition[] | Promise<EntityDefinition[]>): EntityFactory;
-/** Define a device that groups multiple entities with a shared lifecycle, polling, and cleanup. */
+/**
+ * Define a device that groups multiple entities with a shared lifecycle.
+ * Use \`this.entities.xxx.update()\` inside \`init()\` to publish state for each entity.
+ * @param options - Device configuration including id, name, entities map, and lifecycle hooks.
+ * @returns A device definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const station = device({
+ *   id: 'weather_station',
+ *   name: 'Weather Station',
+ *   entities: {
+ *     temperature: sensor({ id: 'ws_temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
+ *     humidity: sensor({ id: 'ws_humidity', name: 'Humidity', config: { device_class: 'humidity', unit_of_measurement: '%' } }),
+ *   },
+ *   init() {
+ *     this.poll(async () => {
+ *       const data = await (await fetch('https://api.example.com/weather')).json();
+ *       this.entities.temperature.update(data.temp);
+ *       this.entities.humidity.update(data.humidity);
+ *     }, { interval: 60_000 });
+ *   },
+ * });
+ * \`\`\`
+ */
 declare function device<TEntities extends Record<string, EntityDefinition>>(options: DeviceOptions<TEntities>): DeviceDefinition<TEntities>;
-/** Home Assistant client API — subscribe to state changes, call services, query state, and set up reactions. */
+/**
+ * Home Assistant client API.
+ * Subscribe to entity state changes, call services, query state, list entities, and set up declarative reactions.
+ * All entity IDs and service parameters are fully typed when registry types are generated.
+ *
+ * @example
+ * \`\`\`ts
+ * // Subscribe to state changes
+ * ha.on('binary_sensor.front_door', (event) => {
+ *   if (event.new_state === 'on') ha.callService('light.porch', 'turn_on');
+ * });
+ *
+ * // Query current state
+ * const state = await ha.getState('sensor.temperature');
+ *
+ * // List all lights
+ * const lights = await ha.getEntities('light');
+ * \`\`\`
+ */
 declare const ha: HAClient;
 
-// Override Console to document where output goes.
+/** Console output goes to the HA add-on Log tab, not the TS Entities log viewer. Use \`this.log\` or \`ha.log\` for structured logging. */
 interface Console {
-  /** Outputs to the HA add-on Log tab. Use \`this.log.info()\` or \`ha.log.info()\` to write to the TS Entities log viewer instead. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.info()\` or \`ha.log.info()\` for the TS Entities log viewer. */
   log(...args: unknown[]): void;
-  /** Outputs to the HA add-on Log tab. Use \`this.log.warn()\` or \`ha.log.warn()\` to write to the TS Entities log viewer instead. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.warn()\` or \`ha.log.warn()\` for the TS Entities log viewer. */
   warn(...args: unknown[]): void;
-  /** Outputs to the HA add-on Log tab. Use \`this.log.error()\` or \`ha.log.error()\` to write to the TS Entities log viewer instead. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.error()\` or \`ha.log.error()\` for the TS Entities log viewer. */
   error(...args: unknown[]): void;
 }
 `;

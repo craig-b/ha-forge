@@ -192,7 +192,10 @@ export interface HAClientBase {
 
 /**
  * Context object bound as `this` inside entity `init()`, `destroy()`, and `onCommand()` callbacks.
- * Provides methods for publishing state, polling, logging, timers, HTTP, HA API, and MQTT access.
+ * Provides methods for publishing state, polling, logging, timers, and MQTT access.
+ *
+ * For the HA client API (`on()`, `callService()`, `getState()`, etc.), use the global `ha` variable
+ * which provides full typed autocomplete for your Home Assistant instance.
  *
  * @typeParam TState - The entity's state type.
  *
@@ -203,7 +206,7 @@ export interface HAClientBase {
  *   name: 'CPU Temperature',
  *   init() {
  *     this.poll(async () => {
- *       const resp = await this.fetch('http://localhost/api/temp');
+ *       const resp = await fetch('http://localhost/api/temp');
  *       return (await resp.json()).value;
  *     }, { interval: 30_000 });
  *     return '0';
@@ -221,12 +224,13 @@ export interface EntityContext<TState = unknown> {
   /**
    * Start a polling loop that calls `fn` at a fixed interval.
    * If `fn` returns a value, it is automatically published via `update()`.
-   * The interval is automatically cleaned up when the entity is destroyed.
+   * Uses chained timeouts to prevent overlapping executions.
+   * Automatically cleaned up when the entity is destroyed.
    * @param fn - Function to call each interval. Return a value to auto-publish state.
    * @param opts - Polling options.
    */
   poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void;
-  /** Scoped logger for this entity. Messages appear in the web UI log viewer. */
+  /** Scoped logger for this entity. Messages include the entity ID and source file automatically. */
   log: EntityLogger;
   /**
    * Schedule a one-shot callback. Automatically cleared on entity teardown.
@@ -240,15 +244,23 @@ export interface EntityContext<TState = unknown> {
    * @param ms - Interval in milliseconds.
    */
   setInterval(fn: () => void, ms: number): void;
-  /** Standard `fetch()` API for making HTTP requests from entity code. */
-  fetch: typeof globalThis.fetch;
-  /** Home Assistant client for subscribing to state changes, calling services, and more. */
-  ha: HAClientBase;
-  /** Direct MQTT publish/subscribe access. */
+  /**
+   * Direct MQTT publish/subscribe access for custom topics.
+   * Subscriptions are automatically cleaned up on entity teardown.
+   */
   mqtt: {
-    /** Publish a message to an MQTT topic. */
+    /**
+     * Publish a message to an MQTT topic.
+     * @param topic - The MQTT topic to publish to.
+     * @param payload - The message payload as a string.
+     * @param opts - Publish options.
+     */
     publish(topic: string, payload: string, opts?: { retain?: boolean }): void;
-    /** Subscribe to an MQTT topic. */
+    /**
+     * Subscribe to an MQTT topic. The subscription is auto-cleaned on entity teardown.
+     * @param topic - The MQTT topic to subscribe to (supports wildcards).
+     * @param handler - Called with the message payload for each received message.
+     */
     subscribe(topic: string, handler: (payload: string) => void): void;
   };
 }
@@ -282,7 +294,7 @@ export interface BaseEntity<TState, TConfig = Record<string, never>> {
   config?: TConfig;
   /**
    * Called once when the entity is deployed. Return the initial state value.
-   * Use `this.poll()`, `this.ha.on()`, etc. to set up ongoing state updates.
+   * Use `this.poll()`, `ha.on()`, etc. to set up ongoing state updates.
    */
   init?(this: EntityContext<TState>): TState | Promise<TState>;
   /**
@@ -722,30 +734,54 @@ export type EntityHandleFor<T extends EntityDefinition> =
 
 /**
  * Context bound as `this` inside a device's `init()` and `destroy()` callbacks.
- * Provides managed timers, HTTP access, HA client, and typed handles for each entity.
+ * Provides typed entity handles, managed timers, and MQTT access.
+ *
+ * For the HA client API (`on()`, `callService()`, `getState()`, etc.), use the global `ha` variable
+ * which provides full typed autocomplete for your Home Assistant instance.
  */
 export interface DeviceContext<TEntities extends Record<string, EntityDefinition>> {
   /** Typed handles for updating each entity in the device. */
   entities: { [K in keyof TEntities]: EntityHandleFor<TEntities[K]> };
   /**
    * Start a managed polling loop. Fires immediately, then repeats on interval.
+   * Uses chained timeouts to prevent overlapping executions.
    * Unlike entity poll(), this does NOT auto-update a state — call
    * `this.entities.xxx.update()` inside the callback.
+   * @param fn - Function to call each interval.
+   * @param opts - Polling options.
    */
   poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void;
-  /** Scoped logger for this device. */
+  /** Scoped logger for this device. Messages include the device ID and source file automatically. */
   log: EntityLogger;
-  /** Home Assistant client for state subscriptions, service calls, and more. */
-  ha: HAClientBase;
-  /** Standard `fetch()` API for HTTP requests. */
-  fetch: typeof globalThis.fetch;
-  /** Schedule a one-shot callback. Auto-cleared on device teardown. */
+  /**
+   * Schedule a one-shot callback. Automatically cleared on device teardown.
+   * @param fn - Callback to execute.
+   * @param ms - Delay in milliseconds.
+   */
   setTimeout(fn: () => void, ms: number): void;
-  /** Schedule a repeating callback. Auto-cleared on device teardown. */
+  /**
+   * Schedule a repeating callback. Automatically cleared on device teardown.
+   * @param fn - Callback to execute.
+   * @param ms - Interval in milliseconds.
+   */
   setInterval(fn: () => void, ms: number): void;
-  /** Direct MQTT publish/subscribe access. */
+  /**
+   * Direct MQTT publish/subscribe access for custom topics.
+   * Subscriptions are automatically cleaned up on device teardown.
+   */
   mqtt: {
+    /**
+     * Publish a message to an MQTT topic.
+     * @param topic - The MQTT topic to publish to.
+     * @param payload - The message payload as a string.
+     * @param opts - Publish options.
+     */
     publish(topic: string, payload: string, opts?: { retain?: boolean }): void;
+    /**
+     * Subscribe to an MQTT topic. The subscription is auto-cleaned on device teardown.
+     * @param topic - The MQTT topic to subscribe to (supports wildcards).
+     * @param handler - Called with the message payload for each received message.
+     */
     subscribe(topic: string, handler: (payload: string) => void): void;
   };
 }

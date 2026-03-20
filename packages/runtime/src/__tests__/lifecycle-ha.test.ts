@@ -55,28 +55,34 @@ function makeSensorEntity(id: string, overrides: Partial<SensorDefinition> = {})
   return { definition, sourceFile: `/entities/${id}.ts`, deviceId: 'test-device' };
 }
 
-describe('EntityLifecycleManager — ha integration', () => {
+describe('EntityLifecycleManager — ha global integration', () => {
   let transport: ReturnType<typeof createMockTransport>;
   let logger: ReturnType<typeof createMockLogger>;
   let haClient: ReturnType<typeof createMockHAClient>;
   let manager: EntityLifecycleManager;
+  let savedHa: unknown;
 
   beforeEach(() => {
     transport = createMockTransport();
     logger = createMockLogger();
     haClient = createMockHAClient();
-    manager = new EntityLifecycleManager(transport, logger, haClient);
+    manager = new EntityLifecycleManager(transport, logger);
+    // Install mock as global ha
+    savedHa = (globalThis as Record<string, unknown>).ha;
+    (globalThis as Record<string, unknown>).ha = haClient;
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    // Restore global ha
+    (globalThis as Record<string, unknown>).ha = savedHa;
   });
 
-  it('provides ha.on() in entity context during init()', async () => {
+  it('entity init() can use global ha.on()', async () => {
     const entity = makeSensorEntity('temp', {
       init() {
-        // Subscribe to external HA entity changes
-        this.ha.on('sensor.outdoor_temp', (e) => {
+        // Use global ha instead of this.ha
+        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.on('sensor.outdoor_temp', (e) => {
           this.update(e.new_state);
         });
         return '22';
@@ -89,10 +95,10 @@ describe('EntityLifecycleManager — ha integration', () => {
     expect(manager.isInitialized('temp')).toBe(true);
   });
 
-  it('provides ha.callService() in entity context', async () => {
+  it('entity init() can use global ha.callService()', async () => {
     const entity = makeSensorEntity('light_ctrl', {
       init() {
-        this.ha.callService('light.living_room', 'turn_on', { brightness: 200 });
+        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.callService('light.living_room', 'turn_on', { brightness: 200 });
         return '1';
       },
     });
@@ -104,7 +110,7 @@ describe('EntityLifecycleManager — ha integration', () => {
     );
   });
 
-  it('provides ha.getState() in entity context', async () => {
+  it('entity init() can use global ha.getState()', async () => {
     haClient.getState.mockResolvedValue({
       state: 'on',
       attributes: { brightness: 128 },
@@ -114,7 +120,7 @@ describe('EntityLifecycleManager — ha integration', () => {
 
     const entity = makeSensorEntity('mirror', {
       async init() {
-        const state = await this.ha.getState('light.living_room');
+        const state = await (globalThis as Record<string, unknown> & { ha: HAClient }).ha.getState('light.living_room');
         return state?.state ?? 'unknown';
       },
     });
@@ -125,12 +131,12 @@ describe('EntityLifecycleManager — ha integration', () => {
     expect(manager.getEntityState('mirror')).toBe('on');
   });
 
-  it('provides ha.getEntities() in entity context', async () => {
+  it('entity init() can use global ha.getEntities()', async () => {
     haClient.getEntities.mockResolvedValue(['light.a', 'light.b']);
 
     const entity = makeSensorEntity('counter', {
       async init() {
-        const lights = await this.ha.getEntities('light');
+        const lights = await (globalThis as Record<string, unknown> & { ha: HAClient }).ha.getEntities('light');
         return String(lights.length);
       },
     });
@@ -141,10 +147,10 @@ describe('EntityLifecycleManager — ha integration', () => {
     expect(manager.getEntityState('counter')).toBe('2');
   });
 
-  it('provides ha.fireEvent() in entity context', async () => {
+  it('entity init() can use global ha.fireEvent()', async () => {
     const entity = makeSensorEntity('eventer', {
       init() {
-        this.ha.fireEvent('custom_event', { source: 'test' });
+        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.fireEvent('custom_event', { source: 'test' });
         return '0';
       },
     });
@@ -152,23 +158,5 @@ describe('EntityLifecycleManager — ha integration', () => {
     await manager.deploy([entity]);
 
     expect(haClient.fireEvent).toHaveBeenCalledWith('custom_event', { source: 'test' });
-  });
-
-  it('provides ha stub warnings when no HA client is provided', async () => {
-    const managerNoHA = new EntityLifecycleManager(transport, logger);
-
-    const entity = makeSensorEntity('no_ha', {
-      init() {
-        this.ha.on('sensor.test', () => {});
-        return '0';
-      },
-    });
-
-    await managerNoHA.deploy([entity]);
-
-    expect(logger.warn).toHaveBeenCalledWith(
-      expect.stringContaining('ha.on() unavailable'),
-      undefined,
-    );
   });
 });
