@@ -20,13 +20,13 @@ importers:
 
   packages/addon:
     dependencies:
-      '@ha-ts-entities/build':
+      '@ha-forge/build':
         specifier: workspace:*
         version: link:../build
-      '@ha-ts-entities/runtime':
+      '@ha-forge/runtime':
         specifier: workspace:*
         version: link:../runtime
-      '@ha-ts-entities/web':
+      '@ha-forge/web':
         specifier: workspace:*
         version: link:../web
       '@hono/node-server':
@@ -70,7 +70,7 @@ importers:
 
   packages/runtime:
     dependencies:
-      '@ha-ts-entities/sdk':
+      '@ha-forge/sdk':
         specifier: workspace:*
         version: link:../sdk
       better-sqlite3:

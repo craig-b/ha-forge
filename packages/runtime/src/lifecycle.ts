@@ -4,8 +4,8 @@ import type {
   EntityContext,
   EntityDefinition,
   EntityLogger,
-} from '@ha-ts-entities/sdk';
-import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
+} from '@ha-forge/sdk';
+import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedDevice } from './loader.js';
 import type { Transport } from './transport.js';
 

@@ -6,8 +6,8 @@ import type {
   LightDefinition,
   CoverDefinition,
   ClimateDefinition,
-} from '@ha-ts-entities/sdk';
-import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
+} from '@ha-forge/sdk';
+import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 
 // Mock mqtt module
 vi.mock('mqtt', () => {
@@ -259,9 +259,9 @@ describe('MqttTransport', () => {
 
       expect(comp).toBeDefined();
       expect(comp.p).toBe('sensor');
-      expect(comp.uniq_id).toBe('ts_entities_my_sensor');
+      expect(comp.uniq_id).toBe('ha_forge_my_sensor');
       expect(comp.name).toBe('My Sensor');
-      expect(comp.stat_t).toBe('ts-entities/my_sensor/state');
+      expect(comp.stat_t).toBe('ha-forge/my_sensor/state');
       expect(comp.dev_cla).toBe('temperature');
       expect(comp.unit_of_meas).toBe('°C');
       expect(comp.stat_cla).toBe('measurement');
@@ -304,11 +304,11 @@ describe('MqttTransport', () => {
       expect(payload).toHaveProperty('dev');
       expect(payload).toHaveProperty('o');
       expect(payload).toHaveProperty('cmps');
-      expect(payload.avty_t).toBe('ts-entities/availability');
+      expect(payload.avty_t).toBe('ha-forge/availability');
 
       // Origin block
       const o = payload.o as Record<string, unknown>;
-      expect(o.name).toBe('ts-entities');
+      expect(o.name).toBe('ha-forge');
       expect(o.sw).toBe('0.1.0');
     });
   });
@@ -339,7 +339,7 @@ describe('MqttTransport', () => {
       const payload = JSON.parse(payloadStr) as Record<string, unknown>;
       const dev = payload.dev as Record<string, unknown>;
 
-      expect(dev.ids).toEqual(['ts_entities_weather_station']);
+      expect(dev.ids).toEqual(['ha_forge_weather_station']);
       expect(dev.name).toBe('Weather Station');
       expect(dev.mf).toBe('Acme');
       expect(dev.mdl).toBe('WS-1000');
@@ -364,9 +364,9 @@ describe('MqttTransport', () => {
       const payload = JSON.parse(payloadStr) as Record<string, unknown>;
       const dev = payload.dev as Record<string, unknown>;
 
-      expect(dev.ids).toEqual(['ts_entities_my_script_group']);
+      expect(dev.ids).toEqual(['ha_forge_my_script_group']);
       expect(dev.name).toBe('my_script_group');
-      expect(dev.mf).toBe('ts-entities');
+      expect(dev.mf).toBe('ha-forge');
       expect(dev.mdl).toBe('User Script');
     });
   });
@@ -386,7 +386,7 @@ describe('MqttTransport', () => {
       const payload = JSON.parse(payloadStr) as Record<string, unknown>;
       const cmps = payload.cmps as Record<string, Record<string, unknown>>;
 
-      expect(cmps['my_switch'].cmd_t).toBe('ts-entities/my_switch/set');
+      expect(cmps['my_switch'].cmd_t).toBe('ha-forge/my_switch/set');
     });
 
     it('subscribes to command topic for switch entities', async () => {
@@ -398,7 +398,7 @@ describe('MqttTransport', () => {
       await transport.register(entity);
 
       const subscribeCalls = (mockClient.subscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(subscribeCalls).toContain('ts-entities/my_switch/set');
+      expect(subscribeCalls).toContain('ha-forge/my_switch/set');
     });
   });
 
@@ -463,7 +463,7 @@ describe('MqttTransport', () => {
       await transport.deregister('my_switch');
 
       const unsubCalls = (mockClient.unsubscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(unsubCalls).toContain('ts-entities/my_switch/set');
+      expect(unsubCalls).toContain('ha-forge/my_switch/set');
     });
   });
 
@@ -524,8 +524,8 @@ describe('MqttTransport', () => {
       expect(comp.brightness).toBe(true);
       expect(comp.sup_clrm).toEqual(['rgb', 'brightness']);
       expect(comp.fx_list).toEqual(['rainbow', 'breathe']);
-      expect(comp.cmd_t).toBe('ts-entities/desk_light/set');
-      expect(comp.stat_t).toBe('ts-entities/desk_light/state');
+      expect(comp.cmd_t).toBe('ha-forge/desk_light/set');
+      expect(comp.stat_t).toBe('ha-forge/desk_light/state');
     });
 
     it('sets color temp Kelvin fields when color_temp mode is supported', async () => {
@@ -572,7 +572,7 @@ describe('MqttTransport', () => {
       await transport.register(makeLightEntity());
 
       const subscribeCalls = (mockClient.subscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(subscribeCalls).toContain('ts-entities/desk_light/set');
+      expect(subscribeCalls).toContain('ha-forge/desk_light/set');
     });
   });
 
@@ -592,8 +592,8 @@ describe('MqttTransport', () => {
       expect(comp.pl_stop).toBe('STOP');
       expect(comp.stat_open).toBe('open');
       expect(comp.stat_clsd).toBe('closed');
-      expect(comp.pos_t).toBe('ts-entities/garage_door/position');
-      expect(comp.set_pos_t).toBe('ts-entities/garage_door/position/set');
+      expect(comp.pos_t).toBe('ha-forge/garage_door/position');
+      expect(comp.set_pos_t).toBe('ha-forge/garage_door/position/set');
       expect(comp.pos_open).toBe(100);
       expect(comp.pos_clsd).toBe(0);
     });
@@ -610,8 +610,8 @@ describe('MqttTransport', () => {
       await transport.register(entity);
 
       const comp = getComponentConfig(mockClient, 'tilt_blind');
-      expect(comp.tilt_cmd_t).toBe('ts-entities/tilt_blind/tilt/set');
-      expect(comp.tilt_status_t).toBe('ts-entities/tilt_blind/tilt');
+      expect(comp.tilt_cmd_t).toBe('ha-forge/tilt_blind/tilt/set');
+      expect(comp.tilt_status_t).toBe('ha-forge/tilt_blind/tilt');
     });
 
     it('omits position/tilt topics when not enabled', async () => {
@@ -639,8 +639,8 @@ describe('MqttTransport', () => {
       await transport.register(makeCoverEntity());
 
       const subscribeCalls = (mockClient.subscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(subscribeCalls).toContain('ts-entities/garage_door/set');
-      expect(subscribeCalls).toContain('ts-entities/garage_door/position/set');
+      expect(subscribeCalls).toContain('ha-forge/garage_door/set');
+      expect(subscribeCalls).toContain('ha-forge/garage_door/position/set');
     });
   });
 
@@ -659,14 +659,14 @@ describe('MqttTransport', () => {
       expect(comp.cmd_t).toBeUndefined();
 
       // Mode topics
-      expect(comp.mode_cmd_t).toBe('ts-entities/bedroom_hvac/mode/set');
-      expect(comp.mode_stat_t).toBe('ts-entities/bedroom_hvac/mode/state');
+      expect(comp.mode_cmd_t).toBe('ha-forge/bedroom_hvac/mode/set');
+      expect(comp.mode_stat_t).toBe('ha-forge/bedroom_hvac/mode/state');
       expect(comp.modes).toEqual(['off', 'heat', 'cool', 'auto']);
 
       // Temperature topics
-      expect(comp.temp_cmd_t).toBe('ts-entities/bedroom_hvac/temperature/set');
-      expect(comp.temp_stat_t).toBe('ts-entities/bedroom_hvac/temperature/state');
-      expect(comp.curr_temp_t).toBe('ts-entities/bedroom_hvac/current_temperature');
+      expect(comp.temp_cmd_t).toBe('ha-forge/bedroom_hvac/temperature/set');
+      expect(comp.temp_stat_t).toBe('ha-forge/bedroom_hvac/temperature/state');
+      expect(comp.curr_temp_t).toBe('ha-forge/bedroom_hvac/current_temperature');
 
       // Temp constraints
       expect(comp.min_temp).toBe(16);
@@ -681,8 +681,8 @@ describe('MqttTransport', () => {
       await transport.register(makeClimateEntity());
 
       const comp = getComponentConfig(mockClient, 'bedroom_hvac');
-      expect(comp.fan_mode_cmd_t).toBe('ts-entities/bedroom_hvac/fan_mode/set');
-      expect(comp.fan_mode_stat_t).toBe('ts-entities/bedroom_hvac/fan_mode/state');
+      expect(comp.fan_mode_cmd_t).toBe('ha-forge/bedroom_hvac/fan_mode/set');
+      expect(comp.fan_mode_stat_t).toBe('ha-forge/bedroom_hvac/fan_mode/state');
       expect(comp.fan_modes).toEqual(['low', 'medium', 'high']);
     });
 
@@ -693,8 +693,8 @@ describe('MqttTransport', () => {
       await transport.register(makeClimateEntity());
 
       const comp = getComponentConfig(mockClient, 'bedroom_hvac');
-      expect(comp.pr_mode_cmd_t).toBe('ts-entities/bedroom_hvac/preset_mode/set');
-      expect(comp.pr_mode_stat_t).toBe('ts-entities/bedroom_hvac/preset_mode/state');
+      expect(comp.pr_mode_cmd_t).toBe('ha-forge/bedroom_hvac/preset_mode/set');
+      expect(comp.pr_mode_stat_t).toBe('ha-forge/bedroom_hvac/preset_mode/state');
       expect(comp.pr_modes).toEqual(['eco', 'comfort']);
     });
 
@@ -722,7 +722,7 @@ describe('MqttTransport', () => {
       await transport.register(makeClimateEntity());
 
       const comp = getComponentConfig(mockClient, 'bedroom_hvac');
-      expect(comp.act_t).toBe('ts-entities/bedroom_hvac/action');
+      expect(comp.act_t).toBe('ha-forge/bedroom_hvac/action');
     });
 
     it('subscribes to all climate command topics', async () => {
@@ -733,12 +733,12 @@ describe('MqttTransport', () => {
       await transport.register(makeClimateEntity());
 
       const subscribeCalls = (mockClient.subscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/mode/set');
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/temperature/set');
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/temperature_high/set');
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/temperature_low/set');
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/fan_mode/set');
-      expect(subscribeCalls).toContain('ts-entities/bedroom_hvac/preset_mode/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/mode/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/temperature/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/temperature_high/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/temperature_low/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/fan_mode/set');
+      expect(subscribeCalls).toContain('ha-forge/bedroom_hvac/preset_mode/set');
     });
   });
 
@@ -758,7 +758,7 @@ describe('MqttTransport', () => {
       )?.[1] as (topic: string, payload: Buffer) => void;
 
       const lightCmd = { state: 'ON', brightness: 128, color: { r: 255, g: 0, b: 0 } };
-      messageHandler('ts-entities/desk_light/set', Buffer.from(JSON.stringify(lightCmd)));
+      messageHandler('ha-forge/desk_light/set', Buffer.from(JSON.stringify(lightCmd)));
 
       expect(handler).toHaveBeenCalledWith(lightCmd);
     });
@@ -776,7 +776,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/garage_door/set', Buffer.from('OPEN'));
+      messageHandler('ha-forge/garage_door/set', Buffer.from('OPEN'));
       expect(handler).toHaveBeenCalledWith('OPEN');
     });
 
@@ -793,7 +793,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/garage_door/position/set', Buffer.from('75'));
+      messageHandler('ha-forge/garage_door/position/set', Buffer.from('75'));
       expect(handler).toHaveBeenCalledWith({ action: 'set_position', position: 75 });
     });
 
@@ -814,7 +814,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/tilt_blind/tilt/set', Buffer.from('45'));
+      messageHandler('ha-forge/tilt_blind/tilt/set', Buffer.from('45'));
       expect(handler).toHaveBeenCalledWith({ action: 'set_tilt', tilt: 45 });
     });
 
@@ -830,7 +830,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/bedroom_hvac/mode/set', Buffer.from('heat'));
+      messageHandler('ha-forge/bedroom_hvac/mode/set', Buffer.from('heat'));
       expect(handler).toHaveBeenCalledWith({ hvac_mode: 'heat' });
     });
 
@@ -846,7 +846,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/bedroom_hvac/temperature/set', Buffer.from('22.5'));
+      messageHandler('ha-forge/bedroom_hvac/temperature/set', Buffer.from('22.5'));
       expect(handler).toHaveBeenCalledWith({ temperature: 22.5 });
     });
 
@@ -862,7 +862,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/bedroom_hvac/fan_mode/set', Buffer.from('high'));
+      messageHandler('ha-forge/bedroom_hvac/fan_mode/set', Buffer.from('high'));
       expect(handler).toHaveBeenCalledWith({ fan_mode: 'high' });
     });
 
@@ -878,7 +878,7 @@ describe('MqttTransport', () => {
         (c: unknown[]) => c[0] === 'message'
       )?.[1] as (topic: string, payload: Buffer) => void;
 
-      messageHandler('ts-entities/bedroom_hvac/temperature_high/set', Buffer.from('25'));
+      messageHandler('ha-forge/bedroom_hvac/temperature_high/set', Buffer.from('25'));
       expect(handler).toHaveBeenCalledWith({ target_temp_high: 25 });
     });
   });
@@ -895,8 +895,8 @@ describe('MqttTransport', () => {
       await transport.deregister('garage_door');
 
       const unsubCalls = (mockClient.unsubscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(unsubCalls).toContain('ts-entities/garage_door/set');
-      expect(unsubCalls).toContain('ts-entities/garage_door/position/set');
+      expect(unsubCalls).toContain('ha-forge/garage_door/set');
+      expect(unsubCalls).toContain('ha-forge/garage_door/position/set');
     });
 
     it('unsubscribes from all climate command topics when deregistering', async () => {
@@ -909,12 +909,12 @@ describe('MqttTransport', () => {
       await transport.deregister('bedroom_hvac');
 
       const unsubCalls = (mockClient.unsubscribe.mock.calls as string[][]).map((c) => c[0]);
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/mode/set');
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/temperature/set');
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/temperature_high/set');
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/temperature_low/set');
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/fan_mode/set');
-      expect(unsubCalls).toContain('ts-entities/bedroom_hvac/preset_mode/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/mode/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/temperature/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/temperature_high/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/temperature_low/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/fan_mode/set');
+      expect(unsubCalls).toContain('ha-forge/bedroom_hvac/preset_mode/set');
     });
   });
 
@@ -931,7 +931,7 @@ describe('MqttTransport', () => {
       await transport.publishState('desk_light', lightState);
 
       const stateCalls = mockClient.publish.mock.calls.filter(
-        (c: unknown[]) => c[0] === 'ts-entities/desk_light/state'
+        (c: unknown[]) => c[0] === 'ha-forge/desk_light/state'
       );
       expect(stateCalls.length).toBe(1);
       expect(JSON.parse(stateCalls[0][1] as string)).toEqual(lightState);
@@ -955,7 +955,7 @@ describe('MqttTransport', () => {
 
       // Main state topic
       const mainCalls = mockClient.publish.mock.calls.filter(
-        (c: unknown[]) => c[0] === 'ts-entities/bedroom_hvac/state'
+        (c: unknown[]) => c[0] === 'ha-forge/bedroom_hvac/state'
       );
       expect(mainCalls.length).toBe(1);
       expect(JSON.parse(mainCalls[0][1] as string)).toEqual(climateState);
@@ -966,11 +966,11 @@ describe('MqttTransport', () => {
         return call ? (call[1] as string) : undefined;
       };
 
-      expect(getPayload('ts-entities/bedroom_hvac/mode/state')).toBe('heat');
-      expect(getPayload('ts-entities/bedroom_hvac/temperature/state')).toBe('22');
-      expect(getPayload('ts-entities/bedroom_hvac/current_temperature')).toBe('20.5');
-      expect(getPayload('ts-entities/bedroom_hvac/fan_mode/state')).toBe('low');
-      expect(getPayload('ts-entities/bedroom_hvac/action')).toBe('heating');
+      expect(getPayload('ha-forge/bedroom_hvac/mode/state')).toBe('heat');
+      expect(getPayload('ha-forge/bedroom_hvac/temperature/state')).toBe('22');
+      expect(getPayload('ha-forge/bedroom_hvac/current_temperature')).toBe('20.5');
+      expect(getPayload('ha-forge/bedroom_hvac/fan_mode/state')).toBe('low');
+      expect(getPayload('ha-forge/bedroom_hvac/action')).toBe('heating');
     });
   });
 });

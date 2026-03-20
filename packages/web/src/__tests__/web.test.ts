@@ -68,7 +68,7 @@ describe('Web server', () => {
     const res = await app.request('/');
     expect(res.status).toBe(200);
     const html = await res.text();
-    expect(html).toContain('TS Entities');
+    expect(html).toContain('HA Forge');
     expect(html).toContain('monaco-editor');
   });
 
@@ -429,7 +429,7 @@ describe('generateUIHtml', () => {
   it('generates valid HTML with ingress path', () => {
     const html = generateUIHtml('/api/hassio_ingress/test123');
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('TS Entities');
+    expect(html).toContain('HA Forge');
     expect(html).toContain('monaco-editor');
     expect(html).toContain('/api/hassio_ingress/test123');
   });

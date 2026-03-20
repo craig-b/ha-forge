@@ -1,5 +1,5 @@
 {
-  "name": "@ha-ts-entities/addon",
+  "name": "@ha-forge/addon",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,9 +9,9 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@ha-ts-entities/build": "workspace:*",
-    "@ha-ts-entities/runtime": "workspace:*",
-    "@ha-ts-entities/web": "workspace:*",
+    "@ha-forge/build": "workspace:*",
+    "@ha-forge/runtime": "workspace:*",
+    "@ha-forge/web": "workspace:*",
     "@hono/node-server": "^1.19.11",
     "hono": "^4.12.8",
     "ws": "^8.19.0"

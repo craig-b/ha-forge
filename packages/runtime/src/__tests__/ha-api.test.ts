@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type { HAWebSocketClient, HAEvent } from '../ws-client.js';
-import type { EntityLogger } from '@ha-ts-entities/sdk';
+import type { EntityLogger } from '@ha-forge/sdk';
 import { HAApiImpl } from '../ha-api.js';
 
 function createMockLogger(): EntityLogger {

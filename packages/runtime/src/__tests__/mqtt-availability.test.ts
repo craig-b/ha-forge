@@ -67,7 +67,7 @@ describe('MqttTransport — per-entity availability', () => {
     // Check that offline was published
     const client = await getMockClient();
     const offlineCall = client.publish.mock.calls.find(
-      (c: unknown[]) => c[0] === 'ts-entities/sensor.temp/availability' && c[1] === 'offline',
+      (c: unknown[]) => c[0] === 'ha-forge/sensor.temp/availability' && c[1] === 'offline',
     );
     expect(offlineCall).toBeDefined();
   });
@@ -84,7 +84,7 @@ describe('MqttTransport — per-entity availability', () => {
     // Check that online was published
     const client = await getMockClient();
     const onlineCall = client.publish.mock.calls.find(
-      (c: unknown[]) => c[0] === 'ts-entities/sensor.temp/availability' && c[1] === 'online',
+      (c: unknown[]) => c[0] === 'ha-forge/sensor.temp/availability' && c[1] === 'online',
     );
     expect(onlineCall).toBeDefined();
   });

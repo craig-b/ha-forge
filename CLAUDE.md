@@ -1,8 +1,8 @@
-# ha-ts-entities
+# ha-forge
 
 ## Project
 
-TS Entities — define Home Assistant entities, automations, and reactive behaviors in TypeScript. Deployed as an HA add-on with MQTT discovery. See SPEC.md for the full specification.
+HA Forge — define Home Assistant entities, automations, and reactive behaviors in TypeScript. Deployed as an HA add-on with MQTT discovery. See SPEC.md for the full specification.
 
 ## Architecture
 

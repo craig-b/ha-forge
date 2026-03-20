@@ -1,4 +1,4 @@
-# TS Entities for Home Assistant
+# HA Forge for Home Assistant
 
 ## Specification v0.3
 
@@ -28,7 +28,7 @@ The core differentiator is the type system. The SDK generates TypeScript types f
 
 **2. User Scripts**
 
-- TypeScript files stored in `/config/ts-entities/`.
+- TypeScript files stored in `/config/ha-forge/`.
 - Each file exports one or more entity definitions, reactive behaviors, or entity factories.
 - Edited via the built-in Monaco editor (primary) or VS Code Server add-on / File Editor / Samba / SSH (alternative).
 - Automatically included in HA's built-in backup system.
@@ -80,7 +80,7 @@ The build is an explicit, discrete step — not implicit file watching. The user
 
 ### Steps
 
-1. **Type generation**: pull entity registry, service definitions, and state data from HA WebSocket API (`get_services`, `get_states`, `config/entity_registry/list`, `config/device_registry/list`, `config/area_registry/list`). Generate `.d.ts` type declarations and companion runtime validator module. Write to `/config/ts-entities/.generated/`.
+1. **Type generation**: pull entity registry, service definitions, and state data from HA WebSocket API (`get_services`, `get_states`, `config/entity_registry/list`, `config/device_registry/list`, `config/area_registry/list`). Generate `.d.ts` type declarations and companion runtime validator module. Write to `/config/ha-forge/.generated/`.
 
 2. **Dependency install**: if `package.json` has changed since last build, run `npm install` in the scripts directory.
 
@@ -113,7 +113,7 @@ The primary interface for authoring and managing entity scripts. Accessible from
 ### Type Injection
 
 On editor load and after each type generation:
-- SDK types (`ts-entities` module, including `NumberInRange` and validation utilities) injected via `addExtraLib()`.
+- SDK types (`ha-forge` module, including `NumberInRange` and validation utilities) injected via `addExtraLib()`.
 - Generated HA registry types and runtime validators injected via `addExtraLib()`.
 - Installed npm package types (from `node_modules/**/*.d.ts`) injected via `addExtraLib()`.
 
@@ -121,7 +121,7 @@ This gives the user full IntelliSense without any manual setup.
 
 ### VS Code Compatibility
 
-The same types are written to disk at `/config/ts-entities/.generated/` and `/config/ts-entities/node_modules/ts-entities/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking.
+The same types are written to disk at `/config/ha-forge/.generated/` and `/config/ha-forge/node_modules/ha-forge/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking.
 
 ---
 
@@ -266,7 +266,7 @@ The type generator emits a companion runtime module alongside the `.d.ts` file. 
 ```typescript
 // auto-generated: .generated/ha-validators.ts
 
-import { rangeValidator, oneOfValidator, rgbValidator } from 'ts-entities/validate';
+import { rangeValidator, oneOfValidator, rgbValidator } from 'ha-forge/validate';
 
 export const validators = {
   'light.turn_on': {
@@ -752,7 +752,7 @@ User-facing API is transport-agnostic. Adding support for unsupported entity typ
 ### Native Bridge Transport (future, not v1)
 
 - For entity types MQTT discovery doesn't cover.
-- Python custom integration in `custom_components/ts_entities/`.
+- Python custom integration in `custom_components/ha_forge/`.
 - Communication over local WebSocket.
 - Python side registers entities via HA's native platform APIs.
 
@@ -818,12 +818,12 @@ The running instance is never touched. This is a read-only check.
 Registered by the runtime itself (dogfooding the system):
 
 ```
-binary_sensor.ts_entities_build_healthy
+binary_sensor.ha_forge_build_healthy
   state: on | off
   on = all scripts compile cleanly against current HA registry
   off = type errors found
 
-sensor.ts_entities_type_errors
+sensor.ha_forge_type_errors
   state: <error count>
   attributes:
     errors: [
@@ -850,14 +850,14 @@ sensor.ts_entities_type_errors
 ```yaml
 trigger:
   - platform: state
-    entity_id: binary_sensor.ts_entities_build_healthy
+    entity_id: binary_sensor.ha_forge_build_healthy
     to: 'off'
 action:
   - service: notify.mobile_app
     data:
-      title: "TS Entities: Build Broken"
+      title: "HA Forge: Build Broken"
       message: >
-        {{ state_attr('sensor.ts_entities_type_errors', 'errors') | length }}
+        {{ state_attr('sensor.ha_forge_type_errors', 'errors') | length }}
         type error(s) detected after HA registry change.
 ```
 
@@ -899,10 +899,10 @@ Configurable behavior when the scheduled/triggered validation passes:
 ### HA Add-on Metadata
 
 ```yaml
-name: TS Entities
+name: HA Forge
 description: Define Home Assistant entities in TypeScript
 version: 0.1.0
-slug: ts_entities
+slug: ha_forge
 arch:
   - amd64
   - aarch64
@@ -917,7 +917,7 @@ ingress: true
 ingress_port: 8099
 panel_icon: mdi:language-typescript
 options:
-  scripts_path: ts-entities
+  scripts_path: ha-forge
   log_level: info
   log_retention_days: 7
   validation_schedule_minutes: 60
@@ -941,7 +941,7 @@ schema:
 ### File Watching (Optional)
 
 Disabled by default. When enabled:
-- Watches `/config/ts-entities/` for `.ts` file changes.
+- Watches `/config/ha-forge/` for `.ts` file changes.
 - Debounces (500ms).
 - Triggers a full build on change.
 - Does not watch `package.json` changes (dependency changes always require explicit build via UI).
@@ -966,7 +966,7 @@ After `npm install`, the build pipeline scans `node_modules/` for `.d.ts` files 
 
 ## Backup & Persistence
 
-- User scripts in `/config/ts-entities/` are included in HA's built-in backup.
+- User scripts in `/config/ha-forge/` are included in HA's built-in backup.
 - `node_modules/` can be excluded from backup (regenerated via `npm install`). Add-on options control this.
 - SQLite log database lives in the add-on's `/data` directory. Included in backup if the add-on is selected.
 - Entity state is transient — recomputed on startup via `init()`. No state persistence in v1.
@@ -1027,7 +1027,7 @@ Backed by SQLite in the same database. Per-entity key namespace.
 
 1. **Worker threads vs single process**: running each file in a worker thread isolates crashes but adds complexity. Single process with try/catch is simpler and matches Node-RED's model. Leaning single process for v1.
 
-2. **SDK distribution**: publish a types-only `ts-entities` package to npm for users who want to develop locally and deploy to HA? Or keep it purely internal?
+2. **SDK distribution**: publish a types-only `ha-forge` package to npm for users who want to develop locally and deploy to HA? Or keep it purely internal?
 
 3. **Hot reload granularity**: current design rebuilds everything on any change. Per-file incremental builds are possible with esbuild but add complexity around shared state and dependency tracking. Worth revisiting if build times become a problem.
 

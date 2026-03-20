@@ -13,8 +13,8 @@ export interface TscDiagnostic {
 /**
  * Manages health entities that report the add-on's status via MQTT discovery.
  *
- * - binary_sensor.ts_entities_build_healthy: on/off based on tsc errors
- * - sensor.ts_entities_type_errors: error count with diagnostic details
+ * - binary_sensor.ha_forge_build_healthy: on/off based on tsc errors
+ * - sensor.ha_forge_type_errors: error count with diagnostic details
  */
 export class HealthEntities {
   private transport: Transport;
@@ -36,8 +36,8 @@ export class HealthEntities {
     // Register binary_sensor for build health
     await this.transport.register({
       definition: {
-        id: 'ts_entities_build_healthy',
-        name: 'TS Entities Build Healthy',
+        id: 'ha_forge_build_healthy',
+        name: 'HA Forge Build Healthy',
         type: 'binary_sensor',
         icon: 'mdi:check-circle',
         category: 'diagnostic',
@@ -46,14 +46,14 @@ export class HealthEntities {
         },
       },
       sourceFile: '_health',
-      deviceId: 'ts_entities_system',
+      deviceId: 'ha_forge_system',
     });
 
     // Register sensor for type error count
     await this.transport.register({
       definition: {
-        id: 'ts_entities_type_errors',
-        name: 'TS Entities Type Errors',
+        id: 'ha_forge_type_errors',
+        name: 'HA Forge Type Errors',
         type: 'sensor',
         icon: 'mdi:alert-circle',
         category: 'diagnostic',
@@ -62,7 +62,7 @@ export class HealthEntities {
         },
       },
       sourceFile: '_health',
-      deviceId: 'ts_entities_system',
+      deviceId: 'ha_forge_system',
     });
 
     this.registered = true;
@@ -91,13 +91,13 @@ export class HealthEntities {
     // binary_sensor: device_class=problem means "on" = problem detected
     // So invert: buildHealthy=true → state='off' (no problem)
     await this.transport.publishState(
-      'ts_entities_build_healthy',
+      'ha_forge_build_healthy',
       this.buildHealthy ? 'off' : 'on',
     );
 
     // sensor: error count + attributes
     await this.transport.publishState(
-      'ts_entities_type_errors',
+      'ha_forge_type_errors',
       this.typeErrors.length,
       {
         errors: this.typeErrors.map((e) => ({

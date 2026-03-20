@@ -99,8 +99,8 @@ function scaffoldTsconfig(tsconfigPath: string, generatedDir: string): void {
       strict: true,
       noEmit: true,
       paths: {
-        'ts-entities': [`./${relGenerated}/ts-entities.d.ts`],
-        'ts-entities/*': [`./${relGenerated}/ts-entities/*.d.ts`],
+        'ha-forge': [`./${relGenerated}/ha-forge.d.ts`],
+        'ha-forge/*': [`./${relGenerated}/ha-forge/*.d.ts`],
       },
     },
     include: ['*.ts', `${relGenerated}/**/*.d.ts`],

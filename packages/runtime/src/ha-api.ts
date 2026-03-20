@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger } from '@ha-ts-entities/sdk';
+import type { HAClientBase, EntityLogger } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
 // ---- Event types ----

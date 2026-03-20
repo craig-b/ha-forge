@@ -33,8 +33,8 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
   app.get('/sdk', (c) => {
     try {
       const sdkDistPaths = [
-        path.resolve('/app/node_modules/@ha-ts-entities/sdk/dist'),
-        path.resolve('node_modules/@ha-ts-entities/sdk/dist'),
+        path.resolve('/app/node_modules/@ha-forge/sdk/dist'),
+        path.resolve('node_modules/@ha-forge/sdk/dist'),
         path.resolve(import.meta.dirname ?? __dirname, '../../sdk/dist'),
       ];
 
@@ -95,7 +95,7 @@ interface HAClient extends HAClientBase {
 `;
 
       // Build a single self-contained declaration
-      const declaration = `// TS Entities SDK types (auto-generated)
+      const declaration = `// HA Forge SDK types (auto-generated)
 ${types}
 ${optionInterfaces}
 ${untypedFallback}
@@ -220,13 +220,13 @@ declare function device<TEntities extends Record<string, EntityDefinition>>(opti
  */
 declare const ha: HAClient;
 
-/** Console output goes to the HA add-on Log tab, not the TS Entities log viewer. Use \`this.log\` or \`ha.log\` for structured logging. */
+/** Console output goes to the HA add-on Log tab, not the HA Forge log viewer. Use \`this.log\` or \`ha.log\` for structured logging. */
 interface Console {
-  /** Outputs to the HA add-on Log tab. Use \`this.log.info()\` or \`ha.log.info()\` for the TS Entities log viewer. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.info()\` or \`ha.log.info()\` for the HA Forge log viewer. */
   log(...args: unknown[]): void;
-  /** Outputs to the HA add-on Log tab. Use \`this.log.warn()\` or \`ha.log.warn()\` for the TS Entities log viewer. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.warn()\` or \`ha.log.warn()\` for the HA Forge log viewer. */
   warn(...args: unknown[]): void;
-  /** Outputs to the HA add-on Log tab. Use \`this.log.error()\` or \`ha.log.error()\` for the TS Entities log viewer. */
+  /** Outputs to the HA add-on Log tab. Use \`this.log.error()\` or \`ha.log.error()\` for the HA Forge log viewer. */
   error(...args: unknown[]): void;
 }
 `;

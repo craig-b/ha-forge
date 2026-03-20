@@ -12,7 +12,7 @@ export class TseHeader extends LitElement {
   render() {
     return html`
       <div class="header-left">
-        <h1>TS Entities</h1>
+        <h1>HA Forge</h1>
       </div>
       <div class="header-center">
         <button class="btn btn-primary" ?disabled=${this.building}

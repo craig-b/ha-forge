@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 set -e
 
-echo "Starting TS Entities add-on..."
+echo "Starting HA Forge add-on..."
 
 # The addon entry point runs the runtime which:
 # 1. Reads options from /data/options.json

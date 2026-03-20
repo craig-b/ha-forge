@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition } from '@ha-ts-entities/sdk';
-import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
+import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition } from '@ha-forge/sdk';
+import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAClient } from './ha-api.js';
 
 /** A resolved device definition with its source file and entity IDs. */
@@ -27,7 +27,7 @@ export interface LoadError {
  * without explicit imports. Call this before loading any user bundles.
  */
 export async function installGlobals(haClient?: HAClient, logger?: EntityLogger): Promise<void> {
-  const sdk = await import('@ha-ts-entities/sdk');
+  const sdk = await import('@ha-forge/sdk');
   const g = globalThis as Record<string, unknown>;
   g.sensor = sdk.sensor;
   g.defineSwitch = sdk.defineSwitch;

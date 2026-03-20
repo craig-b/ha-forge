@@ -41,7 +41,7 @@ RUN mkdir -p /data /config
 
 # Labels for HA add-on
 LABEL \
-  io.hass.name="TS Entities" \
+  io.hass.name="HA Forge" \
   io.hass.description="Define Home Assistant entities in TypeScript" \
   io.hass.type="addon" \
   io.hass.version="${BUILD_VERSION}" \

@@ -31,7 +31,7 @@ WebSocket connections for live updates (log tailing, entity state) also go throu
 
 The editor loads with the full TypeScript language service configured for the user's environment:
 
-1. **SDK types**: The `ts-entities` module type declarations injected via `addExtraLib()`.
+1. **SDK types**: The `ha-forge` module type declarations injected via `addExtraLib()`.
 2. **Generated HA types**: `ha-registry.d.ts` injected via `addExtraLib()` — provides autocomplete for every entity ID, state value, attribute, and service parameter.
 3. **Generated validators**: Type declarations for the validator module.
 4. **npm package types**: After dependency install, `.d.ts` files from `node_modules/` injected via `addExtraLib()`.
@@ -196,4 +196,4 @@ The add-on runs an HTTP + WebSocket server on the ingress port serving both the 
 
 ## VS Code Compatibility
 
-The same generated types exist on disk at `/config/.generated/` and the SDK types at `/config/node_modules/ts-entities/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking without the Monaco UI.
+The same generated types exist on disk at `/config/.generated/` and the SDK types at `/config/node_modules/ha-forge/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking without the Monaco UI.

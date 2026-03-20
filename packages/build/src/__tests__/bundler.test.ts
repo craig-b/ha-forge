@@ -65,14 +65,14 @@ describe('bundle', () => {
     expect(content).toMatch(/export\s/);
   });
 
-  it('externalizes @ha-ts-entities/sdk imports and does not bundle them', async () => {
+  it('externalizes @ha-forge/sdk imports and does not bundle them', async () => {
     const inputDir = path.join(tmpDir, 'input');
     const outputDir = path.join(tmpDir, 'output');
     fs.mkdirSync(inputDir);
 
     fs.writeFileSync(
       path.join(inputDir, 'entity.ts'),
-      `import { sensor } from '@ha-ts-entities/sdk';\nexport default sensor({ id: 'test', name: 'Test', init() { return 0; } });\n`,
+      `import { sensor } from '@ha-forge/sdk';\nexport default sensor({ id: 'test', name: 'Test', init() { return 0; } });\n`,
     );
 
     const result = await bundle({ inputDir, outputDir });
@@ -82,8 +82,8 @@ describe('bundle', () => {
     expect(result.files[0].success).toBe(true);
 
     const content = fs.readFileSync(path.join(outputDir, 'entity.js'), 'utf8');
-    // @ha-ts-entities/sdk should remain as an import, not be inlined
-    expect(content).toContain('@ha-ts-entities/sdk');
+    // @ha-forge/sdk should remain as an import, not be inlined
+    expect(content).toContain('@ha-forge/sdk');
   });
 
   it('externalizes additional external modules passed in options', async () => {

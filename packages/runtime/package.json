@@ -1,5 +1,5 @@
 {
-  "name": "@ha-ts-entities/runtime",
+  "name": "@ha-forge/runtime",
   "version": "0.1.0",
   "type": "module",
   "main": "dist/index.js",
@@ -9,7 +9,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@ha-ts-entities/sdk": "workspace:*",
+    "@ha-forge/sdk": "workspace:*",
     "better-sqlite3": "^12.8.0",
     "mqtt": "^5.0.0",
     "ws": "^8.0.0"

@@ -556,7 +556,7 @@ describe('generateTypes()', () => {
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-validators.ts'), 'utf-8');
 
-      expect(content).toContain("import { rangeValidator, oneOfValidator, rgbValidator } from '@ha-ts-entities/sdk/validate'");
+      expect(content).toContain("import { rangeValidator, oneOfValidator, rgbValidator } from '@ha-forge/sdk/validate'");
       cleanup();
     });
 

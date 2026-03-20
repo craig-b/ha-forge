@@ -2,7 +2,7 @@
 
 ## System Context
 
-TS Entities runs as a Home Assistant add-on — a Docker container managed by the HA Supervisor on HAOS. It connects to two HA subsystems: the MQTT broker (Mosquitto add-on) for entity registration and state traffic, and the HA WebSocket API for registry introspection, state subscriptions, and service calls.
+HA Forge runs as a Home Assistant add-on — a Docker container managed by the HA Supervisor on HAOS. It connects to two HA subsystems: the MQTT broker (Mosquitto add-on) for entity registration and state traffic, and the HA WebSocket API for registry introspection, state subscriptions, and service calls.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -20,7 +20,7 @@ TS Entities runs as a Home Assistant add-on — a Docker container managed by th
 │             │ ws://supervisor/              │ mqtt://            │
 │             │ core/websocket               │                    │
 │  ┌──────────┴──────────────────────────────┴─────────────────┐  │
-│  │  TS Entities Add-on (Docker)                              │  │
+│  │  HA Forge Add-on (Docker)                              │  │
 │  │                                                           │  │
 │  │  ┌─────────────┐  ┌─────────┐  ┌──────────────────────┐  │  │
 │  │  │  Build       │  │ Runtime │  │  Web UI (Ingress)    │  │  │
@@ -128,11 +128,11 @@ Runtime resolves entity → MQTT transport
   → Publish retained JSON to homeassistant/device/<device_id>/config
     {
       dev: { ids, name, manufacturer, model, sw },
-      o: { name: "ts-entities", sw: "<version>", url: "<repo>" },
+      o: { name: "ha-forge", sw: "<version>", url: "<repo>" },
       cmps: {
         <entity_key>: { p: "<platform>", unique_id, stat_t, cmd_t, ... }
       },
-      avty_t: "ts-entities/availability",
+      avty_t: "ha-forge/availability",
     }
   → HA picks up entities from discovery topic
   → Publish initial state to each entity's state topic

@@ -1,4 +1,4 @@
-import type { MqttCredentials } from '@ha-ts-entities/runtime';
+import type { MqttCredentials } from '@ha-forge/runtime';
 
 export interface AddonOptions {
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -63,7 +63,7 @@ export async function readOptions(): Promise<AddonOptions> {
 }
 
 function log(msg: string): void {
-  console.log(`[${new Date().toISOString()}] [ts-entities] ${msg}`);
+  console.log(`[${new Date().toISOString()}] [ha-forge] ${msg}`);
 }
 
 async function main(): Promise<void> {
@@ -73,9 +73,9 @@ async function main(): Promise<void> {
 
   // Step 1: SQLite Logger
   log('Initializing SQLite logger...');
-  const { SQLiteLogger } = await import('@ha-ts-entities/runtime');
+  const { SQLiteLogger } = await import('@ha-forge/runtime');
   // Late-bound broadcast function — set after wsHub is created
-  let broadcastLog: ((entry: import('@ha-ts-entities/runtime').LogEntry) => void) | null = null;
+  let broadcastLog: ((entry: import('@ha-forge/runtime').LogEntry) => void) | null = null;
   let logger: InstanceType<typeof SQLiteLogger>;
   try {
     logger = new SQLiteLogger({
@@ -93,11 +93,11 @@ async function main(): Promise<void> {
   log('SQLite logger ready');
 
   // Step 2: MQTT
-  let mqttTransport: import('@ha-ts-entities/runtime').MqttTransport | null = null;
+  let mqttTransport: import('@ha-forge/runtime').MqttTransport | null = null;
   try {
     log('Connecting MQTT...');
     const credentials = await fetchMqttCredentials(options);
-    const { MqttTransport } = await import('@ha-ts-entities/runtime');
+    const { MqttTransport } = await import('@ha-forge/runtime');
     mqttTransport = new MqttTransport({
       credentials,
       onConnect: () => logger.info('MQTT connected'),
@@ -113,11 +113,11 @@ async function main(): Promise<void> {
 
   // Step 3: HA WebSocket
   // Late-bound event handler — set after HAApiImpl is created
-  let handleHAEvent: ((subId: number, event: import('@ha-ts-entities/runtime').HAEvent) => void) | null = null;
-  let wsClient: import('@ha-ts-entities/runtime').HAWebSocketClient | null = null;
+  let handleHAEvent: ((subId: number, event: import('@ha-forge/runtime').HAEvent) => void) | null = null;
+  let wsClient: import('@ha-forge/runtime').HAWebSocketClient | null = null;
   try {
     log('Connecting HA WebSocket...');
-    const { HAWebSocketClient } = await import('@ha-ts-entities/runtime');
+    const { HAWebSocketClient } = await import('@ha-forge/runtime');
     wsClient = new HAWebSocketClient({
       url: 'ws://supervisor/core/websocket',
       token: process.env.SUPERVISOR_TOKEN!,
@@ -132,12 +132,12 @@ async function main(): Promise<void> {
   // Step 4: Web server
   try {
     log('Starting web server...');
-    const { createServer } = await import('@ha-ts-entities/web');
-    const { BuildManager, HealthEntities, HAApiImpl, installGlobals } = await import('@ha-ts-entities/runtime');
-    const { runBuild } = await import('@ha-ts-entities/build');
+    const { createServer } = await import('@ha-forge/web');
+    const { BuildManager, HealthEntities, HAApiImpl, installGlobals } = await import('@ha-forge/runtime');
+    const { runBuild } = await import('@ha-forge/build');
 
     const haLogger = logger.forEntity ? logger.forEntity('_ha', '_global') as typeof logger : logger;
-    let haApi: import('@ha-ts-entities/runtime').HAApiImpl | null = null;
+    let haApi: import('@ha-forge/runtime').HAApiImpl | null = null;
     if (wsClient) {
       haApi = new HAApiImpl(wsClient, haLogger);
       // Wire up WebSocket events → HAApiImpl for ha.on()/reactions()
@@ -213,7 +213,7 @@ async function main(): Promise<void> {
       queryLogs: (opts) => logger.query(opts),
       regenerateTypes: async () => {
         if (!wsClient) return { success: false, entityCount: 0, serviceCount: 0, errors: ['No WebSocket connection'] };
-        const { generateTypes, fetchRegistryData } = await import('@ha-ts-entities/build');
+        const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');
         const data = await fetchRegistryData(wsClient);
         return generateTypes(data, '/config/.generated');
       },
@@ -254,7 +254,7 @@ async function main(): Promise<void> {
     const http = await import('node:http');
     http.createServer((_req, res) => {
       res.writeHead(500, { 'Content-Type': 'text/html' });
-      res.end(`<h1>TS Entities</h1><p>Startup error: ${err instanceof Error ? err.message : String(err)}</p>`);
+      res.end(`<h1>HA Forge</h1><p>Startup error: ${err instanceof Error ? err.message : String(err)}</p>`);
     }).listen(8099);
     log('Fallback web server on port 8099');
   }
@@ -263,7 +263,7 @@ async function main(): Promise<void> {
   const fs = await import('node:fs');
   if (fs.existsSync('/data/last-build') && mqttTransport) {
     try {
-      const { BuildManager } = await import('@ha-ts-entities/runtime');
+      const { BuildManager } = await import('@ha-forge/runtime');
       const cached = new BuildManager({ bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport });
       const result = await cached.deploy();
       log(`Cached build loaded: ${result.entityCount} entities`);
@@ -274,7 +274,7 @@ async function main(): Promise<void> {
 
   // Step 6: Scheduled validation
   if (options.validation_schedule_minutes > 0 && wsClient) {
-    const { runValidation } = await import('@ha-ts-entities/build');
+    const { runValidation } = await import('@ha-forge/build');
     const intervalMs = options.validation_schedule_minutes * 60 * 1000;
     setInterval(async () => {
       try {
@@ -313,13 +313,13 @@ const isMain = process.argv[1]?.endsWith('addon/dist/index.js') ||
                process.argv[1]?.endsWith('addon/src/index.ts');
 if (isMain) {
   process.on('uncaughtException', (err) => {
-    console.error('[ts-entities] Uncaught exception:', err);
+    console.error('[ha-forge] Uncaught exception:', err);
   });
   process.on('unhandledRejection', (err) => {
-    console.error('[ts-entities] Unhandled rejection:', err);
+    console.error('[ha-forge] Unhandled rejection:', err);
   });
   main().catch((err) => {
-    console.error('[ts-entities] Fatal error:', err);
+    console.error('[ha-forge] Fatal error:', err);
     process.exit(1);
   });
 }

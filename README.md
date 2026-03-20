@@ -1,4 +1,4 @@
-# TS Entities for Home Assistant
+# HA Forge for Home Assistant
 
 Define Home Assistant entities, automations, and reactive behaviors in TypeScript.
 
@@ -432,7 +432,7 @@ The add-on includes a browser-based Monaco editor accessible via the HA ingress 
 - **Add-on**: Node.js LTS in Docker on HAOS. Connects to Mosquitto (MQTT) and HA WebSocket API.
 - **Editor**: Ingress-based Monaco editor with full IntelliSense.
 - **Transport**: MQTT discovery for 25 entity platforms.
-- **Health monitoring**: Scheduled type validation detects HA registry drift. Health entities (`binary_sensor.ts_entities_build_healthy`) can trigger HA automations on breakage.
+- **Health monitoring**: Scheduled type validation detects HA registry drift. Health entities (`binary_sensor.ha_forge_build_healthy`) can trigger HA automations on breakage.
 
 ## Requirements
 

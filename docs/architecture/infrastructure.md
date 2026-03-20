@@ -17,10 +17,10 @@ Key layers:
 ### config.yaml
 
 ```yaml
-name: TS Entities
+name: HA Forge
 description: Define Home Assistant entities in TypeScript
 version: 0.1.0
-slug: ts_entities
+slug: ha_forge
 url: https://github.com/<repo>
 arch:
   - amd64
@@ -36,7 +36,7 @@ ingress: true
 ingress_port: 8099
 ingress_entry: /
 panel_icon: mdi:language-typescript
-panel_title: TS Entities
+panel_title: HA Forge
 options:
   log_level: info
   log_retention_days: 7
@@ -54,7 +54,7 @@ schema:
 Key configuration choices:
 
 - **`homeassistant_api: true`**: Grants access to HA's WebSocket API via `ws://supervisor/core/websocket` and REST API via `http://supervisor/core/api/`, authenticated with the `SUPERVISOR_TOKEN` environment variable.
-- **`map: [addon_config:rw]`**: Maps `/addon_configs/ts_entities/` on the host to `/config/` in the container. This is where user scripts, `package.json`, `node_modules/`, and `.generated/` live. Automatically included in HA backups.
+- **`map: [addon_config:rw]`**: Maps `/addon_configs/ha_forge/` on the host to `/config/` in the container. This is where user scripts, `package.json`, `node_modules/`, and `.generated/` live. Automatically included in HA backups.
 - **`services: [mqtt:need]`**: Declares MQTT as a required service. The Supervisor ensures Mosquitto is running before starting this add-on. MQTT credentials obtained via `GET http://supervisor/services/mqtt`.
 - **`ingress: true`**: Web UI proxied through HA's ingress gateway. No exposed ports.
 - **`init: false`**: We manage our own process lifecycle (no s6-overlay).
@@ -92,8 +92,8 @@ Container:
 
 1. Read add-on options from `/data/options.json`.
 2. Connect to MQTT broker (credentials from `GET http://supervisor/services/mqtt`).
-3. Configure MQTT LWT: publish `offline` to `ts-entities/availability` on unexpected disconnect.
-4. Publish `online` to `ts-entities/availability`.
+3. Configure MQTT LWT: publish `offline` to `ha-forge/availability` on unexpected disconnect.
+4. Publish `online` to `ha-forge/availability`.
 5. Connect to HA WebSocket API (`ws://supervisor/core/websocket`, auth via `SUPERVISOR_TOKEN`).
 6. Start web server on ingress port (8099).
 7. If `/data/last-build/` exists, load cached build (fast startup without recompilation).
@@ -125,7 +125,7 @@ Response:
 
 1. Connect to MQTT broker with credentials + LWT configuration.
 2. Subscribe to `homeassistant/status` (HA birth topic).
-3. Publish `online` to `ts-entities/availability` (retained).
+3. Publish `online` to `ha-forge/availability` (retained).
 4. On unexpected disconnect: LWT fires, HA marks entities unavailable.
 5. Reconnect with exponential backoff (1s, 2s, 4s, 8s, ... max 60s).
 6. On reconnect: re-publish `online` to availability topic. Re-publish all discovery messages. Re-publish current state for all entities.
@@ -133,10 +133,10 @@ Response:
 
 ### Topic Namespace
 
-All MQTT topics prefixed with `ts-entities/` to avoid collisions:
+All MQTT topics prefixed with `ha-forge/` to avoid collisions:
 
 ```
-ts-entities/
+ha-forge/
 ├── availability                              # Global LWT
 ├── <entity_id>/state                         # State per entity
 ├── <entity_id>/set                           # Command per entity
@@ -200,7 +200,7 @@ Real-time tailing via WebSocket. The add-on pushes new rows to connected clients
 
 The runtime dogfoods its own system by registering health entities via MQTT discovery:
 
-### binary_sensor.ts_entities_build_healthy
+### binary_sensor.ha_forge_build_healthy
 
 ```
 state: on | off
@@ -208,7 +208,7 @@ state: on | off
   off = type errors found during scheduled validation
 ```
 
-### sensor.ts_entities_type_errors
+### sensor.ha_forge_type_errors
 
 ```
 state: <error count as integer>
@@ -232,14 +232,14 @@ Users can automate on health entity state changes:
 ```yaml
 trigger:
   - platform: state
-    entity_id: binary_sensor.ts_entities_build_healthy
+    entity_id: binary_sensor.ha_forge_build_healthy
     to: 'off'
 action:
   - service: notify.mobile_app
     data:
-      title: "TS Entities: Build Broken"
+      title: "HA Forge: Build Broken"
       message: >
-        {{ state_attr('sensor.ts_entities_type_errors', 'errors') | length }}
+        {{ state_attr('sensor.ha_forge_type_errors', 'errors') | length }}
         type error(s) detected after HA registry change.
 ```
 
@@ -253,7 +253,7 @@ action:
 
 ### What's Included Automatically
 
-Since we use `addon_config` mapping, the scripts directory (`/addon_configs/ts_entities/`) is automatically included when the user backs up this add-on in HA's built-in backup system. This covers:
+Since we use `addon_config` mapping, the scripts directory (`/addon_configs/ha_forge/`) is automatically included when the user backs up this add-on in HA's built-in backup system. This covers:
 
 - All user `.ts` files.
 - `package.json` and `tsconfig.json`.

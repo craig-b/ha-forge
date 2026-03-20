@@ -1,4 +1,4 @@
-# TS Entities
+# HA Forge
 
 Define Home Assistant entities, automations, and reactive behaviors in TypeScript.
 
@@ -144,5 +144,5 @@ MQTT connection is auto-detected from the Mosquitto add-on. Manual MQTT options 
 
 ## Data Storage
 
-- **Scripts**: stored in `/addon_configs/ts_entities/` (included in HA backups)
+- **Scripts**: stored in `/addon_configs/ha_forge/` (included in HA backups)
 - **Logs & build cache**: stored in `/data/` (persistent across restarts)

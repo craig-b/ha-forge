@@ -7,7 +7,7 @@ export interface BundleOptions {
   inputDir: string;
   /** Directory to write bundled .js files */
   outputDir: string;
-  /** Additional external modules (always includes 'ts-entities') */
+  /** Additional external modules (always includes 'ha-forge') */
   external?: string[];
 }
 
@@ -56,7 +56,7 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
   fs.rmSync(options.outputDir, { recursive: true, force: true });
   fs.mkdirSync(options.outputDir, { recursive: true });
 
-  const external = ['@ha-ts-entities/sdk', ...(options.external ?? [])];
+  const external = ['@ha-forge/sdk', ...(options.external ?? [])];
 
   // Bundle each file independently
   for (const file of tsFiles) {

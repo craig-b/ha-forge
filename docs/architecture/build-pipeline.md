@@ -102,7 +102,7 @@ export type EntitiesInDomain<D extends HADomain> = {
 Written to `/config/.generated/ha-validators.ts`:
 
 ```typescript
-import { rangeValidator, oneOfValidator, rgbValidator } from 'ts-entities/validate';
+import { rangeValidator, oneOfValidator, rgbValidator } from 'ha-forge/validate';
 
 export const validators = {
   'light.turn_on': {
@@ -167,8 +167,8 @@ Scaffolded on first run if absent:
     "strict": true,
     "noEmit": true,
     "paths": {
-      "ts-entities": ["./.generated/ts-entities.d.ts"],
-      "ts-entities/*": ["./.generated/ts-entities/*.d.ts"]
+      "ha-forge": ["./.generated/ha-forge.d.ts"],
+      "ha-forge/*": ["./.generated/ha-forge/*.d.ts"]
     }
   },
   "include": ["*.ts", ".generated/**/*.d.ts"]
@@ -193,12 +193,12 @@ Each user file is an independent entry point. A file that fails to compile doesn
   target: 'node20',
   format: 'esm',
   outdir: stagingDir,
-  external: ['ts-entities'],  // provided by runtime
+  external: ['ha-forge'],  // provided by runtime
   sourcemap: true,
 }
 ```
 
-The `ts-entities` module is external — it's provided by the runtime, not bundled into user code. Everything else (user imports, npm dependencies) is bundled.
+The `ha-forge` module is external — it's provided by the runtime, not bundled into user code. Everything else (user imports, npm dependencies) is bundled.
 
 ### Performance
 

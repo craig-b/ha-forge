@@ -97,43 +97,43 @@ The MQTT transport uses HA's device discovery pattern — one message registers 
 ```json
 {
   "dev": {
-    "ids": ["ts_entities_<device_id>"],
+    "ids": ["ha_forge_<device_id>"],
     "name": "Device Name",
-    "mf": "ts-entities",
+    "mf": "ha-forge",
     "mdl": "User Script",
     "sw": "0.1.0"
   },
   "o": {
-    "name": "ts-entities",
+    "name": "ha-forge",
     "sw": "0.1.0",
     "url": "https://github.com/<repo>"
   },
   "cmps": {
     "backyard_temp": {
       "p": "sensor",
-      "unique_id": "ts_entities_backyard_temp",
+      "unique_id": "ha_forge_backyard_temp",
       "name": "Temperature",
-      "stat_t": "ts-entities/backyard_temp/state",
+      "stat_t": "ha-forge/backyard_temp/state",
       "dev_cla": "temperature",
       "unit_of_meas": "°C",
       "stat_cla": "measurement"
     },
     "garage_door": {
       "p": "switch",
-      "unique_id": "ts_entities_garage_door",
+      "unique_id": "ha_forge_garage_door",
       "name": "Garage Door",
-      "stat_t": "ts-entities/garage_door/state",
-      "cmd_t": "ts-entities/garage_door/set"
+      "stat_t": "ha-forge/garage_door/state",
+      "cmd_t": "ha-forge/garage_door/set"
     }
   },
-  "avty_t": "ts-entities/availability"
+  "avty_t": "ha-forge/availability"
 }
 ```
 
 Key details:
 - **Origin field** (`o`) is required for device discovery. Identifies our add-on in HA logs.
 - **Abbreviated keys** used throughout (`dev`, `ids`, `mf`, `mdl`, `sw`, `p`, `stat_t`, `cmd_t`, `avty_t`, `dev_cla`, `unit_of_meas`, `stat_cla`) to reduce MQTT traffic.
-- **`unique_id`** prefixed with `ts_entities_` to avoid collisions with other integrations.
+- **`unique_id`** prefixed with `ha_forge_` to avoid collisions with other integrations.
 - **`default_entity_id`** (`def_ent_id`) can be set to control the entity ID in HA. Only used on first registration when `unique_id` is present.
 - **Retained messages**: Discovery payloads published with retain flag so HA picks them up on restart.
 
@@ -147,7 +147,7 @@ Entities are grouped into devices by:
 #### Topic Structure
 
 ```
-ts-entities/
+ha-forge/
 ├── availability                          # Global LWT topic
 ├── <entity_id>/
 │   ├── state                             # State updates (JSON or plain value)
@@ -156,11 +156,11 @@ ts-entities/
 
 #### Availability and LWT
 
-- On connect: publish `online` to `ts-entities/availability` (retained).
-- MQTT client configured with LWT: publish `offline` to `ts-entities/availability` on unexpected disconnect.
+- On connect: publish `online` to `ha-forge/availability` (retained).
+- MQTT client configured with LWT: publish `offline` to `ha-forge/availability` on unexpected disconnect.
 - On graceful shutdown: publish `offline` before disconnecting.
 - All entities reference this topic via `avty_t` in their discovery payload.
-- When HA sees `offline`, all ts-entities entities go unavailable.
+- When HA sees `offline`, all ha-forge entities go unavailable.
 
 Per-entity availability is also possible: if an entity's poll or command handler fails repeatedly, the runtime publishes `offline` to a per-entity availability topic.
 
@@ -173,7 +173,7 @@ When an entity is removed (present in old build, absent in new):
 ### Native Bridge Transport (Future, Not v1)
 
 For entity types MQTT discovery doesn't cover (media_player, calendar, weather):
-- Python custom integration in `custom_components/ts_entities/`.
+- Python custom integration in `custom_components/ha_forge/`.
 - Communication over local WebSocket between add-on and custom component.
 - Python side registers entities via HA's native platform APIs.
 - User-facing TypeScript API does not change.

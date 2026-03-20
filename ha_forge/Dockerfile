@@ -14,8 +14,8 @@ WORKDIR /app
 # Clone and build the project
 RUN apk add --no-cache git && \
     git clone --depth 1 --branch "v${BUILD_VERSION}" \
-      https://github.com/craig-b/ha-ts-entities.git /tmp/src || \
-    git clone --depth 1 https://github.com/craig-b/ha-ts-entities.git /tmp/src
+      https://github.com/craig-b/ha-forge.git /tmp/src || \
+    git clone --depth 1 https://github.com/craig-b/ha-forge.git /tmp/src
 
 WORKDIR /tmp/src
 

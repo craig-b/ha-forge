@@ -182,7 +182,7 @@ interface BaseEntity<TState, TConfig = {}> {
 }
 ```
 
-- **`id`**: Becomes the entity's unique ID (prefixed with `ts_entities_`) and the default entity ID in HA.
+- **`id`**: Becomes the entity's unique ID (prefixed with `ha_forge_`) and the default entity ID in HA.
 - **`name`**: Entity name. Following HA's `has_entity_name` convention, this describes the data point (e.g., "Temperature"), and the device name is prepended automatically in HA's UI.
 - **`device`**: Groups entities into a device for HA's device registry. Entities sharing the same `device.id` appear together in HA.
 - **`category`**: Maps to HA's entity category. `'config'` for settings entities, `'diagnostic'` for read-only diagnostics. `undefined` (default) for primary entities.

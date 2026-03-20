@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EntityLifecycleManager } from '../lifecycle.js';
 import type { Transport } from '../transport.js';
 import type { ResolvedDevice } from '../loader.js';
-import type { DeviceDefinition, SensorDefinition, SwitchDefinition } from '@ha-ts-entities/sdk';
-import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
+import type { DeviceDefinition, SensorDefinition, SwitchDefinition } from '@ha-forge/sdk';
+import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 
 // ---------------------------------------------------------------------------
 // Helpers

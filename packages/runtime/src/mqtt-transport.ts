@@ -7,11 +7,11 @@ import type {
   LightDefinition,
   CoverDefinition,
   ClimateDefinition,
-} from '@ha-ts-entities/sdk';
-import type { ResolvedEntity } from '@ha-ts-entities/sdk/internal';
+} from '@ha-forge/sdk';
+import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { Transport } from './transport.js';
 
-const AVAILABILITY_TOPIC = 'ts-entities/availability';
+const AVAILABILITY_TOPIC = 'ha-forge/availability';
 const HA_STATUS_TOPIC = 'homeassistant/status';
 const ADDON_VERSION = '0.1.0';
 
@@ -121,34 +121,34 @@ export class MqttTransport implements Transport {
 
     // Subscribe to command topics for bidirectional entities
     if ('onCommand' in entity.definition) {
-      this.client?.subscribe(`ts-entities/${id}/set`);
+      this.client?.subscribe(`ha-forge/${id}/set`);
 
       // Cover needs additional position/tilt command topics
       if (entity.definition.type === 'cover') {
         const coverConfig = (entity.definition as CoverDefinition).config;
         if (coverConfig?.position) {
-          this.client?.subscribe(`ts-entities/${id}/position/set`);
+          this.client?.subscribe(`ha-forge/${id}/position/set`);
         }
         if (coverConfig?.tilt) {
-          this.client?.subscribe(`ts-entities/${id}/tilt/set`);
+          this.client?.subscribe(`ha-forge/${id}/tilt/set`);
         }
       }
 
       // Climate needs separate command topics per feature
       if (entity.definition.type === 'climate') {
-        this.client?.subscribe(`ts-entities/${id}/mode/set`);
-        this.client?.subscribe(`ts-entities/${id}/temperature/set`);
-        this.client?.subscribe(`ts-entities/${id}/temperature_high/set`);
-        this.client?.subscribe(`ts-entities/${id}/temperature_low/set`);
+        this.client?.subscribe(`ha-forge/${id}/mode/set`);
+        this.client?.subscribe(`ha-forge/${id}/temperature/set`);
+        this.client?.subscribe(`ha-forge/${id}/temperature_high/set`);
+        this.client?.subscribe(`ha-forge/${id}/temperature_low/set`);
         const climateConfig = (entity.definition as ClimateDefinition).config;
         if (climateConfig?.fan_modes) {
-          this.client?.subscribe(`ts-entities/${id}/fan_mode/set`);
+          this.client?.subscribe(`ha-forge/${id}/fan_mode/set`);
         }
         if (climateConfig?.swing_modes) {
-          this.client?.subscribe(`ts-entities/${id}/swing_mode/set`);
+          this.client?.subscribe(`ha-forge/${id}/swing_mode/set`);
         }
         if (climateConfig?.preset_modes) {
-          this.client?.subscribe(`ts-entities/${id}/preset_mode/set`);
+          this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
         }
       }
     }
@@ -163,7 +163,7 @@ export class MqttTransport implements Transport {
     attributes?: Record<string, unknown>,
   ): Promise<void> {
     const entity = this.registeredEntities.get(entityId);
-    const topic = `ts-entities/${entityId}/state`;
+    const topic = `ha-forge/${entityId}/state`;
 
     let payload: string;
 
@@ -184,31 +184,31 @@ export class MqttTransport implements Transport {
     if (entity?.definition.type === 'climate' && typeof state === 'object' && state !== null) {
       const cs = state as Record<string, unknown>;
       if (cs.mode !== undefined) {
-        await this.publish(`ts-entities/${entityId}/mode/state`, String(cs.mode), { retain: false });
+        await this.publish(`ha-forge/${entityId}/mode/state`, String(cs.mode), { retain: false });
       }
       if (cs.temperature !== undefined) {
-        await this.publish(`ts-entities/${entityId}/temperature/state`, String(cs.temperature), { retain: false });
+        await this.publish(`ha-forge/${entityId}/temperature/state`, String(cs.temperature), { retain: false });
       }
       if (cs.target_temp_high !== undefined) {
-        await this.publish(`ts-entities/${entityId}/temperature_high/state`, String(cs.target_temp_high), { retain: false });
+        await this.publish(`ha-forge/${entityId}/temperature_high/state`, String(cs.target_temp_high), { retain: false });
       }
       if (cs.target_temp_low !== undefined) {
-        await this.publish(`ts-entities/${entityId}/temperature_low/state`, String(cs.target_temp_low), { retain: false });
+        await this.publish(`ha-forge/${entityId}/temperature_low/state`, String(cs.target_temp_low), { retain: false });
       }
       if (cs.current_temperature !== undefined) {
-        await this.publish(`ts-entities/${entityId}/current_temperature`, String(cs.current_temperature), { retain: false });
+        await this.publish(`ha-forge/${entityId}/current_temperature`, String(cs.current_temperature), { retain: false });
       }
       if (cs.fan_mode !== undefined) {
-        await this.publish(`ts-entities/${entityId}/fan_mode/state`, String(cs.fan_mode), { retain: false });
+        await this.publish(`ha-forge/${entityId}/fan_mode/state`, String(cs.fan_mode), { retain: false });
       }
       if (cs.swing_mode !== undefined) {
-        await this.publish(`ts-entities/${entityId}/swing_mode/state`, String(cs.swing_mode), { retain: false });
+        await this.publish(`ha-forge/${entityId}/swing_mode/state`, String(cs.swing_mode), { retain: false });
       }
       if (cs.preset_mode !== undefined) {
-        await this.publish(`ts-entities/${entityId}/preset_mode/state`, String(cs.preset_mode), { retain: false });
+        await this.publish(`ha-forge/${entityId}/preset_mode/state`, String(cs.preset_mode), { retain: false });
       }
       if (cs.action !== undefined) {
-        await this.publish(`ts-entities/${entityId}/action`, String(cs.action), { retain: false });
+        await this.publish(`ha-forge/${entityId}/action`, String(cs.action), { retain: false });
       }
     }
   }
@@ -225,23 +225,23 @@ export class MqttTransport implements Transport {
 
     // Unsubscribe from all command topics
     if ('onCommand' in entity.definition) {
-      this.client?.unsubscribe(`ts-entities/${id}/set`);
+      this.client?.unsubscribe(`ha-forge/${id}/set`);
 
       if (entity.definition.type === 'cover') {
         const coverConfig = (entity.definition as CoverDefinition).config;
-        if (coverConfig?.position) this.client?.unsubscribe(`ts-entities/${id}/position/set`);
-        if (coverConfig?.tilt) this.client?.unsubscribe(`ts-entities/${id}/tilt/set`);
+        if (coverConfig?.position) this.client?.unsubscribe(`ha-forge/${id}/position/set`);
+        if (coverConfig?.tilt) this.client?.unsubscribe(`ha-forge/${id}/tilt/set`);
       }
 
       if (entity.definition.type === 'climate') {
-        this.client?.unsubscribe(`ts-entities/${id}/mode/set`);
-        this.client?.unsubscribe(`ts-entities/${id}/temperature/set`);
-        this.client?.unsubscribe(`ts-entities/${id}/temperature_high/set`);
-        this.client?.unsubscribe(`ts-entities/${id}/temperature_low/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/mode/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/temperature/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/temperature_high/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/temperature_low/set`);
         const climateConfig = (entity.definition as ClimateDefinition).config;
-        if (climateConfig?.fan_modes) this.client?.unsubscribe(`ts-entities/${id}/fan_mode/set`);
-        if (climateConfig?.swing_modes) this.client?.unsubscribe(`ts-entities/${id}/swing_mode/set`);
-        if (climateConfig?.preset_modes) this.client?.unsubscribe(`ts-entities/${id}/preset_mode/set`);
+        if (climateConfig?.fan_modes) this.client?.unsubscribe(`ha-forge/${id}/fan_mode/set`);
+        if (climateConfig?.swing_modes) this.client?.unsubscribe(`ha-forge/${id}/swing_mode/set`);
+        if (climateConfig?.preset_modes) this.client?.unsubscribe(`ha-forge/${id}/preset_mode/set`);
       }
     }
 
@@ -269,7 +269,7 @@ export class MqttTransport implements Transport {
     for (const [, entity] of this.registeredEntities) {
       if ('onCommand' in entity.definition) {
         const id = entity.definition.id;
-        this.client?.subscribe(`ts-entities/${id}/set`);
+        this.client?.subscribe(`ha-forge/${id}/set`);
       }
     }
   }
@@ -286,7 +286,7 @@ export class MqttTransport implements Transport {
       this.entityAvailability.set(entityId, false);
       // Publish entity-specific unavailability
       this.publish(
-        `ts-entities/${entityId}/availability`,
+        `ha-forge/${entityId}/availability`,
         'offline',
         { retain: true },
       ).catch(() => {});
@@ -303,7 +303,7 @@ export class MqttTransport implements Transport {
 
     if (wasUnavailable) {
       this.publish(
-        `ts-entities/${entityId}/availability`,
+        `ha-forge/${entityId}/availability`,
         'online',
         { retain: true },
       ).catch(() => {});
@@ -336,9 +336,9 @@ export class MqttTransport implements Transport {
       config = {
         dev: this.buildDeviceInfo(entity),
         o: {
-          name: 'ts-entities',
+          name: 'ha-forge',
           sw: ADDON_VERSION,
-          url: 'https://github.com/craig-b/ha-ts-entities',
+          url: 'https://github.com/craig-b/ha-forge',
         },
         cmps: {},
         avty_t: AVAILABILITY_TOPIC,
@@ -379,7 +379,7 @@ export class MqttTransport implements Transport {
     const dev = entity.definition.device;
     if (dev) {
       return {
-        ids: [`ts_entities_${dev.id}`],
+        ids: [`ha_forge_${dev.id}`],
         name: dev.name,
         ...(dev.manufacturer && { mf: dev.manufacturer }),
         ...(dev.model && { mdl: dev.model }),
@@ -390,9 +390,9 @@ export class MqttTransport implements Transport {
 
     // Synthetic device from file grouping
     return {
-      ids: [`ts_entities_${entity.deviceId}`],
+      ids: [`ha_forge_${entity.deviceId}`],
       name: entity.deviceId,
-      mf: 'ts-entities',
+      mf: 'ha-forge',
       mdl: 'User Script',
       sw: ADDON_VERSION,
     };
@@ -400,11 +400,11 @@ export class MqttTransport implements Transport {
 
   private buildComponentConfig(entity: ResolvedEntity): Record<string, unknown> {
     const { definition } = entity;
-    const stateTopic = `ts-entities/${definition.id}/state`;
+    const stateTopic = `ha-forge/${definition.id}/state`;
 
     const base: Record<string, unknown> = {
       p: definition.type,
-      uniq_id: `ts_entities_${definition.id}`,
+      uniq_id: `ha_forge_${definition.id}`,
       name: definition.name,
       def_ent_id: `${definition.type}.${definition.id}`,
       stat_t: stateTopic,
@@ -422,7 +422,7 @@ export class MqttTransport implements Transport {
 
     // Add command topic for bidirectional entities
     if ('onCommand' in definition) {
-      base.cmd_t = `ts-entities/${definition.id}/set`;
+      base.cmd_t = `ha-forge/${definition.id}/set`;
     }
 
     // Add type-specific config
@@ -518,16 +518,16 @@ export class MqttTransport implements Transport {
 
     // Position support
     if (config?.position) {
-      base.pos_t = `ts-entities/${id}/position`;
-      base.set_pos_t = `ts-entities/${id}/position/set`;
+      base.pos_t = `ha-forge/${id}/position`;
+      base.set_pos_t = `ha-forge/${id}/position/set`;
       base.pos_open = 100;
       base.pos_clsd = 0;
     }
 
     // Tilt support
     if (config?.tilt) {
-      base.tilt_cmd_t = `ts-entities/${id}/tilt/set`;
-      base.tilt_status_t = `ts-entities/${id}/tilt`;
+      base.tilt_cmd_t = `ha-forge/${id}/tilt/set`;
+      base.tilt_status_t = `ha-forge/${id}/tilt`;
     }
   }
 
@@ -539,20 +539,20 @@ export class MqttTransport implements Transport {
     delete base.cmd_t;
 
     // Mode
-    base.mode_cmd_t = `ts-entities/${id}/mode/set`;
-    base.mode_stat_t = `ts-entities/${id}/mode/state`;
+    base.mode_cmd_t = `ha-forge/${id}/mode/set`;
+    base.mode_stat_t = `ha-forge/${id}/mode/state`;
     base.modes = config.hvac_modes;
 
     // Temperature
-    base.temp_cmd_t = `ts-entities/${id}/temperature/set`;
-    base.temp_stat_t = `ts-entities/${id}/temperature/state`;
-    base.curr_temp_t = `ts-entities/${id}/current_temperature`;
+    base.temp_cmd_t = `ha-forge/${id}/temperature/set`;
+    base.temp_stat_t = `ha-forge/${id}/temperature/state`;
+    base.curr_temp_t = `ha-forge/${id}/current_temperature`;
 
     // Dual setpoint
-    base.temp_hi_cmd_t = `ts-entities/${id}/temperature_high/set`;
-    base.temp_hi_stat_t = `ts-entities/${id}/temperature_high/state`;
-    base.temp_lo_cmd_t = `ts-entities/${id}/temperature_low/set`;
-    base.temp_lo_stat_t = `ts-entities/${id}/temperature_low/state`;
+    base.temp_hi_cmd_t = `ha-forge/${id}/temperature_high/set`;
+    base.temp_hi_stat_t = `ha-forge/${id}/temperature_high/state`;
+    base.temp_lo_cmd_t = `ha-forge/${id}/temperature_low/set`;
+    base.temp_lo_stat_t = `ha-forge/${id}/temperature_low/state`;
 
     if (config.min_temp != null) base.min_temp = config.min_temp;
     if (config.max_temp != null) base.max_temp = config.max_temp;
@@ -561,27 +561,27 @@ export class MqttTransport implements Transport {
 
     // Fan modes
     if (config.fan_modes && config.fan_modes.length > 0) {
-      base.fan_mode_cmd_t = `ts-entities/${id}/fan_mode/set`;
-      base.fan_mode_stat_t = `ts-entities/${id}/fan_mode/state`;
+      base.fan_mode_cmd_t = `ha-forge/${id}/fan_mode/set`;
+      base.fan_mode_stat_t = `ha-forge/${id}/fan_mode/state`;
       base.fan_modes = config.fan_modes;
     }
 
     // Swing modes
     if (config.swing_modes && config.swing_modes.length > 0) {
-      base.swing_mode_cmd_t = `ts-entities/${id}/swing_mode/set`;
-      base.swing_mode_stat_t = `ts-entities/${id}/swing_mode/state`;
+      base.swing_mode_cmd_t = `ha-forge/${id}/swing_mode/set`;
+      base.swing_mode_stat_t = `ha-forge/${id}/swing_mode/state`;
       base.swing_modes = config.swing_modes;
     }
 
     // Preset modes
     if (config.preset_modes && config.preset_modes.length > 0) {
-      base.pr_mode_cmd_t = `ts-entities/${id}/preset_mode/set`;
-      base.pr_mode_stat_t = `ts-entities/${id}/preset_mode/state`;
+      base.pr_mode_cmd_t = `ha-forge/${id}/preset_mode/set`;
+      base.pr_mode_stat_t = `ha-forge/${id}/preset_mode/state`;
       base.pr_modes = config.preset_modes;
     }
 
     // Action topic
-    base.act_t = `ts-entities/${id}/action`;
+    base.act_t = `ha-forge/${id}/action`;
   }
 
   private handleMessage(topic: string, payload: string): void {
@@ -591,8 +591,8 @@ export class MqttTransport implements Transport {
       return;
     }
 
-    // Handle simple command: ts-entities/<entity_id>/set
-    const simpleMatch = topic.match(/^ts-entities\/([^/]+)\/set$/);
+    // Handle simple command: ha-forge/<entity_id>/set
+    const simpleMatch = topic.match(/^ha-forge\/([^/]+)\/set$/);
     if (simpleMatch) {
       const entityId = simpleMatch[1];
       const handler = this.commandHandlers.get(entityId);
@@ -606,8 +606,8 @@ export class MqttTransport implements Transport {
       return;
     }
 
-    // Handle cover position/tilt: ts-entities/<id>/position/set or ts-entities/<id>/tilt/set
-    const coverPosMatch = topic.match(/^ts-entities\/([^/]+)\/(position|tilt)\/set$/);
+    // Handle cover position/tilt: ha-forge/<id>/position/set or ha-forge/<id>/tilt/set
+    const coverPosMatch = topic.match(/^ha-forge\/([^/]+)\/(position|tilt)\/set$/);
     if (coverPosMatch) {
       const [, entityId, subCommand] = coverPosMatch;
       const handler = this.commandHandlers.get(entityId);
@@ -622,9 +622,9 @@ export class MqttTransport implements Transport {
       return;
     }
 
-    // Handle climate sub-topics: ts-entities/<id>/<feature>/set
+    // Handle climate sub-topics: ha-forge/<id>/<feature>/set
     const climateMatch = topic.match(
-      /^ts-entities\/([^/]+)\/(mode|temperature|temperature_high|temperature_low|fan_mode|swing_mode|preset_mode)\/set$/,
+      /^ha-forge\/([^/]+)\/(mode|temperature|temperature_high|temperature_low|fan_mode|swing_mode|preset_mode)\/set$/,
     );
     if (climateMatch) {
       const [, entityId, feature] = climateMatch;

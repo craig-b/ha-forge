@@ -219,7 +219,7 @@ export async function runValidation(opts: {
 
   // Use temp dir for regenerated types so we don't overwrite the current ones
   const tempGenDir = opts.tempDir ?? fsPromises.mkdtempSync(
-    path.join(os.tmpdir(), 'ts-entities-validate-'),
+    path.join(os.tmpdir(), 'ha-forge-validate-'),
   );
 
   let typeGenResult: TypeGenResult | null = null;

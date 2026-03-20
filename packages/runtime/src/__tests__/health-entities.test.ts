@@ -30,14 +30,14 @@ describe('HealthEntities', () => {
 
     // Check binary_sensor registration
     const binarySensorCall = transport.register.mock.calls.find(
-      (c: unknown[]) => (c[0] as { definition: { id: string } }).definition.id === 'ts_entities_build_healthy',
+      (c: unknown[]) => (c[0] as { definition: { id: string } }).definition.id === 'ha_forge_build_healthy',
     );
     expect(binarySensorCall).toBeDefined();
     expect(binarySensorCall![0].definition.type).toBe('binary_sensor');
 
     // Check sensor registration
     const sensorCall = transport.register.mock.calls.find(
-      (c: unknown[]) => (c[0] as { definition: { id: string } }).definition.id === 'ts_entities_type_errors',
+      (c: unknown[]) => (c[0] as { definition: { id: string } }).definition.id === 'ha_forge_type_errors',
     );
     expect(sensorCall).toBeDefined();
     expect(sensorCall![0].definition.type).toBe('sensor');
@@ -48,13 +48,13 @@ describe('HealthEntities', () => {
 
     // binary_sensor: off = no problem (device_class=problem)
     expect(transport.publishState).toHaveBeenCalledWith(
-      'ts_entities_build_healthy',
+      'ha_forge_build_healthy',
       'off',
     );
 
     // sensor: 0 errors
     expect(transport.publishState).toHaveBeenCalledWith(
-      'ts_entities_type_errors',
+      'ha_forge_type_errors',
       0,
       expect.objectContaining({
         errors: [],
@@ -77,13 +77,13 @@ describe('HealthEntities', () => {
 
     // binary_sensor: on = problem detected
     expect(transport.publishState).toHaveBeenCalledWith(
-      'ts_entities_build_healthy',
+      'ha_forge_build_healthy',
       'on',
     );
 
     // sensor: 2 errors with details
     expect(transport.publishState).toHaveBeenCalledWith(
-      'ts_entities_type_errors',
+      'ha_forge_type_errors',
       2,
       expect.objectContaining({
         errors: expect.arrayContaining([
@@ -116,7 +116,7 @@ describe('HealthEntities', () => {
 
     expect(health.getBuildHealthy()).toBe(true);
     expect(transport.publishState).toHaveBeenCalledWith(
-      'ts_entities_build_healthy',
+      'ha_forge_build_healthy',
       'off', // no problem
     );
   });

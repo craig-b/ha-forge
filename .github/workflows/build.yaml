@@ -48,14 +48,14 @@ jobs:
       - name: Set version
         if: needs.version.outputs.version
         run: |
-          sed -i "s/^version: .*/version: \"${{ needs.version.outputs.version }}\"/" ts_entities/config.yaml
+          sed -i "s/^version: .*/version: \"${{ needs.version.outputs.version }}\"/" ha_forge/config.yaml
           echo "Version set to ${{ needs.version.outputs.version }}"
 
       - name: Get information
         id: info
         uses: home-assistant/actions/helpers/info@master
         with:
-          path: "./ts_entities"
+          path: "./ha_forge"
 
       - name: Check if add-on should be built
         id: check
@@ -67,7 +67,7 @@ jobs:
                 echo "BUILD_ARGS=" >> $GITHUB_ENV;
             fi
           else
-            echo "${{ matrix.arch }} is not a valid arch for ts_entities, skipping build";
+            echo "${{ matrix.arch }} is not a valid arch for ha_forge, skipping build";
             echo "build_arch=false" >> $GITHUB_OUTPUT;
           fi
 
@@ -86,7 +86,7 @@ jobs:
           args: |
             ${{ env.BUILD_ARGS }} \
             --${{ matrix.arch }} \
-            --target /data/ts_entities \
+            --target /data/ha_forge \
             --image "${{ steps.check.outputs.image }}" \
             --docker-hub "ghcr.io/${{ github.repository_owner }}" \
             --addon
@@ -104,9 +104,9 @@ jobs:
 
       - name: Update version in config.yaml
         run: |
-          sed -i "s/^version: .*/version: \"${{ needs.version.outputs.version }}\"/" ts_entities/config.yaml
+          sed -i "s/^version: .*/version: \"${{ needs.version.outputs.version }}\"/" ha_forge/config.yaml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add ts_entities/config.yaml
+          git add ha_forge/config.yaml
           git diff --staged --quiet || git commit -m "[skip ci] Update version to ${{ needs.version.outputs.version }}"
           git push
