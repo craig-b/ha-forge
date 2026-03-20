@@ -193,6 +193,7 @@ async function main(): Promise<void> {
       ? new BuildManager({
           bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport,
           onEntityStateChange: (entityId, state) => broadcastEntityState?.(entityId, state),
+          haApi,
         })
       : null;
 

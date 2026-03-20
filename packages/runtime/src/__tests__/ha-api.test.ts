@@ -464,6 +464,68 @@ describe('HAApiImpl', () => {
     });
   });
 
+  describe('asStateless()', () => {
+    it('returns object with query/action methods but no subscriptions', () => {
+      const stateless = api.asStateless();
+
+      expect(typeof stateless.callService).toBe('function');
+      expect(typeof stateless.getState).toBe('function');
+      expect(typeof stateless.getEntities).toBe('function');
+      expect(typeof stateless.fireEvent).toBe('function');
+      expect(typeof stateless.friendlyName).toBe('function');
+      expect(stateless.log).toBeDefined();
+      // Should not have on() or reactions()
+      expect((stateless as Record<string, unknown>).on).toBeUndefined();
+      expect((stateless as Record<string, unknown>).reactions).toBeUndefined();
+    });
+
+    it('delegates callService to the underlying API', async () => {
+      const stateless = api.asStateless();
+      await stateless.callService('light.test', 'turn_on', { brightness: 100 });
+
+      expect(wsClient.sendCommand).toHaveBeenCalledWith('call_service', expect.objectContaining({
+        domain: 'light',
+        service: 'turn_on',
+      }));
+    });
+  });
+
+  describe('createScopedEvents()', () => {
+    it('tracks on() unsubscribers in handles', () => {
+      const handles = { eventSubscriptions: [] as Array<() => void> };
+      const events = api.createScopedEvents(handles);
+
+      events.on('light.living_room', vi.fn());
+
+      expect(handles.eventSubscriptions).toHaveLength(1);
+      expect(typeof handles.eventSubscriptions[0]).toBe('function');
+    });
+
+    it('tracks reactions() unsubscribers in handles', () => {
+      const handles = { eventSubscriptions: [] as Array<() => void> };
+      const events = api.createScopedEvents(handles);
+
+      events.reactions({ 'light.test': { to: 'on', do: vi.fn() } });
+
+      expect(handles.eventSubscriptions).toHaveLength(1);
+    });
+
+    it('unsubscribes on() callbacks when handle cleanup is called', () => {
+      const handles = { eventSubscriptions: [] as Array<() => void> };
+      const events = api.createScopedEvents(handles);
+      const cb = vi.fn();
+
+      events.on('light.living_room', cb);
+
+      // Clean up
+      for (const unsub of handles.eventSubscriptions) unsub();
+
+      // Should not fire after cleanup
+      api.handleEvent(42, makeStateChangedEvent('light.living_room', 'off', 'on'));
+      expect(cb).not.toHaveBeenCalled();
+    });
+  });
+
   describe('destroy()', () => {
     it('unsubscribes from HA events', async () => {
       await api.destroy();

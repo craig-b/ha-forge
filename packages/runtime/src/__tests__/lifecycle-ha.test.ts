@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EntityLifecycleManager } from '../lifecycle.js';
 import type { Transport } from '../transport.js';
-import type { SensorDefinition } from '@ha-forge/sdk';
+import type { EntityContext, SensorDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAClient } from '../ha-api.js';
+import { HAApiImpl } from '../ha-api.js';
+import type { HAWebSocketClient, HAEvent } from '../ws-client.js';
 
 function createMockTransport(): Transport & {
   register: ReturnType<typeof vi.fn>;
@@ -43,6 +45,44 @@ function createMockHAClient(): HAClient & {
     getState: vi.fn(async () => null),
     getEntities: vi.fn(async () => []),
     fireEvent: vi.fn(async () => {}),
+  };
+}
+
+function createMockWSClient(): HAWebSocketClient & {
+  sendCommand: ReturnType<typeof vi.fn>;
+  subscribeEvents: ReturnType<typeof vi.fn>;
+  unsubscribeEvents: ReturnType<typeof vi.fn>;
+} {
+  return {
+    sendCommand: vi.fn(async () => null),
+    subscribeEvents: vi.fn(async () => 42),
+    unsubscribeEvents: vi.fn(async () => {}),
+    connect: vi.fn(async () => {}),
+    disconnect: vi.fn(async () => {}),
+    isConnected: vi.fn(() => true),
+    getHAVersion: vi.fn(() => '2024.1.0'),
+  } as unknown as HAWebSocketClient & {
+    sendCommand: ReturnType<typeof vi.fn>;
+    subscribeEvents: ReturnType<typeof vi.fn>;
+    unsubscribeEvents: ReturnType<typeof vi.fn>;
+  };
+}
+
+function makeStateChangedEvent(
+  entityId: string,
+  oldState: string,
+  newState: string,
+): HAEvent {
+  return {
+    event_type: 'state_changed',
+    data: {
+      entity_id: entityId,
+      old_state: { entity_id: entityId, state: oldState, attributes: {}, last_changed: '', last_updated: '', context: { id: '1', parent_id: null, user_id: null } },
+      new_state: { entity_id: entityId, state: newState, attributes: {}, last_changed: '', last_updated: '', context: { id: '2', parent_id: null, user_id: null } },
+    } as unknown as Record<string, unknown>,
+    time_fired: '2024-01-15T10:00:01.000Z',
+    origin: 'LOCAL',
+    context: { id: '2', parent_id: null, user_id: null },
   };
 }
 
@@ -159,5 +199,130 @@ describe('EntityLifecycleManager — ha global integration', () => {
     await manager.deploy([entity]);
 
     expect(haClient.fireEvent).toHaveBeenCalledWith('custom_event', { source: 'test' });
+  });
+});
+
+describe('EntityLifecycleManager — this.ha and this.events', () => {
+  let transport: ReturnType<typeof createMockTransport>;
+  let logger: ReturnType<typeof createMockLogger>;
+  let wsClient: ReturnType<typeof createMockWSClient>;
+  let haApi: HAApiImpl;
+  let manager: EntityLifecycleManager;
+
+  beforeEach(async () => {
+    transport = createMockTransport();
+    logger = createMockLogger();
+    wsClient = createMockWSClient();
+    haApi = new HAApiImpl(wsClient, { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+    await haApi.init();
+    manager = new EntityLifecycleManager(transport, logger, null, undefined, haApi);
+  });
+
+  afterEach(async () => {
+    vi.useRealTimers();
+    await haApi.destroy();
+  });
+
+  it('this.ha.callService() works from init()', async () => {
+    const entity = makeSensorEntity('svc-test', {
+      async init() {
+        await this.ha.callService('light.kitchen', 'turn_on', { brightness: 200 });
+        return '1';
+      },
+    });
+
+    await manager.deploy([entity]);
+
+    expect(wsClient.sendCommand).toHaveBeenCalledWith('call_service', expect.objectContaining({
+      domain: 'light',
+      service: 'turn_on',
+    }));
+  });
+
+  it('this.ha.getState() works from init()', async () => {
+    wsClient.sendCommand.mockResolvedValueOnce([
+      { entity_id: 'sensor.temp', state: '22', attributes: {}, last_changed: '', last_updated: '' },
+    ]);
+
+    const entity = makeSensorEntity('state-test', {
+      async init() {
+        const state = await this.ha.getState('sensor.temp');
+        return state?.state ?? 'unknown';
+      },
+    });
+
+    await manager.deploy([entity]);
+
+    expect(manager.getEntityState('state-test')).toBe('22');
+  });
+
+  it('this.events.on() works from init()', async () => {
+    const cb = vi.fn();
+    const entity = makeSensorEntity('events-test', {
+      init() {
+        this.events.on('light.kitchen', cb);
+        return '0';
+      },
+    });
+
+    await manager.deploy([entity]);
+
+    haApi.handleEvent(42, makeStateChangedEvent('light.kitchen', 'off', 'on'));
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it('this.events.on() subscriptions are cleaned up on teardown', async () => {
+    const cb = vi.fn();
+    const entity = makeSensorEntity('cleanup-test', {
+      init() {
+        this.events.on('light.kitchen', cb);
+        return '0';
+      },
+    });
+
+    await manager.deploy([entity]);
+    await manager.teardownAll();
+
+    haApi.handleEvent(42, makeStateChangedEvent('light.kitchen', 'off', 'on'));
+    expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('this.events.reactions() subscriptions are cleaned up on teardown', async () => {
+    vi.useFakeTimers();
+    const action = vi.fn();
+    const entity = makeSensorEntity('reaction-cleanup', {
+      init() {
+        this.events.reactions({
+          'binary_sensor.door': { to: 'on', after: 5000, do: action },
+        });
+        return '0';
+      },
+    });
+
+    await manager.deploy([entity]);
+
+    // Trigger reaction
+    haApi.handleEvent(42, makeStateChangedEvent('binary_sensor.door', 'off', 'on'));
+
+    // Teardown before timer fires
+    await manager.teardownAll();
+
+    vi.advanceTimersByTime(6000);
+    expect(action).not.toHaveBeenCalled();
+  });
+
+  it('provides stub ha/events when no haApi is passed', async () => {
+    const noApiManager = new EntityLifecycleManager(transport, logger);
+    const entity = makeSensorEntity('no-api', {
+      init() {
+        // These should not throw, just log warnings
+        this.ha.callService('light.test', 'turn_on');
+        this.events.on('light.test', () => {});
+        return '0';
+      },
+    });
+
+    await noApiManager.deploy([entity]);
+    expect(noApiManager.isInitialized('no-api')).toBe(true);
   });
 });

@@ -4,10 +4,13 @@ import type {
   EntityContext,
   EntityDefinition,
   EntityLogger,
+  EventsContext,
+  StatelessHAApi,
 } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedDevice } from './loader.js';
 import type { Transport } from './transport.js';
+import type { HAApiImpl } from './ha-api.js';
 
 export interface LifecycleLogger {
   debug(message: string, data?: Record<string, unknown>): void;
@@ -45,6 +48,7 @@ interface TrackedHandles {
   intervals: ReturnType<typeof globalThis.setInterval>[];
   pollRefs: PollRef[];
   mqttSubscriptions: Array<() => void>;
+  eventSubscriptions: Array<() => void>;
 }
 
 /** Raw MQTT access for entity context. */
@@ -59,6 +63,7 @@ function createEmptyHandles(): TrackedHandles {
     intervals: [],
     pollRefs: [],
     mqttSubscriptions: [],
+    eventSubscriptions: [],
   };
 }
 
@@ -69,12 +74,14 @@ export class EntityLifecycleManager {
   private logger: LifecycleLogger;
   private rawMqtt: RawMqttAccess | null;
   private onStateChange: ((entityId: string, state: unknown) => void) | null;
+  private haApi: HAApiImpl | null;
 
-  constructor(transport: Transport, logger: LifecycleLogger, rawMqtt?: RawMqttAccess | null, onStateChange?: (entityId: string, state: unknown) => void) {
+  constructor(transport: Transport, logger: LifecycleLogger, rawMqtt?: RawMqttAccess | null, onStateChange?: (entityId: string, state: unknown) => void, haApi?: HAApiImpl | null) {
     this.transport = transport;
     this.logger = logger;
     this.rawMqtt = rawMqtt ?? null;
     this.onStateChange = onStateChange ?? null;
+    this.haApi = haApi ?? null;
   }
 
   async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[]): Promise<void> {
@@ -287,9 +294,27 @@ export class EntityLifecycleManager {
     };
 
     const rawMqtt = this.rawMqtt;
+    const haApi = this.haApi;
+
+    const stubStatelessApi: StatelessHAApi = {
+      log: entityLogger,
+      async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
+      async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
+      async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
+      async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
+      friendlyName(id: string) { return id; },
+    };
+
+    const stubEvents: EventsContext = {
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+    };
 
     const context: DeviceContext<Record<string, EntityDefinition>> = {
       entities: entityHandles as DeviceContext<Record<string, EntityDefinition>>['entities'],
+
+      ha: haApi ? haApi.asStateless() : stubStatelessApi,
+      events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
       poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }) {
         const run = async () => {
@@ -480,10 +505,12 @@ export class EntityLifecycleManager {
       if (ref.timer) clearTimeout(ref.timer);
     }
     for (const unsub of handles.mqttSubscriptions) unsub();
+    for (const unsub of handles.eventSubscriptions) unsub();
     handles.timeouts = [];
     handles.intervals = [];
     handles.pollRefs = [];
     handles.mqttSubscriptions = [];
+    handles.eventSubscriptions = [];
   }
 
   private createContext(instance: EntityInstance): EntityContext {
@@ -506,6 +533,22 @@ export class EntityLifecycleManager {
     };
 
     const onStateChange = this.onStateChange;
+    const haApi = this.haApi;
+
+    const stubStatelessApi: StatelessHAApi = {
+      log: entityLogger,
+      async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
+      async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
+      async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
+      async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
+      friendlyName(id: string) { return id; },
+    };
+
+    const stubEvents: EventsContext = {
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+    };
+
     const context: EntityContext = {
       update(value: unknown, attributes?: Record<string, unknown>) {
         instance.currentState = value;
@@ -519,6 +562,20 @@ export class EntityLifecycleManager {
           });
         });
       },
+
+      attr(attributes: Record<string, unknown>) {
+        transport.publishState(entityId, instance.currentState, attributes).then(() => {
+          transport.clearEntityFailure?.(entityId);
+        }).catch((err) => {
+          transport.recordEntityFailure?.(entityId);
+          entityLogger.error('Failed to publish attributes', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      },
+
+      ha: haApi ? haApi.asStateless() : stubStatelessApi,
+      events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
       poll(fn: () => unknown | Promise<unknown>, opts: { interval: number; initialDelay?: number }) {
         const run = async () => {

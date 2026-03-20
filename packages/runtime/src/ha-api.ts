@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
 // ---- Event types ----
@@ -47,6 +47,11 @@ export interface HAApi extends HAClientBase {
  * used internally — typed overloads only exist in generated .d.ts for Monaco.
  */
 export type HAClient = HAApi;
+
+/** Minimal handle tracker interface for scoped event subscriptions. */
+export interface EventHandleTracker {
+  eventSubscriptions: Array<() => void>;
+}
 
 // ---- Implementation ----
 
@@ -315,6 +320,34 @@ export class HAApiImpl implements HAApi {
         clearTimeout(timer);
         this.reactionTimers.delete(key);
       }
+    };
+  }
+
+  /** Returns a stateless view — no subscriptions, safe to pass around. */
+  asStateless(): StatelessHAApi {
+    return {
+      log: this.log,
+      callService: this.callService.bind(this),
+      getState: this.getState.bind(this),
+      getEntities: this.getEntities.bind(this),
+      fireEvent: this.fireEvent.bind(this),
+      friendlyName: this.friendlyName.bind(this),
+    };
+  }
+
+  /** Creates an EventsContext that tracks subscriptions for lifecycle cleanup. */
+  createScopedEvents(handles: EventHandleTracker): EventsContext {
+    return {
+      on: (entityOrDomain: string | string[], callback: StateChangedCallback) => {
+        const unsub = this.on(entityOrDomain, callback);
+        handles.eventSubscriptions.push(unsub);
+        return unsub;
+      },
+      reactions: (rules: Record<string, ReactionRule>) => {
+        const unsub = this.reactions(rules);
+        handles.eventSubscriptions.push(unsub);
+        return unsub;
+      },
     };
   }
 

@@ -185,6 +185,41 @@ export interface HAClientBase {
   friendlyName(entityId: string): string;
 }
 
+/**
+ * Scoped event subscription context bound to an entity's lifecycle.
+ * Subscriptions are automatically cleaned up when the entity is torn down.
+ */
+export interface EventsContext {
+  /**
+   * Subscribe to state changes for an entity, domain, or array of entities.
+   * The subscription is automatically cleaned up when the owning entity is torn down.
+   * @param entityOrDomain - Entity ID, domain name, or array of entity IDs.
+   * @param callback - Called with a state change event.
+   * @returns Unsubscribe function.
+   */
+  on(entityOrDomain: string | string[], callback: StateChangedCallback): () => void;
+  /**
+   * Set up declarative reaction rules. Subscriptions and pending timers are
+   * automatically cleaned up when the owning entity is torn down.
+   * @param rules - Map of entity IDs to reaction rules.
+   * @returns Cleanup function.
+   */
+  reactions(rules: Record<string, ReactionRule>): () => void;
+}
+
+/**
+ * Stateless HA API — safe to pass to utility functions.
+ * Contains only query/action methods, no subscriptions.
+ */
+export interface StatelessHAApi extends HAClientBase {
+  /** Call a Home Assistant service on an entity or domain. */
+  callService(entity: string, service: string, data?: Record<string, unknown>): Promise<Record<string, unknown> | null>;
+  /** Get the current state of a Home Assistant entity. Returns `null` if not found. */
+  getState(entityId: string): Promise<{ state: string; attributes: Record<string, unknown>; last_changed: string; last_updated: string } | null>;
+  /** List entity IDs registered in Home Assistant, optionally filtered by domain. */
+  getEntities(domain?: string): Promise<string[]>;
+}
+
 // HAClient is NOT defined in the SDK — it comes from either:
 // 1. Generated ha-registry.d.ts (with typed per-entity overloads)
 // 2. Untyped fallback appended by the web server when no generated types exist
@@ -221,6 +256,22 @@ export interface EntityContext<TState = unknown> {
    * @param attributes - Optional attributes to publish alongside the state.
    */
   update(value: TState, attributes?: Record<string, unknown>): void;
+  /**
+   * Update attributes without changing the entity's state value.
+   * Re-publishes the current state with the new attributes.
+   * @param attributes - Attributes to publish alongside the current state.
+   */
+  attr(attributes: Record<string, unknown>): void;
+  /**
+   * Stateless HA API — safe to pass to utility functions.
+   * Provides callService, getState, getEntities, fireEvent, and friendlyName.
+   */
+  ha: StatelessHAApi;
+  /**
+   * Scoped event subscriptions — automatically cleaned up when this entity is torn down.
+   * Use `this.events.on()` for state change subscriptions and `this.events.reactions()` for declarative rules.
+   */
+  events: EventsContext;
   /**
    * Start a polling loop that calls `fn` at a fixed interval.
    * If `fn` returns a value, it is automatically published via `update()`.
@@ -762,6 +813,16 @@ export type EntityHandleFor<T extends EntityDefinition> =
 export interface DeviceContext<TEntities extends Record<string, EntityDefinition>> {
   /** Typed handles for updating each entity in the device. */
   entities: { [K in keyof TEntities]: EntityHandleFor<TEntities[K]> };
+  /**
+   * Stateless HA API — safe to pass to utility functions.
+   * Provides callService, getState, getEntities, fireEvent, and friendlyName.
+   */
+  ha: StatelessHAApi;
+  /**
+   * Scoped event subscriptions — automatically cleaned up when this device is torn down.
+   * Use `this.events.on()` for state change subscriptions and `this.events.reactions()` for declarative rules.
+   */
+  events: EventsContext;
   /**
    * Start a managed polling loop. Fires immediately, then repeats on interval.
    * Uses chained timeouts to prevent overlapping executions.

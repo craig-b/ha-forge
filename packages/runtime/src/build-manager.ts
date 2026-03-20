@@ -4,6 +4,7 @@ import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 import { EntityLifecycleManager } from './lifecycle.js';
 import { loadBundles } from './loader.js';
 import type { Transport } from './transport.js';
+import type { HAApiImpl } from './ha-api.js';
 
 export interface BuildDeployOptions {
   /** Directory containing bundled .js files */
@@ -16,6 +17,8 @@ export interface BuildDeployOptions {
   rawMqtt?: RawMqttAccess | null;
   /** Called when any entity's state changes (for WebSocket broadcasting) */
   onEntityStateChange?: (entityId: string, state: unknown) => void;
+  /** Optional HA API for providing this.ha and this.events to entities */
+  haApi?: HAApiImpl | null;
 }
 
 export interface DeployResult {
@@ -40,6 +43,7 @@ export class BuildManager {
       opts.logger,
       opts.rawMqtt,
       opts.onEntityStateChange,
+      opts.haApi,
     );
     this.logger = opts.logger;
     this.bundleDir = opts.bundleDir;

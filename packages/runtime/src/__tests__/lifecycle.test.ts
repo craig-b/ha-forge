@@ -182,6 +182,23 @@ describe('EntityLifecycleManager', () => {
     expect(manager.getEntityIds()).toContain('second');
   });
 
+  // 7b. this.attr() re-publishes current state with new attributes
+  it('publishes current state with new attributes when context.attr() is called', async () => {
+    const entity = makeSensorEntity('attr-test', {
+      init() {
+        this.update('22');
+        this.attr({ unit: '°C' });
+        return undefined as unknown as string;
+      },
+    });
+
+    await manager.deploy([entity]);
+    await Promise.resolve(); // flush microtasks
+
+    // attr() should call publishState with current state + new attributes
+    expect(transport.publishState).toHaveBeenCalledWith('attr-test', '22', { unit: '°C' });
+  });
+
   // 8. update() from entity context publishes state via transport
   it('publishes state when context.update() is called from init()', async () => {
     const entity = makeSensorEntity('updater', {

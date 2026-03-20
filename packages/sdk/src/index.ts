@@ -22,6 +22,8 @@ export type {
   StateChangedCallback,
   ReactionRule,
   HAClientBase,
+  EventsContext,
+  StatelessHAApi,
   EntityContext,
   BaseEntity,
   SensorDeviceClass,

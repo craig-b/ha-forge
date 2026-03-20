@@ -8,7 +8,7 @@ export { HAWebSocketClient } from './ws-client.js';
 export type { WSClientOptions, HAStateObject, HAStateChangedData, HAEvent, HAResultMessage } from './ws-client.js';
 
 export { HAApiImpl } from './ha-api.js';
-export type { HAApi, HAClient, StateChangedEvent, StateChangedCallback, ReactionRule, ValidatorMap } from './ha-api.js';
+export type { HAApi, HAClient, StateChangedEvent, StateChangedCallback, ReactionRule, ValidatorMap, EventHandleTracker } from './ha-api.js';
 
 export { EntityLifecycleManager } from './lifecycle.js';
 export type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
