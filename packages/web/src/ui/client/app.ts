@@ -1,6 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
+import { runAllAnalyzers, type AnalyzerDiagnostic } from './analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -12,10 +13,30 @@ declare const require: {
   config(opts: Record<string, unknown>): void;
   (deps: string[], cb: () => void): void;
 };
+
+interface MonacoMarkerData {
+  severity: number;
+  message: string;
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+  source?: string;
+}
+
+interface MonacoCodeAction {
+  title: string;
+  diagnostics: MonacoMarkerData[];
+  kind: string;
+  edit: { edits: Array<{ resource: unknown; textEdit: { range: unknown; text: string }; versionId: number }> };
+  isPreferred: boolean;
+}
+
 declare const monaco: {
   editor: {
     create(el: HTMLElement, opts: Record<string, unknown>): MonacoEditorInstance;
     createModel(content: string, language: string, uri: unknown): MonacoModelInstance;
+    setModelMarkers(model: MonacoModelInstance, owner: string, markers: MonacoMarkerData[]): void;
   };
   languages: {
     typescript: {
@@ -28,7 +49,12 @@ declare const monaco: {
       ModuleResolutionKind: { NodeJs: number };
       ModuleKind: { ESNext: number };
     };
+    registerCodeActionProvider(languageId: string, provider: {
+      provideCodeActions(model: MonacoModelInstance, range: unknown, context: { markers: MonacoMarkerData[] }): { actions: MonacoCodeAction[]; dispose(): void };
+    }): void;
   };
+  MarkerSeverity: { Error: number; Warning: number; Info: number; Hint: number };
+  Range: new (startLine: number, startCol: number, endLine: number, endCol: number) => unknown;
   Uri: { parse(uri: string): unknown };
 };
 
@@ -36,12 +62,15 @@ interface MonacoModelInstance {
   getValue(): string;
   setValue(value: string): void;
   onDidChangeContent(listener: () => void): { dispose(): void };
+  getVersionId(): number;
+  uri: unknown;
   dispose(): void;
 }
 
 interface MonacoEditorInstance {
   setModel(model: MonacoModelInstance | null): void;
   getModel(): MonacoModelInstance | null;
+  onDidChangeModelContent(listener: () => void): { dispose(): void };
 }
 
 interface OpenFileInternal {
@@ -173,6 +202,7 @@ export class TseApp extends LitElement {
         quickSuggestions: { other: true, comments: false, strings: true },
       });
 
+      this._setupCustomDiagnostics();
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
@@ -205,6 +235,71 @@ export class TseApp extends LitElement {
         );
       }
     }).catch(() => {});
+  }
+
+  // ---- Custom diagnostics ----
+
+  private _diagTimer: ReturnType<typeof setTimeout> | null = null;
+  private static readonly DIAG_OWNER = 'ha-forge-lint';
+  private static readonly DIAG_DEBOUNCE = 300;
+
+  private _setupCustomDiagnostics() {
+    if (!this._editor) return;
+
+    // Run diagnostics on content change (debounced)
+    this._editor.onDidChangeModelContent(() => {
+      if (this._diagTimer) clearTimeout(this._diagTimer);
+      this._diagTimer = setTimeout(() => this._runDiagnostics(), TseApp.DIAG_DEBOUNCE);
+    });
+
+    // Quick-fix code action: add 'export' keyword
+    monaco.languages.registerCodeActionProvider('typescript', {
+      provideCodeActions: (model: MonacoModelInstance, _range: unknown, context: { markers: MonacoMarkerData[] }) => {
+        const actions: MonacoCodeAction[] = [];
+        for (const marker of context.markers) {
+          if (marker.source !== TseApp.DIAG_OWNER) continue;
+          actions.push({
+            title: "Add 'export' to this declaration",
+            diagnostics: [marker],
+            kind: 'quickfix',
+            edit: {
+              edits: [{
+                resource: model.uri,
+                textEdit: {
+                  range: new monaco.Range(marker.startLineNumber, 1, marker.startLineNumber, 1),
+                  text: 'export ',
+                },
+                versionId: model.getVersionId(),
+              }],
+            },
+            isPreferred: true,
+          });
+        }
+        return { actions, dispose() {} };
+      },
+    });
+  }
+
+  private _runDiagnostics() {
+    const model = this._editor?.getModel();
+    if (!model) return;
+
+    const sourceText = model.getValue();
+    const diagnostics = runAllAnalyzers(sourceText);
+
+    const markers: MonacoMarkerData[] = diagnostics.map((d) => ({
+      severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
+        : d.severity === 'warning' ? monaco.MarkerSeverity.Warning
+        : monaco.MarkerSeverity.Info,
+      message: d.message,
+      startLineNumber: d.startLine,
+      startColumn: d.startCol,
+      endLineNumber: d.endLine,
+      endColumn: d.endCol,
+      source: TseApp.DIAG_OWNER,
+    }));
+
+    monaco.editor.setModelMarkers(model, TseApp.DIAG_OWNER, markers);
   }
 
   // ---- File tree ----
@@ -249,6 +344,7 @@ export class TseApp extends LitElement {
     this._openFiles = [...this._openFiles, file];
     this._activeFile = filePath;
     this._editor?.setModel(model);
+    this._runDiagnostics();
   }
 
   private _activateFile(filePath: string) {
@@ -256,6 +352,7 @@ export class TseApp extends LitElement {
     if (!file) return;
     this._activeFile = filePath;
     this._editor?.setModel(file.model);
+    this._runDiagnostics();
   }
 
   private _closeFile(filePath: string) {
