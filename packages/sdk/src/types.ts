@@ -451,7 +451,19 @@ export interface SwitchDefinition extends BaseEntity<'on' | 'off', SwitchConfig>
 
 // ---- Light ----
 
-/** Supported color modes for light entities. Determines which color controls appear in the HA UI. */
+/**
+ * Supported color modes for light entities. Determines which color controls appear in the HA UI.
+ *
+ * - `'onoff'` — On/off only, no brightness or color control.
+ * - `'brightness'` — Brightness control (0–255), no color.
+ * - `'color_temp'` — Color temperature in mireds or Kelvin.
+ * - `'hs'` — Hue/saturation color model.
+ * - `'rgb'` — Red/green/blue color model.
+ * - `'rgbw'` — RGB + dedicated white channel.
+ * - `'rgbww'` — RGB + cold white + warm white channels.
+ * - `'xy'` — CIE 1931 xy chromaticity color model.
+ * - `'white'` — Dedicated white-only mode with brightness.
+ */
 export type ColorMode =
   | 'onoff'
   | 'brightness'
@@ -583,7 +595,15 @@ export type CoverCommand =
   | { action: 'set_position'; position: number }
   | { action: 'set_tilt'; tilt: number };
 
-/** Possible states for a cover entity. */
+/**
+ * Possible states for a cover entity.
+ *
+ * - `'open'` — Fully open.
+ * - `'opening'` — Currently opening (transitioning).
+ * - `'closed'` — Fully closed.
+ * - `'closing'` — Currently closing (transitioning).
+ * - `'stopped'` — Stopped mid-travel (neither fully open nor closed).
+ */
 export type CoverState = 'open' | 'opening' | 'closed' | 'closing' | 'stopped';
 
 /** Entity definition for a controllable cover (blind, garage door, etc.). */
@@ -598,7 +618,17 @@ export interface CoverDefinition extends BaseEntity<CoverState, CoverConfig> {
 
 // ---- Climate ----
 
-/** HVAC operating modes for climate entities. */
+/**
+ * HVAC operating modes for climate entities.
+ *
+ * - `'off'` — System is off.
+ * - `'heat'` — Heating only.
+ * - `'cool'` — Cooling only.
+ * - `'heat_cool'` — Dual-setpoint heating and cooling (auto-switch).
+ * - `'auto'` — Device determines heating/cooling automatically.
+ * - `'dry'` — Dehumidification mode.
+ * - `'fan_only'` — Fan circulation only, no heating or cooling.
+ */
 export type HVACMode = 'off' | 'heat' | 'cool' | 'heat_cool' | 'auto' | 'dry' | 'fan_only';
 
 /** MQTT discovery configuration for climate entities. */
