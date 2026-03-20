@@ -1,5 +1,5 @@
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedDevice } from './loader.js';
+import type { ResolvedAutomation, ResolvedDevice, ResolvedTask } from './loader.js';
 import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 import { EntityLifecycleManager } from './lifecycle.js';
 import { loadBundles } from './loader.js';
@@ -66,7 +66,8 @@ export class BuildManager {
       }
     }
 
-    if (loadResult.entities.length === 0 && loadResult.errors.length === 0) {
+    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0;
+    if (!hasWork && loadResult.errors.length === 0) {
       this.logger.info('No entities to deploy');
       return {
         success: true,
@@ -106,21 +107,38 @@ export class BuildManager {
       group.push(device);
     }
 
-    // Deploy each file's entities independently
+    // Group automations and tasks by source file
+    const automationsByFile = new Map<string, ResolvedAutomation[]>();
+    for (const auto of loadResult.automations) {
+      let group = automationsByFile.get(auto.sourceFile);
+      if (!group) { group = []; automationsByFile.set(auto.sourceFile, group); }
+      group.push(auto);
+    }
+    const tasksByFile = new Map<string, ResolvedTask[]>();
+    for (const t of loadResult.tasks) {
+      let group = tasksByFile.get(t.sourceFile);
+      if (!group) { group = []; tasksByFile.set(t.sourceFile, group); }
+      group.push(t);
+    }
+
+    // Collect all source files
+    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys()]);
+
+    // Deploy each file's definitions independently
     let deployedCount = 0;
-    for (const [file, entities] of byFile) {
+    for (const file of allFiles) {
       try {
+        const entities = byFile.get(file) ?? [];
         const devices = devicesByFile.get(file) ?? [];
-        await this.lifecycle.deployAdditive(entities, devices);
-        deployedCount += entities.length;
-        this.logger.info(`Deployed ${entities.length} entities from ${file}`);
+        const automations = automationsByFile.get(file) ?? [];
+        const tasks = tasksByFile.get(file) ?? [];
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks);
+        deployedCount += entities.length + automations.length + tasks.length;
+        this.logger.info(`Deployed ${entities.length} entities, ${automations.length} automations, ${tasks.length} tasks from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         deployErrors.push({ file, error: errorMsg });
-        this.logger.error(`Failed to deploy entities from ${file}`, {
-          error: errorMsg,
-          entityIds: entities.map((e) => e.definition.id),
-        });
+        this.logger.error(`Failed to deploy from ${file}`, { error: errorMsg });
       }
     }
 
@@ -146,7 +164,7 @@ export class BuildManager {
       }
     }
 
-    // Group new entities and devices by source file
+    // Group new entities, devices, automations, and tasks by source file
     const newByFile = new Map<string, ResolvedEntity[]>();
     for (const entity of loadResult.entities) {
       let group = newByFile.get(entity.sourceFile);
@@ -159,10 +177,22 @@ export class BuildManager {
       if (!group) { group = []; newDevicesByFile.set(device.sourceFile, group); }
       group.push(device);
     }
+    const newAutomationsByFile = new Map<string, ResolvedAutomation[]>();
+    for (const auto of loadResult.automations) {
+      let group = newAutomationsByFile.get(auto.sourceFile);
+      if (!group) { group = []; newAutomationsByFile.set(auto.sourceFile, group); }
+      group.push(auto);
+    }
+    const newTasksByFile = new Map<string, ResolvedTask[]>();
+    for (const t of loadResult.tasks) {
+      let group = newTasksByFile.get(t.sourceFile);
+      if (!group) { group = []; newTasksByFile.set(t.sourceFile, group); }
+      group.push(t);
+    }
 
     // Determine which files actually changed
     const activeFiles = this.lifecycle.getActiveSourceFiles();
-    const allFiles = new Set([...activeFiles, ...newByFile.keys()]);
+    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys()]);
     const changedFiles = new Set<string>();
 
     for (const file of allFiles) {
@@ -175,7 +205,7 @@ export class BuildManager {
     }
 
     if (changedFiles.size === 0) {
-      this.logger.info('No entity changes detected, skipping redeploy');
+      this.logger.info('No changes detected, skipping redeploy');
       return { success: true, entityCount: this.lifecycle.getEntityIds().length, errors: loadResult.errors, duration: Date.now() - startTime };
     }
 
@@ -184,21 +214,23 @@ export class BuildManager {
     // Teardown only changed files
     await this.lifecycle.teardownBySourceFiles(changedFiles);
 
-    // Deploy new entities for changed files
+    // Deploy new definitions for changed files
     const deployErrors: Array<{ file: string; error: string }> = [...loadResult.errors];
     let deployedCount = 0;
     for (const file of changedFiles) {
-      const entities = newByFile.get(file);
-      if (!entities) continue; // File was removed — already torn down
+      const entities = newByFile.get(file) ?? [];
+      const devices = newDevicesByFile.get(file) ?? [];
+      const automations = newAutomationsByFile.get(file) ?? [];
+      const tasks = newTasksByFile.get(file) ?? [];
+      if (entities.length === 0 && automations.length === 0 && tasks.length === 0) continue; // File was removed
       try {
-        const devices = newDevicesByFile.get(file) ?? [];
-        await this.lifecycle.deployAdditive(entities, devices);
-        deployedCount += entities.length;
-        this.logger.info(`Redeployed ${entities.length} entities from ${file}`);
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks);
+        deployedCount += entities.length + automations.length + tasks.length;
+        this.logger.info(`Redeployed from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         deployErrors.push({ file, error: errorMsg });
-        this.logger.error(`Failed to redeploy entities from ${file}`, { error: errorMsg });
+        this.logger.error(`Failed to redeploy from ${file}`, { error: errorMsg });
       }
     }
 
