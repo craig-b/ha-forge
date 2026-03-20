@@ -1,7 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
-import { runAllAnalyzers, type AnalyzerDiagnostic } from './analyzers.js';
+import { runAllAnalyzers, findEntitySymbols, type AnalyzerDiagnostic } from './analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -32,11 +32,40 @@ interface MonacoCodeAction {
   isPreferred: boolean;
 }
 
+interface MonacoRange {
+  startLineNumber: number;
+  startColumn: number;
+  endLineNumber: number;
+  endColumn: number;
+}
+
+interface MonacoDocumentSymbol {
+  name: string;
+  detail: string;
+  kind: number;
+  range: MonacoRange;
+  selectionRange: MonacoRange;
+  tags?: number[];
+}
+
 declare const monaco: {
   editor: {
     create(el: HTMLElement, opts: Record<string, unknown>): MonacoEditorInstance;
     createModel(content: string, language: string, uri: unknown): MonacoModelInstance;
+    getModel(uri: unknown): MonacoModelInstance | null;
     setModelMarkers(model: MonacoModelInstance, owner: string, markers: MonacoMarkerData[]): void;
+    registerEditorOpener(opener: {
+      openCodeEditor(
+        source: MonacoEditorInstance & {
+          revealRangeInCenterIfOutsideViewport(range: unknown): void;
+          setSelection(range: unknown): void;
+          revealPositionInCenterIfOutsideViewport(pos: unknown): void;
+          setPosition(pos: unknown): void;
+        },
+        resource: { path: string; toString(): string },
+        selectionOrPosition: unknown,
+      ): boolean;
+    }): { dispose(): void };
   };
   languages: {
     typescript: {
@@ -52,10 +81,18 @@ declare const monaco: {
     registerCodeActionProvider(languageId: string, provider: {
       provideCodeActions(model: MonacoModelInstance, range: unknown, context: { markers: MonacoMarkerData[] }): { actions: MonacoCodeAction[]; dispose(): void };
     }): void;
+    registerDocumentSymbolProvider(languageId: string, provider: {
+      displayName?: string;
+      provideDocumentSymbols(model: MonacoModelInstance): MonacoDocumentSymbol[];
+    }): { dispose(): void };
+    SymbolKind: { Variable: number; Function: number; Module: number };
   };
   MarkerSeverity: { Error: number; Warning: number; Info: number; Hint: number };
-  Range: new (startLine: number, startCol: number, endLine: number, endCol: number) => unknown;
-  Uri: { parse(uri: string): unknown };
+  Range: {
+    new (startLine: number, startCol: number, endLine: number, endCol: number): MonacoRange;
+    isIRange(val: unknown): boolean;
+  };
+  Uri: { parse(uri: string): { path: string; toString(): string } };
 };
 
 interface MonacoModelInstance {
@@ -63,8 +100,9 @@ interface MonacoModelInstance {
   setValue(value: string): void;
   onDidChangeContent(listener: () => void): { dispose(): void };
   getVersionId(): number;
-  uri: unknown;
+  uri: { path: string; toString(): string };
   dispose(): void;
+  updateOptions(opts: { readOnly?: boolean }): void;
 }
 
 interface MonacoEditorInstance {
@@ -203,6 +241,8 @@ export class TseApp extends LitElement {
       });
 
       this._setupCustomDiagnostics();
+      this._setupEditorOpener();
+      this._setupEntitySymbolProvider();
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
@@ -212,10 +252,10 @@ export class TseApp extends LitElement {
   private _loadExtraTypes() {
     this._api('GET', '/api/types/sdk').then((result) => {
       if (result?.declaration) {
-        monaco.languages.typescript.typescriptDefaults.addExtraLib(
-          result.declaration as string,
-          'ts:sdk/globals.d.ts',
-        );
+        const content = result.declaration as string;
+        const uri = 'ts:sdk/globals.d.ts';
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(content, uri);
+        this._createReadOnlyModel(content, uri);
       }
     }).catch(() => {});
 
@@ -229,12 +269,81 @@ export class TseApp extends LitElement {
         const content = (registryDts.content as string)
           .replace(/^import\b.*$/gm, '')
           .replace(/^export\b.*$/gm, '');
-        monaco.languages.typescript.typescriptDefaults.addExtraLib(
-          content,
-          'ts:ha-registry/index.d.ts',
-        );
+        const uri = 'ts:ha-registry/index.d.ts';
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(content, uri);
+        this._createReadOnlyModel(content, uri);
       }
     }).catch(() => {});
+  }
+
+  private _createReadOnlyModel(content: string, uri: string) {
+    const parsed = monaco.Uri.parse(uri);
+    const existing = monaco.editor.getModel(parsed);
+    if (existing) existing.dispose();
+    const model = monaco.editor.createModel(content, 'typescript', parsed);
+    model.updateOptions({ readOnly: true });
+  }
+
+  // ---- Cross-file navigation ----
+
+  private _setupEditorOpener() {
+    monaco.editor.registerEditorOpener({
+      openCodeEditor: (source, resource, selectionOrPosition) => {
+        const path = resource.path;
+
+        // SDK / registry .d.ts — let Monaco open peek widget (read-only inline view)
+        if (!path.startsWith('/') || path.includes('node_modules')) return false;
+
+        // User file — strip leading slash to get relative path
+        const filePath = path.replace(/^\//, '');
+        const existing = this._openFiles.find((f) => f.path === filePath);
+
+        if (existing) {
+          // Already open — switch to it
+          this._activeFile = filePath;
+          source.setModel(existing.model);
+          this.requestUpdate();
+        } else {
+          // Open the file, then apply position after it loads
+          this._openFile(filePath);
+        }
+
+        // Apply selection/position
+        if (selectionOrPosition && monaco.Range.isIRange(selectionOrPosition)) {
+          source.revealRangeInCenterIfOutsideViewport(selectionOrPosition);
+          source.setSelection(selectionOrPosition);
+        } else if (selectionOrPosition) {
+          source.revealPositionInCenterIfOutsideViewport(selectionOrPosition);
+          source.setPosition(selectionOrPosition);
+        }
+
+        return true;
+      },
+    });
+  }
+
+  // ---- Entity symbol outline (Ctrl+Shift+O) ----
+
+  private _setupEntitySymbolProvider() {
+    monaco.languages.registerDocumentSymbolProvider('typescript', {
+      displayName: 'Entity Symbols',
+      provideDocumentSymbols(model: MonacoModelInstance): MonacoDocumentSymbol[] {
+        const sourceText = model.getValue();
+        const entities = findEntitySymbols(sourceText);
+        const lines = sourceText.split('\n');
+
+        return entities.map((entity) => {
+          const lineLen = (lines[entity.line - 1] || '').length + 1;
+          return {
+            name: entity.name,
+            detail: `${entity.factoryName}()${entity.isExported ? '' : ' (not exported)'}`,
+            kind: monaco.languages.SymbolKind.Variable,
+            range: new monaco.Range(entity.line, 1, entity.line, lineLen),
+            selectionRange: new monaco.Range(entity.line, entity.startCol, entity.line, entity.endCol),
+          };
+        });
+      },
+    });
   }
 
   // ---- Custom diagnostics ----
