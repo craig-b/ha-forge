@@ -7,7 +7,7 @@ import type { BuildTriggerFn, BuildStatusFn } from './routes/build.js';
 import { createEntitiesRoutes } from './routes/entities.js';
 import type { GetEntitiesFn } from './routes/entities.js';
 import { createLogsRoutes } from './routes/logs.js';
-import type { QueryLogsFn } from './routes/logs.js';
+import type { QueryLogsFn, GetLogEntityIdsFn } from './routes/logs.js';
 import { createPackagesRoutes } from './routes/packages.js';
 import { createTypesRoutes } from './routes/types.js';
 import type { TypeRegenFn } from './routes/types.js';
@@ -31,6 +31,8 @@ export interface WebServerConfig {
   getEntities: GetEntitiesFn;
   /** Function to query logs */
   queryLogs: QueryLogsFn;
+  /** Function to get distinct entity IDs from log history */
+  getLogEntityIds?: GetLogEntityIdsFn;
   /** Function to regenerate types */
   regenerateTypes: TypeRegenFn;
 }
@@ -59,7 +61,7 @@ export function createServer(config: WebServerConfig) {
     getBuildStatus: config.getBuildStatus,
   }));
   app.route('/api/entities', createEntitiesRoutes(config.getEntities));
-  app.route('/api/logs', createLogsRoutes(config.queryLogs));
+  app.route('/api/logs', createLogsRoutes(config.queryLogs, config.getLogEntityIds));
   app.route('/api/packages', createPackagesRoutes({ scriptsDir: config.scriptsDir }));
   app.route('/api/types', createTypesRoutes({
     generatedDir: config.generatedDir,

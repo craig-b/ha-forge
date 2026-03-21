@@ -132,6 +132,7 @@ export class TseApp extends LitElement {
   @state() private _buildMessages: string[] = [];
   @state() private _entities: EntityInfo[] = [];
   @state() private _logs: LogEntry[] = [];
+  @state() private _logEntityIds: string[] = [];
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
 
   private _editor: MonacoEditorInstance | null = null;
@@ -188,6 +189,7 @@ export class TseApp extends LitElement {
             .buildMessages=${this._buildMessages}
             .entities=${this._entities}
             .logs=${this._logs}
+            .logEntityIds=${this._logEntityIds}
           ></tse-bottom-panel>
         </div>
       </div>
@@ -621,11 +623,16 @@ export class TseApp extends LitElement {
     this._logs = (data.logs as LogEntry[]) ?? [];
   }
 
+  private async _loadLogEntityIds() {
+    const data = await this._api('GET', '/api/logs/entities');
+    this._logEntityIds = (data.entityIds as string[]) ?? [];
+  }
+
   // ---- Panel changes ----
 
   private _onPanelChange(panel: string) {
     if (panel === 'entities' || panel === 'exports') this._loadEntities();
-    if (panel === 'logs') this._loadLogs(this._logFilter);
+    if (panel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
   }
 
   // ---- Keyboard shortcuts ----
@@ -655,7 +662,7 @@ export class TseApp extends LitElement {
         try {
           const msg = JSON.parse(event.data);
           if (msg.channel === 'entities') this._loadEntities();
-          if (msg.channel === 'logs') this._loadLogs(this._logFilter);
+          if (msg.channel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
           if (msg.channel === 'build' && msg.event === 'step_complete' && msg.data) {
             this._buildSteps = [...this._buildSteps, msg.data as BuildStep];
           }

@@ -22,6 +22,8 @@ export type QueryLogsFn = (opts: {
   offset?: number;
 }) => LogEntry[];
 
+export type GetLogEntityIdsFn = () => string[];
+
 /** Severity levels ordered from lowest to highest. */
 const LEVEL_SEVERITY = ['debug', 'info', 'warn', 'error'] as const;
 
@@ -38,7 +40,7 @@ function expandMinLevel(input: string): string[] | undefined {
   return LEVEL_SEVERITY.slice(idx) as unknown as string[];
 }
 
-export function createLogsRoutes(queryLogs: QueryLogsFn) {
+export function createLogsRoutes(queryLogs: QueryLogsFn, getLogEntityIds?: GetLogEntityIdsFn) {
   const app = new Hono();
 
   app.get('/', (c) => {
@@ -66,6 +68,12 @@ export function createLogsRoutes(queryLogs: QueryLogsFn) {
 
     return c.json({ logs, count: logs.length });
   });
+
+  if (getLogEntityIds) {
+    app.get('/entities', (c) => {
+      return c.json({ entityIds: getLogEntityIds() });
+    });
+  }
 
   return app;
 }

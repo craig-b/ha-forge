@@ -258,6 +258,7 @@ async function main(): Promise<void> {
         });
       },
       queryLogs: (opts) => logger.query(opts),
+      getLogEntityIds: () => logger.getEntityIds(),
       regenerateTypes: async () => {
         if (!wsClient) return { success: false, entityCount: 0, serviceCount: 0, errors: ['No WebSocket connection'] };
         const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');

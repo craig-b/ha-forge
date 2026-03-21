@@ -13,6 +13,7 @@ export class TseBottomPanel extends LitElement {
   @property({ type: Array }) buildMessages: string[] = [];
   @property({ type: Array }) entities: EntityInfo[] = [];
   @property({ type: Array }) logs: LogEntry[] = [];
+  @property({ type: Array }) logEntityIds: string[] = [];
   @state() private _activePanel = 'build-output';
 
   createRenderRoot() { return this; }
@@ -46,7 +47,7 @@ export class TseBottomPanel extends LitElement {
         <tse-exports-panel .entities=${this.entities}></tse-exports-panel>
       </div>
       <div class="panel-content ${this._activePanel === 'logs' ? 'active' : ''}">
-        <tse-log-viewer .logs=${this.logs} .entityIds=${this.entities.map((e) => e.id)}></tse-log-viewer>
+        <tse-log-viewer .logs=${this.logs} .entityIds=${this.logEntityIds}></tse-log-viewer>
       </div>
     `;
   }

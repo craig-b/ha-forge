@@ -270,6 +270,17 @@ export class SQLiteLogger implements LifecycleLogger {
   }
 
   /**
+   * Return all distinct entity IDs that have log entries.
+   */
+  getEntityIds(): string[] {
+    this.flush();
+    const rows = this.db.prepare(
+      'SELECT DISTINCT entity_id FROM logs WHERE entity_id IS NOT NULL ORDER BY entity_id',
+    ).all() as Array<{ entity_id: string }>;
+    return rows.map((r) => r.entity_id);
+  }
+
+  /**
    * Delete entries older than retention period.
    */
   cleanup(): { deleted: number } {
