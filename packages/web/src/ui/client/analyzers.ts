@@ -71,7 +71,7 @@ const DECL_PATTERN = new RegExp(
 // Does NOT match lines that start with export, const/let/var, or return.
 // Captures: [1]=factory name
 const BARE_CALL_PATTERN = new RegExp(
-  '^\\s*' +                                        // optional leading whitespace
+  '^[ \\t]*' +                                     // optional leading whitespace (no newlines)
   '(?!export\\b|const\\b|let\\b|var\\b|return\\b)' + // not an assignment/export/return
   '(?:\\w+\\.)?' +                                 // optional namespace (e.g. ha.)
   '(' + FACTORY_NAMES.join('|') + ')' +            // factory function name

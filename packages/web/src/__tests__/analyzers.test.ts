@@ -136,6 +136,14 @@ describe('analyzeUnexportedEntities', () => {
     expect(diags[1].message).toContain('light()');
   });
 
+  it('reports correct line number for bare call after blank lines', () => {
+    const code = '});\n\nmode({\n  id: \'house_mode\',';
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('mode()');
+    expect(diags[0].startLine).toBe(3); // mode( is on line 3, not line 2
+  });
+
   it('does not warn on export default factory call', () => {
     const code = `export default sensor({ id: 'temp', name: 'Temp' });`;
     const diags = analyzeUnexportedEntities(code);
