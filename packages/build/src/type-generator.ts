@@ -531,9 +531,9 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `}`,
     ``,
     `/** Typed computed entity — watch list constrained to known HA entity IDs. */`,
-    `declare function computed<TWatch extends HAEntityId>(options: ComputedOptions<TWatch>): ComputedDefinition<TWatch>;`,
+    `declare function computed<TWatch extends HAEntityId>(options: Omit<ComputedOptions<TWatch>, 'compute'> & { compute: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => string | number }): ComputedDefinition<TWatch>;`,
     `/** Typed computed attribute — watch list constrained to known HA entity IDs. */`,
-    `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<TWatch> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
+    `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
   ].join('\n');
 
