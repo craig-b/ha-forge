@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
@@ -36,6 +39,8 @@ export class BuildManager {
   private lifecycle: EntityLifecycleManager;
   private logger: LifecycleLogger;
   private bundleDir: string;
+  /** Content hashes of deployed bundle files, keyed by source file (e.g. 'foo.ts'). */
+  private deployedHashes = new Map<string, string>();
 
   constructor(opts: BuildDeployOptions) {
     this.lifecycle = new EntityLifecycleManager(
@@ -156,6 +161,9 @@ export class BuildManager {
       }
     }
 
+    // Store content hashes for smart deploy diffing
+    this.deployedHashes = this.hashBundleFiles();
+
     return {
       success: deployErrors.length === 0,
       entityCount: deployedCount,
@@ -216,16 +224,13 @@ export class BuildManager {
       group.push(c);
     }
 
-    // Determine which files actually changed
-    const activeFiles = this.lifecycle.getActiveSourceFiles();
-    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys(), ...newModesByFile.keys(), ...newCronsByFile.keys()]);
+    // Determine which files actually changed by comparing bundle content hashes
+    const currentHashes = this.hashBundleFiles();
+    const allFiles = new Set([...this.deployedHashes.keys(), ...currentHashes.keys()]);
     const changedFiles = new Set<string>();
 
     for (const file of allFiles) {
-      const oldEntities = this.lifecycle.getEntitiesBySourceFile(file);
-      const newEntities = newByFile.get(file) ?? [];
-
-      if (!this.entitiesMatch(oldEntities, newEntities)) {
+      if (this.deployedHashes.get(file) !== currentHashes.get(file)) {
         changedFiles.add(file);
       }
     }
@@ -262,6 +267,16 @@ export class BuildManager {
       }
     }
 
+    // Update stored hashes for successfully redeployed files
+    for (const file of changedFiles) {
+      const hash = currentHashes.get(file);
+      if (hash) {
+        this.deployedHashes.set(file, hash);
+      } else {
+        this.deployedHashes.delete(file); // File was removed
+      }
+    }
+
     return {
       success: deployErrors.length === 0,
       entityCount: this.lifecycle.getEntityIds().length,
@@ -270,31 +285,25 @@ export class BuildManager {
     };
   }
 
-  /** Compare two sets of entities by their serializable definition properties. */
-  private entitiesMatch(a: ResolvedEntity[], b: ResolvedEntity[]): boolean {
-    if (a.length !== b.length) return false;
+  /** Hash all JS bundle files in the bundle directory, keyed by source file name (e.g. 'foo.ts'). */
+  private hashBundleFiles(): Map<string, string> {
+    const hashes = new Map<string, string>();
+    if (!fs.existsSync(this.bundleDir)) return hashes;
 
-    // Sort both by entity ID for stable comparison
-    const sortById = (entities: ResolvedEntity[]) =>
-      [...entities].sort((x, y) => x.definition.id.localeCompare(y.definition.id));
-
-    const sortedA = sortById(a);
-    const sortedB = sortById(b);
-
-    for (let i = 0; i < sortedA.length; i++) {
-      const defA = sortedA[i].definition;
-      const defB = sortedB[i].definition;
-      // Compare the serializable parts: id, name, type, and config
-      if (defA.id !== defB.id || defA.name !== defB.name || defA.type !== defB.type) return false;
-      // For functions (init, onCommand, destroy), compare their string representations
-      // This catches code changes even when the definition shape is the same
-      const a = defA as unknown as Record<string, unknown>;
-      const b = defB as unknown as Record<string, unknown>;
-      if (String(a.init) !== String(b.init)) return false;
-      if (String(a.onCommand) !== String(b.onCommand)) return false;
-      if (String(a.destroy) !== String(b.destroy)) return false;
-    }
-    return true;
+    const walk = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walk(fullPath);
+        } else if (entry.isFile() && entry.name.endsWith('.js') && !entry.name.endsWith('.js.map')) {
+          const sourceFile = path.relative(this.bundleDir, fullPath).replace(/\.js$/, '.ts');
+          const content = fs.readFileSync(fullPath);
+          hashes.set(sourceFile, crypto.createHash('sha256').update(content).digest('hex'));
+        }
+      }
+    };
+    walk(this.bundleDir);
+    return hashes;
   }
 
   /**
