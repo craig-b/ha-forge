@@ -404,6 +404,36 @@ declare function automation(options: AutomationOptions): AutomationDefinition;
  */
 declare function task(options: TaskOptions): TaskDefinition;
 /**
+ * Define a mode / state machine surfaced as a \`select\` entity in HA.
+ * The runtime manages enter/exit transition hooks and optional guards.
+ * Other scripts can observe mode changes via \`ha.on('select.<id>', ...)\`.
+ * @param options - Mode configuration including states, initial state, and transition hooks.
+ * @returns A mode definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const houseMode = mode({
+ *   id: 'house_mode',
+ *   name: 'House Mode',
+ *   states: ['home', 'away', 'sleep', 'movie'],
+ *   initial: 'home',
+ *   transitions: {
+ *     away: {
+ *       enter: () => {
+ *         ha.callService('climate.main', 'set_hvac_mode', { hvac_mode: 'eco' });
+ *         ha.callService('light', 'turn_off');
+ *       },
+ *       exit: () => ha.callService('climate.main', 'set_hvac_mode', { hvac_mode: 'auto' }),
+ *       guard(from) { return from !== 'sleep'; },
+ *     },
+ *     movie: {
+ *       enter: () => ha.callService('light.living_room', 'turn_on', { brightness: 30 }),
+ *     },
+ *   },
+ * });
+ * \`\`\`
+ */
+declare function mode<TStates extends string>(options: ModeOptions<TStates>): ModeDefinition<TStates>;
+/**
  * Global stateless Home Assistant client API.
  * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
