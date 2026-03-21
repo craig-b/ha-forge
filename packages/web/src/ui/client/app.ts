@@ -2,6 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, type AnalyzerDiagnostic } from './analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -251,6 +252,7 @@ export class TseApp extends LitElement {
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
+      this._loadTypeScriptApi();
     });
   }
 
@@ -287,6 +289,21 @@ export class TseApp extends LitElement {
     if (existing) existing.dispose();
     const model = monaco.editor.createModel(content, 'typescript', parsed);
     model.updateOptions({ readOnly: true });
+  }
+
+  private _loadTypeScriptApi() {
+    // Monaco bundles TypeScript but doesn't expose ts.createSourceFile on the main thread.
+    // Load TypeScript from CDN via a script tag — it registers as window.ts (UMD global).
+    const script = document.createElement('script');
+    script.src = 'https://cdn.jsdelivr.net/npm/typescript@5.7.3/lib/typescript.min.js';
+    script.onload = () => {
+      const tsGlobal = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
+      if (tsGlobal?.createSourceFile) {
+        setTypeScriptApi(tsGlobal);
+        this._runDiagnostics();
+      }
+    };
+    document.head.appendChild(script);
   }
 
   // ---- Cross-file navigation ----
@@ -355,6 +372,7 @@ export class TseApp extends LitElement {
 
   private _diagTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly DIAG_OWNER = 'ha-forge-lint';
+  private static readonly AST_DIAG_OWNER = 'ha-forge-ast';
   private static readonly DIAG_DEBOUNCE = 300;
 
   private _setupCustomDiagnostics() {
@@ -399,9 +417,22 @@ export class TseApp extends LitElement {
     if (!model) return;
 
     const sourceText = model.getValue();
-    const diagnostics = runAllAnalyzers(sourceText);
 
-    const markers: MonacoMarkerData[] = diagnostics.map((d) => ({
+    // Regex-based analyzers
+    const diagnostics = runAllAnalyzers(sourceText);
+    const markers: MonacoMarkerData[] = diagnostics.map((d) => this._toMarker(d, TseApp.DIAG_OWNER));
+    monaco.editor.setModelMarkers(model, TseApp.DIAG_OWNER, markers);
+
+    // AST-based analyzers (if TypeScript API loaded)
+    if (isAstReady()) {
+      const result = analyzeWithAst(sourceText, model.uri.path || 'file.ts');
+      const astMarkers: MonacoMarkerData[] = result.diagnostics.map((d) => this._toMarker(d, TseApp.AST_DIAG_OWNER));
+      monaco.editor.setModelMarkers(model, TseApp.AST_DIAG_OWNER, astMarkers);
+    }
+  }
+
+  private _toMarker(d: AnalyzerDiagnostic, source: string): MonacoMarkerData {
+    return {
       severity: d.severity === 'error' ? monaco.MarkerSeverity.Error
         : d.severity === 'warning' ? monaco.MarkerSeverity.Warning
         : monaco.MarkerSeverity.Info,
@@ -410,10 +441,8 @@ export class TseApp extends LitElement {
       startColumn: d.startCol,
       endLineNumber: d.endLine,
       endColumn: d.endCol,
-      source: TseApp.DIAG_OWNER,
-    }));
-
-    monaco.editor.setModelMarkers(model, TseApp.DIAG_OWNER, markers);
+      source,
+    };
   }
 
   // ---- File tree ----
