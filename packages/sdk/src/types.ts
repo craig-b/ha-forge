@@ -624,19 +624,19 @@ export interface StatelessHAApi {
  * });
  * ```
  */
-export interface EntityContext<TState = unknown> {
+export interface EntityContext<TState = unknown, TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /**
    * Publish a new state value (and optional attributes) to Home Assistant.
    * @param value - The new state value.
    * @param attributes - Optional attributes to publish alongside the state.
    */
-  update(value: TState, attributes?: Record<string, unknown>): void;
+  update(value: TState, attributes?: Partial<TAttrs>): void;
   /**
    * Update attributes without changing the entity's state value.
    * Re-publishes the current state with the new attributes.
    * @param attributes - Attributes to publish alongside the current state.
    */
-  attr(attributes: Record<string, unknown>): void;
+  attr(attributes: Partial<TAttrs>): void;
   /**
    * Stateless HA API — safe to pass to utility functions.
    * Provides callService, getState, getEntities, fireEvent, friendlyName.
@@ -698,7 +698,7 @@ export interface EntityContext<TState = unknown> {
  * @typeParam TState - The entity's state type.
  * @typeParam TConfig - The entity's MQTT discovery config type.
  */
-export interface BaseEntity<TState, TConfig = Record<string, never>> {
+export interface BaseEntity<TState, TConfig = Record<string, never>, TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Used as the object_id in MQTT topics. */
   id: string;
   /**
@@ -742,17 +742,17 @@ export interface BaseEntity<TState, TConfig = Record<string, never>> {
    * });
    * ```
    */
-  attributes?: Record<string, unknown | ComputedAttribute>;
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called once when the entity is deployed. Return the initial state value.
    * Use `this.poll()`, `this.events.on()`, etc. to set up ongoing state updates.
    */
-  init?(this: EntityContext<TState>): TState | Promise<TState>;
+  init?(this: EntityContext<TState, TAttrs>): TState | Promise<TState>;
   /**
    * Called when the entity is torn down (before redeploy or shutdown).
    * Use for cleanup of external resources. Tracked timers/intervals are auto-cleared.
    */
-  destroy?(this: EntityContext<TState>): void | Promise<void>;
+  destroy?(this: EntityContext<TState, TAttrs>): void | Promise<void>;
 }
 
 // ---- Sensor ----

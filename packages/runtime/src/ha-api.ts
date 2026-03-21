@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, CombinedState, CombinedCallback, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -365,13 +365,13 @@ export class HAApiImpl implements HAApi {
         handles.eventSubscriptions.push(unsub);
         return unsub;
       },
-      combine: (entities: string[], callback: CombinedCallback) => {
-        const buildSnapshot = (): CombinedState => {
-          const states: CombinedState = {};
+      combine: <E extends string>(entities: E[], callback: (states: { [K in E]: EntitySnapshot | null }) => void) => {
+        const buildSnapshot = () => {
+          const states: Record<string, EntitySnapshot | null> = {};
           for (const eid of entities) {
             states[eid] = self.getCachedSnapshot(eid);
           }
-          return states;
+          return states as { [K in E]: EntitySnapshot | null };
         };
         const unsub = self.on(entities, () => {
           callback(buildSnapshot());
@@ -379,7 +379,7 @@ export class HAApiImpl implements HAApi {
         handles.eventSubscriptions.push(unsub);
         return unsub;
       },
-      withState: (entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: Record<string, EntitySnapshot>) => void) => {
+      withState: <C extends string>(entityOrDomain: string | string[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void) => {
         const stream = createEventStream(
           (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
           ((event: StateChangedEvent) => {
@@ -389,13 +389,13 @@ export class HAApiImpl implements HAApi {
               if (!snap || snap.state === 'unavailable' || snap.state === 'unknown') return;
               states[eid] = snap;
             }
-            callback(event, states);
+            callback(event, states as { [K in C]: EntitySnapshot });
           }) as StateChangedCallback,
         );
         handles.eventSubscriptions.push(() => stream.unsubscribe());
         return stream;
       },
-      watchdog: (rules: Record<string, WatchdogRule>) => {
+      watchdog: <K extends string>(rules: Record<K, WatchdogRule>) => {
         const timers = new Map<string, ReturnType<typeof setTimeout>>();
         const unsubscribers: Array<() => void> = [];
 
@@ -418,7 +418,8 @@ export class HAApiImpl implements HAApi {
           timers.set(entityId, t);
         };
 
-        for (const [entityId, rule] of Object.entries(rules)) {
+        for (const [entityId, r] of Object.entries(rules)) {
+          const rule = r as WatchdogRule;
           const predicate = normExpect(rule.expect);
 
           // Start initial timer

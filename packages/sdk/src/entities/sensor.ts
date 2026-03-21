@@ -1,7 +1,7 @@
-import type { SensorConfig, SensorDefinition, EntityContext } from '../types.js';
+import type { SensorConfig, SensorDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a sensor entity. */
-export interface SensorOptions {
+export interface SensorOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'cpu_temp'` → `sensor.cpu_temp`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,13 +14,15 @@ export interface SensorOptions {
   icon?: string;
   /** Sensor-specific MQTT discovery config (device_class, unit_of_measurement, state_class). */
   config?: SensorConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called once when the entity is deployed. Return the initial state value.
    * Use `this.poll()`, `this.ha.on()`, etc. to set up ongoing state updates.
    */
-  init?(this: EntityContext<string | number>): string | number | Promise<string | number>;
+  init?(this: EntityContext<string | number, TAttrs>): string | number | Promise<string | number>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<string | number>): void | Promise<void>;
+  destroy?(this: EntityContext<string | number, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -49,7 +51,7 @@ export interface SensorOptions {
  * });
  * ```
  */
-export function sensor(options: SensorOptions): SensorDefinition {
+export function sensor<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: SensorOptions<TAttrs>): SensorDefinition {
   return {
     ...options,
     type: 'sensor',
