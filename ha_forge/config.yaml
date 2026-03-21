@@ -1,6 +1,6 @@
 name: HA Forge
 description: Define Home Assistant entities in TypeScript
-version: "2026.3.21-f96661a"
+version: "2026.3.21-71b57bf"
 slug: ha_forge
 url: https://github.com/craig-b/ha-forge
 image: "ghcr.io/craig-b/{arch}-addon-ha_forge"
