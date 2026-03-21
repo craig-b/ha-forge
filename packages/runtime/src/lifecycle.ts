@@ -10,6 +10,8 @@ import type {
   EntityLogger,
   EntitySnapshot,
   EventsContext,
+  ModeContext,
+  ModeDefinition,
   EventStream,
   StatelessHAApi,
   TaskContext,
@@ -17,7 +19,7 @@ import type {
 } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedAutomation, ResolvedDevice, ResolvedTask } from './loader.js';
+import type { ResolvedAutomation, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 
@@ -63,6 +65,14 @@ interface TaskInstance {
   running: boolean;
 }
 
+interface ModeInstance {
+  mode: ResolvedMode;
+  handles: TrackedHandles;
+  /** Current mode state. */
+  currentState: string;
+  initialized: boolean;
+}
+
 interface PollRef {
   timer: ReturnType<typeof globalThis.setTimeout> | null;
 }
@@ -105,6 +115,7 @@ export class EntityLifecycleManager {
   private deviceInstances = new Map<string, DeviceInstance>();
   private automationInstances = new Map<string, AutomationInstance>();
   private taskInstances = new Map<string, TaskInstance>();
+  private modeInstances = new Map<string, ModeInstance>();
   private transport: Transport;
   private logger: LifecycleLogger;
   private rawMqtt: RawMqttAccess | null;
@@ -119,17 +130,17 @@ export class EntityLifecycleManager {
     this.haApi = haApi ?? null;
   }
 
-  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[]): Promise<void> {
+  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[]): Promise<void> {
     // Full deploy: teardown everything first, then register new entities
     await this.teardownAll();
-    await this.deployAdditive(entities, devices, automations, tasks);
+    await this.deployAdditive(entities, devices, automations, tasks, modes);
   }
 
   /**
    * Register and init entities/devices/automations/tasks without tearing down existing ones.
    * Used by BuildManager which handles teardown separately to support per-file isolation.
    */
-  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[]): Promise<void> {
+  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[]): Promise<void> {
     // Collect entity IDs owned by devices so we skip individual init for them
     const deviceOwnedEntityIds = new Set<string>();
     if (devices) {
@@ -189,6 +200,20 @@ export class EntityLifecycleManager {
           this.logger.error(`Failed to initialize task ${t.definition.id}`, {
             error: err instanceof Error ? err.message : String(err),
             sourceFile: t.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init modes
+    if (modes) {
+      for (const m of modes) {
+        try {
+          await this.initMode(m);
+        } catch (err) {
+          this.logger.error(`Failed to initialize mode ${m.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: m.sourceFile,
           });
         }
       }
@@ -806,6 +831,148 @@ export class EntityLifecycleManager {
       });
   }
 
+  private async initMode(resolved: ResolvedMode): Promise<void> {
+    const def = resolved.definition;
+    const handles = createEmptyHandles();
+
+    const instance: ModeInstance = {
+      mode: resolved,
+      handles,
+      currentState: def.initial,
+      initialized: false,
+    };
+
+    this.modeInstances.set(def.id, instance);
+
+    // Register a select entity in HA with mode states as options
+    const syntheticEntity: ResolvedEntity = {
+      definition: {
+        id: def.id,
+        name: def.name,
+        type: 'select',
+        config: { options: [...def.states] },
+        ...(def.device && { device: def.device }),
+        ...(def.icon && { icon: def.icon }),
+      } as unknown as EntityDefinition,
+      sourceFile: resolved.sourceFile,
+      deviceId: def.device?.id ?? def.id,
+    };
+    await this.transport.register(syntheticEntity);
+
+    // Publish initial state
+    await this.transport.publishState(def.id, def.initial);
+    this.onStateChange?.(def.id, def.initial);
+
+    // Create context for transition callbacks
+    const modeContext = this.createModeContext(instance);
+
+    // Run enter hook for initial state
+    const initialTransition = def.transitions?.[def.initial];
+    if (initialTransition?.enter) {
+      try {
+        await initialTransition.enter.call(modeContext);
+      } catch (err) {
+        this.logger.error(`Mode ${def.id}: enter(${def.initial}) failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Handle select commands (state transitions)
+    this.transport.onCommand(def.id, async (command) => {
+      const targetState = String(command);
+
+      if (!def.states.includes(targetState as typeof def.states[number])) {
+        this.logger.warn(`Mode ${def.id}: invalid state '${targetState}'`);
+        return;
+      }
+
+      if (targetState === instance.currentState) return;
+
+      const fromState = instance.currentState;
+
+      // Check guard on target state
+      const targetTransition = def.transitions?.[targetState as typeof def.states[number]];
+      if (targetTransition?.guard) {
+        try {
+          const allowed = await targetTransition.guard.call(modeContext, fromState as typeof def.states[number]);
+          if (!allowed) {
+            this.logger.info(`Mode ${def.id}: guard blocked transition ${fromState} → ${targetState}`);
+            // Re-publish current state to revert the UI
+            await this.transport.publishState(def.id, fromState);
+            return;
+          }
+        } catch (err) {
+          this.logger.error(`Mode ${def.id}: guard(${targetState}) failed`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          await this.transport.publishState(def.id, fromState);
+          return;
+        }
+      }
+
+      // Run exit hook for current state
+      const currentTransition = def.transitions?.[fromState as typeof def.states[number]];
+      if (currentTransition?.exit) {
+        try {
+          await currentTransition.exit.call(modeContext);
+        } catch (err) {
+          this.logger.error(`Mode ${def.id}: exit(${fromState}) failed`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      // Transition
+      instance.currentState = targetState;
+      await this.transport.publishState(def.id, targetState);
+      this.onStateChange?.(def.id, targetState);
+
+      // Run enter hook for new state
+      if (targetTransition?.enter) {
+        try {
+          await targetTransition.enter.call(modeContext);
+        } catch (err) {
+          this.logger.error(`Mode ${def.id}: enter(${targetState}) failed`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    });
+
+    instance.initialized = true;
+    this.logger.info(`Mode initialized: ${def.id} (${def.states.length} states, initial: ${def.initial})`, {
+      sourceFile: resolved.sourceFile,
+    });
+  }
+
+  private createModeContext(instance: ModeInstance): ModeContext {
+    const haApi = this.haApi;
+    const scopedLogger = this.logger.forEntity
+      ? this.logger.forEntity(instance.mode.definition.id, instance.mode.sourceFile)
+      : this.logger;
+
+    const entityLogger: EntityLogger = {
+      debug: (msg, data) => scopedLogger.debug(msg, data),
+      info: (msg, data) => scopedLogger.info(msg, data),
+      warn: (msg, data) => scopedLogger.warn(msg, data),
+      error: (msg, data) => scopedLogger.error(msg, data),
+    };
+
+    const stubStatelessApi: StatelessHAApi = {
+      async callService() { entityLogger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
+      async getState() { entityLogger.warn('this.ha.getState() unavailable — no WebSocket connection'); return null; },
+      async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
+      async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
+      friendlyName(id: string) { return id; },
+    };
+
+    return {
+      ha: haApi ? haApi.asStateless() : stubStatelessApi,
+      log: entityLogger,
+    };
+  }
+
   /**
    * Teardown entities from specific source files, leaving others untouched.
    */
@@ -838,6 +1005,12 @@ export class EntityLifecycleManager {
       await this.teardownTask(id);
     }
 
+    // Teardown modes from these files
+    for (const [id, instance] of this.modeInstances) {
+      if (!sourceFiles.has(instance.mode.sourceFile)) continue;
+      await this.teardownMode(id);
+    }
+
     // Teardown entities from these files
     for (const [id, instance] of this.instances) {
       if (!sourceFiles.has(instance.entity.sourceFile)) continue;
@@ -845,7 +1018,7 @@ export class EntityLifecycleManager {
     }
   }
 
-  /** Get set of source files that have running entities/automations/tasks. */
+  /** Get set of source files that have running entities/automations/tasks/modes. */
   getActiveSourceFiles(): Set<string> {
     const files = new Set<string>();
     for (const instance of this.instances.values()) {
@@ -856,6 +1029,9 @@ export class EntityLifecycleManager {
     }
     for (const instance of this.taskInstances.values()) {
       files.add(instance.task.sourceFile);
+    }
+    for (const instance of this.modeInstances.values()) {
+      files.add(instance.mode.sourceFile);
     }
     return files;
   }
@@ -897,6 +1073,12 @@ export class EntityLifecycleManager {
     const taskIds = [...this.taskInstances.keys()];
     for (const id of taskIds) {
       await this.teardownTask(id);
+    }
+
+    // Teardown modes
+    const modeIds = [...this.modeInstances.keys()];
+    for (const id of modeIds) {
+      await this.teardownMode(id);
     }
 
     // Then teardown all entities
@@ -984,6 +1166,38 @@ export class EntityLifecycleManager {
     }
 
     this.taskInstances.delete(taskId);
+  }
+
+  private async teardownMode(modeId: string): Promise<void> {
+    const instance = this.modeInstances.get(modeId);
+    if (!instance) return;
+
+    // Run exit hook for current state before teardown
+    const def = instance.mode.definition;
+    const currentTransition = def.transitions?.[instance.currentState as typeof def.states[number]];
+    if (currentTransition?.exit && instance.initialized) {
+      try {
+        const ctx = this.createModeContext(instance);
+        await currentTransition.exit.call(ctx);
+      } catch (err) {
+        this.logger.error(`Mode ${modeId}: exit(${instance.currentState}) failed during teardown`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    this.disposeHandles(instance.handles);
+
+    // Deregister select entity
+    try {
+      await this.transport.deregister(modeId);
+    } catch (err) {
+      this.logger.error(`Deregister failed for mode ${modeId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    this.modeInstances.delete(modeId);
   }
 
   private disposeHandles(handles: TrackedHandles): void {

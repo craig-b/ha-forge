@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, AutomationDefinition, TaskDefinition } from '@ha-forge/sdk';
+import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, AutomationDefinition, TaskDefinition, ModeDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
@@ -24,11 +24,18 @@ export interface ResolvedTask {
   sourceFile: string;
 }
 
+/** A resolved mode definition with its source file. */
+export interface ResolvedMode {
+  definition: ModeDefinition;
+  sourceFile: string;
+}
+
 export interface LoadResult {
   entities: ResolvedEntity[];
   devices: ResolvedDevice[];
   automations: ResolvedAutomation[];
   tasks: ResolvedTask[];
+  modes: ResolvedMode[];
   errors: LoadError[];
 }
 
@@ -71,6 +78,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.device = sdk.device;
   g.automation = sdk.automation;
   g.task = sdk.task;
+  g.mode = sdk.mode;
 
   // Always provide ha global — stateless only (no on/reactions).
   // Use this.events for lifecycle-managed subscriptions instead.
@@ -102,10 +110,11 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
   const devices: ResolvedDevice[] = [];
   const automations: ResolvedAutomation[] = [];
   const tasks: ResolvedTask[] = [];
+  const modes: ResolvedMode[] = [];
   const errors: LoadError[] = [];
 
   if (!fs.existsSync(bundleDir)) {
-    return { entities, devices, automations, tasks, errors };
+    return { entities, devices, automations, tasks, modes, errors };
   }
 
   const jsFiles = findJsFiles(bundleDir);
@@ -117,6 +126,7 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
       devices.push(...result.devices);
       automations.push(...result.automations);
       tasks.push(...result.tasks);
+      modes.push(...result.modes);
     } catch (err) {
       errors.push({
         file,
@@ -125,13 +135,13 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
     }
   }
 
-  return { entities, devices, automations, tasks, errors };
+  return { entities, devices, automations, tasks, modes, errors };
 }
 
 async function loadSingleBundle(
   filePath: string,
   bundleDir: string,
-): Promise<{ entities: ResolvedEntity[]; devices: ResolvedDevice[]; automations: ResolvedAutomation[]; tasks: ResolvedTask[] }> {
+): Promise<{ entities: ResolvedEntity[]; devices: ResolvedDevice[]; automations: ResolvedAutomation[]; tasks: ResolvedTask[]; modes: ResolvedMode[] }> {
   // Dynamic import — file:// URL required for absolute paths on all platforms.
   // Append a cache-busting query string so Node returns fresh modules on redeploy.
   const fileUrl = `file://${filePath}?t=${Date.now()}`;
@@ -145,6 +155,7 @@ async function loadSingleBundle(
   const deviceDefs: DeviceDefinition[] = [];
   const automationDefs: AutomationDefinition[] = [];
   const taskDefs: TaskDefinition[] = [];
+  const modeDefs: ModeDefinition[] = [];
 
   // Walk all exports — check __kind discriminants first since they also have id/name
   for (const [, value] of Object.entries(mod)) {
@@ -154,6 +165,8 @@ async function loadSingleBundle(
       automationDefs.push(value);
     } else if (isTaskDefinition(value)) {
       taskDefs.push(value);
+    } else if (isModeDefinition(value)) {
+      modeDefs.push(value);
     } else if (isEntityDefinition(value)) {
       definitions.push(value);
     } else if (isEntityFactory(value)) {
@@ -216,7 +229,12 @@ async function loadSingleBundle(
     sourceFile,
   }));
 
-  return { entities, devices, automations, tasks };
+  const modes: ResolvedMode[] = modeDefs.map((definition) => ({
+    definition,
+    sourceFile,
+  }));
+
+  return { entities, devices, automations, tasks, modes };
 }
 
 function isDeviceDefinition(value: unknown): value is DeviceDefinition {
@@ -243,6 +261,15 @@ function isTaskDefinition(value: unknown): value is TaskDefinition {
     value !== null &&
     '__kind' in value &&
     (value as Record<string, unknown>).__kind === 'task'
+  );
+}
+
+function isModeDefinition(value: unknown): value is ModeDefinition {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '__kind' in value &&
+    (value as Record<string, unknown>).__kind === 'mode'
   );
 }
 

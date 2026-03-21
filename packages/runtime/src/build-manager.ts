@@ -1,5 +1,5 @@
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedAutomation, ResolvedDevice, ResolvedTask } from './loader.js';
+import type { ResolvedAutomation, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 import { EntityLifecycleManager } from './lifecycle.js';
 import { loadBundles } from './loader.js';
@@ -66,7 +66,7 @@ export class BuildManager {
       }
     }
 
-    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0;
+    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0 || loadResult.modes.length > 0;
     if (!hasWork && loadResult.errors.length === 0) {
       this.logger.info('No entities to deploy');
       return {
@@ -120,9 +120,15 @@ export class BuildManager {
       if (!group) { group = []; tasksByFile.set(t.sourceFile, group); }
       group.push(t);
     }
+    const modesByFile = new Map<string, ResolvedMode[]>();
+    for (const m of loadResult.modes) {
+      let group = modesByFile.get(m.sourceFile);
+      if (!group) { group = []; modesByFile.set(m.sourceFile, group); }
+      group.push(m);
+    }
 
     // Collect all source files
-    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys()]);
+    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys(), ...modesByFile.keys()]);
 
     // Deploy each file's definitions independently
     let deployedCount = 0;
@@ -132,9 +138,10 @@ export class BuildManager {
         const devices = devicesByFile.get(file) ?? [];
         const automations = automationsByFile.get(file) ?? [];
         const tasks = tasksByFile.get(file) ?? [];
-        await this.lifecycle.deployAdditive(entities, devices, automations, tasks);
-        deployedCount += entities.length + automations.length + tasks.length;
-        this.logger.info(`Deployed ${entities.length} entities, ${automations.length} automations, ${tasks.length} tasks from ${file}`);
+        const modes = modesByFile.get(file) ?? [];
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes);
+        deployedCount += entities.length + automations.length + tasks.length + modes.length;
+        this.logger.info(`Deployed ${entities.length} entities, ${automations.length} automations, ${tasks.length} tasks, ${modes.length} modes from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         deployErrors.push({ file, error: errorMsg });
@@ -189,10 +196,16 @@ export class BuildManager {
       if (!group) { group = []; newTasksByFile.set(t.sourceFile, group); }
       group.push(t);
     }
+    const newModesByFile = new Map<string, ResolvedMode[]>();
+    for (const m of loadResult.modes) {
+      let group = newModesByFile.get(m.sourceFile);
+      if (!group) { group = []; newModesByFile.set(m.sourceFile, group); }
+      group.push(m);
+    }
 
     // Determine which files actually changed
     const activeFiles = this.lifecycle.getActiveSourceFiles();
-    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys()]);
+    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys(), ...newModesByFile.keys()]);
     const changedFiles = new Set<string>();
 
     for (const file of allFiles) {
@@ -222,10 +235,11 @@ export class BuildManager {
       const devices = newDevicesByFile.get(file) ?? [];
       const automations = newAutomationsByFile.get(file) ?? [];
       const tasks = newTasksByFile.get(file) ?? [];
-      if (entities.length === 0 && automations.length === 0 && tasks.length === 0) continue; // File was removed
+      const modes = newModesByFile.get(file) ?? [];
+      if (entities.length === 0 && automations.length === 0 && tasks.length === 0 && modes.length === 0) continue; // File was removed
       try {
-        await this.lifecycle.deployAdditive(entities, devices, automations, tasks);
-        deployedCount += entities.length + automations.length + tasks.length;
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes);
+        deployedCount += entities.length + automations.length + tasks.length + modes.length;
         this.logger.info(`Redeployed from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
