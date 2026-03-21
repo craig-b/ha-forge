@@ -66,6 +66,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.notify = sdk.notify;
   g.update = sdk.update;
   g.image = sdk.image;
+  g.computed = sdk.computed;
   g.entityFactory = sdk.entityFactory;
   g.device = sdk.device;
   g.automation = sdk.automation;
