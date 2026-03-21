@@ -20,6 +20,7 @@ export { alarmControlPanel } from './entities/alarm_control_panel.js';
 export { notify } from './entities/notify.js';
 export { update } from './entities/update.js';
 export { image } from './entities/image.js';
+export { computed } from './entities/computed.js';
 export { createEventStream } from './event-stream.js';
 export { entityFactory } from './entities/factory.js';
 export { device } from './entities/device.js';
@@ -48,6 +49,7 @@ export type { AlarmControlPanelOptions } from './entities/alarm_control_panel.js
 export type { NotifyOptions } from './entities/notify.js';
 export type { UpdateOptions } from './entities/update.js';
 export type { ImageOptions } from './entities/image.js';
+export type { ComputedOptions } from './entities/computed.js';
 export type { AutomationOptions } from './entities/automation.js';
 export type { TaskOptions } from './entities/task.js';
 
@@ -77,6 +79,7 @@ export type {
   SensorDeviceClass,
   SensorConfig,
   SensorDefinition,
+  ComputedDefinition,
   BinarySensorDeviceClass,
   BinarySensorConfig,
   BinarySensorDefinition,

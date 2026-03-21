@@ -791,6 +791,60 @@ export interface SensorDefinition extends BaseEntity<string | number, SensorConf
   type: 'sensor';
 }
 
+/**
+ * Entity definition for a computed (derived) sensor.
+ * State is a pure function of other entities' current state — no `init()` or `destroy()`.
+ * The runtime auto-subscribes to `watch` entities and re-evaluates `compute()` on change.
+ *
+ * Created by the `computed()` factory function.
+ *
+ * @example
+ * ```ts
+ * export const comfort = computed({
+ *   id: 'comfort_index',
+ *   name: 'Comfort Index',
+ *   watch: ['sensor.temperature', 'sensor.humidity'],
+ *   compute: (states) => {
+ *     const temp = Number(states['sensor.temperature']?.state);
+ *     const humidity = Number(states['sensor.humidity']?.state);
+ *     return Math.round(temp + 0.05 * humidity);
+ *   },
+ *   config: { unit_of_measurement: '°C', device_class: 'temperature' },
+ * });
+ * ```
+ */
+export interface ComputedDefinition {
+  type: 'sensor';
+  /** Runtime marker — distinguishes from regular sensors. */
+  __computed: true;
+  /** Unique entity identifier. */
+  id: string;
+  /** Human-readable name shown in the HA UI. */
+  name: string;
+  /** Optional device to group this entity under. */
+  device?: DeviceInfo;
+  /** Entity category. */
+  category?: 'config' | 'diagnostic';
+  /** MDI icon override. */
+  icon?: string;
+  /** Sensor-specific MQTT discovery config. */
+  config?: SensorConfig;
+  /** Entity IDs to watch. When any changes state, `compute()` is re-evaluated. */
+  watch: string[];
+  /**
+   * Pure function that derives state from current values of watched entities.
+   * Receives a map of entity IDs to their current state snapshot (or `null` if unknown).
+   * Return value becomes the entity's published state.
+   */
+  compute: (states: Record<string, EntitySnapshot | null>) => string | number;
+  /**
+   * Debounce window in ms for coalescing rapid input changes.
+   * When multiple watched entities change in quick succession, `compute()` runs
+   * once after the debounce window instead of once per change. Default: `100`.
+   */
+  debounce?: number;
+}
+
 // ---- Binary sensor ----
 
 /**
@@ -1699,6 +1753,7 @@ export interface ImageDefinition extends BaseEntity<string, ImageConfig> {
 /** Union of all supported entity definition types. */
 export type EntityDefinition =
   | SensorDefinition
+  | ComputedDefinition
   | BinarySensorDefinition
   | SwitchDefinition
   | LightDefinition
