@@ -136,7 +136,9 @@ export class MqttTransport implements Transport {
     const id = entity.definition.id;
 
     // Subscribe to command topics for bidirectional entities
-    if ('onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition) {
+    // Check both marker properties (onCommand/onPress) and type (button/select always need commands)
+    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
+    if (isBidirectional) {
       this.client?.subscribe(`ha-forge/${id}/set`);
 
       // Cover needs additional position/tilt command topics
@@ -319,7 +321,8 @@ export class MqttTransport implements Transport {
     const id = entity.definition.id;
 
     // Unsubscribe from all command topics
-    if ('onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition) {
+    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
+    if (isBidirectional) {
       this.client?.unsubscribe(`ha-forge/${id}/set`);
 
       if (entity.definition.type === 'cover') {
@@ -402,7 +405,8 @@ export class MqttTransport implements Transport {
 
     // Re-subscribe to command topics for all registered entities
     for (const [, entity] of this.registeredEntities) {
-      if ('onCommand' in entity.definition) {
+      const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
+      if (isBidirectional) {
         const id = entity.definition.id;
         this.client?.subscribe(`ha-forge/${id}/set`);
       }
@@ -822,6 +826,8 @@ export class MqttTransport implements Transport {
 
   private applySelectConfig(base: Record<string, unknown>, def: SelectDefinition): void {
     const config = def.config;
+    // Select always needs a command topic for option selection
+    base.cmd_t = `ha-forge/${def.id}/set`;
     if (config?.options) base.options = config.options;
   }
 
@@ -838,6 +844,8 @@ export class MqttTransport implements Transport {
     const config = def.config;
     // Button has no state topic — remove it
     delete base.stat_t;
+    // Button always needs a command topic for press events
+    base.cmd_t = `ha-forge/${def.id}/set`;
     base.pl_prs = 'PRESS';
     if (config?.device_class) base.dev_cla = config.device_class;
   }
