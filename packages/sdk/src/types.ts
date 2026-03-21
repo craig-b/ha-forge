@@ -350,6 +350,23 @@ export interface EntitySnapshot {
   attributes: Record<string, unknown>;
 }
 
+/**
+ * A reactive attribute whose value is derived from other entities.
+ * Created by `computed(fn, { watch })` and used inside entity `attributes`.
+ * The runtime auto-subscribes to watched entities and re-publishes
+ * the owning entity's attributes when the computed value changes.
+ */
+export interface ComputedAttribute {
+  /** Runtime marker — distinguishes from plain attribute values. */
+  __computedAttr: true;
+  /** Entity IDs to watch. */
+  watch: string[];
+  /** Pure function that derives the attribute value from watched entity snapshots. */
+  compute: (states: Record<string, EntitySnapshot | null>) => unknown;
+  /** Debounce window in ms. Default: `100`. */
+  debounce?: number;
+}
+
 /** Map of entity IDs to their current state snapshot, or `null` if the entity state is unknown. */
 export type CombinedState = Record<string, EntitySnapshot | null>;
 
@@ -701,6 +718,31 @@ export interface BaseEntity<TState, TConfig = Record<string, never>> {
   icon?: string;
   /** Platform-specific MQTT discovery configuration. */
   config?: TConfig;
+  /**
+   * Declarative attributes published alongside the entity state.
+   * Values can be static (strings, numbers, objects) or reactive via `computed()`.
+   * Computed attributes auto-subscribe to watched entities and re-publish
+   * the owning entity's attributes when the derived value changes.
+   *
+   * @example
+   * ```ts
+   * sensor({
+   *   id: 'cpu_temp',
+   *   name: 'CPU Temperature',
+   *   attributes: {
+   *     location: 'server-room',                    // static
+   *     severity: computed(                          // reactive
+   *       (states) => {
+   *         const t = Number(states['sensor.cpu_temp']?.state);
+   *         return t > 80 ? 'critical' : t > 60 ? 'warning' : 'normal';
+   *       },
+   *       { watch: ['sensor.cpu_temp'] },
+   *     ),
+   *   },
+   * });
+   * ```
+   */
+  attributes?: Record<string, unknown | ComputedAttribute>;
   /**
    * Called once when the entity is deployed. Return the initial state value.
    * Use `this.poll()`, `this.events.on()`, etc. to set up ongoing state updates.

@@ -1,4 +1,4 @@
-import type { SensorConfig, ComputedDefinition, DeviceInfo, EntitySnapshot } from '../types.js';
+import type { SensorConfig, ComputedDefinition, ComputedAttribute, DeviceInfo, EntitySnapshot } from '../types.js';
 
 /** Options for defining a computed (derived) sensor entity. */
 export interface ComputedOptions {
@@ -37,6 +37,14 @@ export interface ComputedOptions {
   debounce?: number;
 }
 
+/** Options for a computed attribute (second argument to `computed(fn, opts)`). */
+export interface ComputedAttributeOptions {
+  /** Entity IDs to watch. When any changes state, the attribute is re-evaluated. */
+  watch: string[];
+  /** Debounce window in ms. Default: `100`. */
+  debounce?: number;
+}
+
 /**
  * Define a computed (derived) sensor entity.
  * State is a pure function of other entities — no `init()`, no polling.
@@ -61,7 +69,54 @@ export interface ComputedOptions {
  * });
  * ```
  */
-export function computed(options: ComputedOptions): ComputedDefinition {
+export function computed(options: ComputedOptions): ComputedDefinition;
+/**
+ * Create a reactive computed attribute for use inside entity `attributes`.
+ * The runtime auto-subscribes to watched entities and re-publishes the
+ * owning entity's attributes when the derived value changes.
+ *
+ * @param fn - Pure function that derives the attribute value from watched entity snapshots.
+ * @param opts - Watch list and optional debounce.
+ * @returns A `ComputedAttribute` marker used by the runtime.
+ *
+ * @example
+ * ```ts
+ * export const temp = sensor({
+ *   id: 'cpu_temp',
+ *   name: 'CPU Temperature',
+ *   attributes: {
+ *     severity: computed(
+ *       (states) => {
+ *         const t = Number(states['sensor.cpu_temp']?.state);
+ *         return t > 80 ? 'critical' : t > 60 ? 'warning' : 'normal';
+ *       },
+ *       { watch: ['sensor.cpu_temp'] },
+ *     ),
+ *   },
+ * });
+ * ```
+ */
+export function computed(
+  fn: (states: Record<string, EntitySnapshot | null>) => unknown,
+  opts: ComputedAttributeOptions,
+): ComputedAttribute;
+export function computed(
+  optionsOrFn: ComputedOptions | ((states: Record<string, EntitySnapshot | null>) => unknown),
+  opts?: ComputedAttributeOptions,
+): ComputedDefinition | ComputedAttribute {
+  // Overload 2: computed(fn, { watch }) → ComputedAttribute
+  if (typeof optionsOrFn === 'function') {
+    if (!opts) throw new Error('computed(fn, opts): opts with watch[] is required');
+    return {
+      __computedAttr: true as const,
+      watch: opts.watch,
+      compute: optionsOrFn,
+      ...(opts.debounce !== undefined && { debounce: opts.debounce }),
+    };
+  }
+
+  // Overload 1: computed({ id, watch, compute, ... }) → ComputedDefinition
+  const options = optionsOrFn;
   return {
     type: 'sensor',
     __computed: true,
