@@ -1731,6 +1731,8 @@ export class EntityLifecycleManager {
       ...this.instances.keys(),
       ...this.automationInstances.keys(),
       ...this.taskInstances.keys(),
+      ...this.modeInstances.keys(),
+      ...this.cronInstances.keys(),
     ];
   }
 
@@ -1759,6 +1761,24 @@ export class EntityLifecycleManager {
         type: 'task',
         name: taskInstance.task.definition.name,
         sourceFile: taskInstance.task.sourceFile,
+      };
+    }
+
+    const modeInstance = this.modeInstances.get(entityId);
+    if (modeInstance) {
+      return {
+        type: 'mode',
+        name: modeInstance.mode.definition.name,
+        sourceFile: modeInstance.mode.sourceFile,
+      };
+    }
+
+    const cronInstance = this.cronInstances.get(entityId);
+    if (cronInstance) {
+      return {
+        type: 'cron',
+        name: cronInstance.cron.definition.name,
+        sourceFile: cronInstance.cron.sourceFile,
       };
     }
 
