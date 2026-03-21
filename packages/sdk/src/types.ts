@@ -1857,6 +1857,9 @@ export type EntityDefinition =
   | UpdateDefinition
   | ImageDefinition;
 
+/** Entity definitions that carry state — excludes button (command-only), notify (write-only), and computed (declarative). */
+export type StatefulEntityDefinition = Exclude<EntityDefinition, ButtonDefinition | NotifyDefinition | ComputedDefinition>;
+
 /**
  * A function that returns an array of entity definitions.
  * Use `entityFactory()` to create one when you need dynamic entity creation.

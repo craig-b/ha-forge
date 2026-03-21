@@ -22,6 +22,7 @@ export { update } from './entities/update.js';
 export { image } from './entities/image.js';
 export { computed } from './entities/computed.js';
 export { createEventStream } from './event-stream.js';
+export { debounced, filtered, sampled, buffered, average, sum, min, max, last, count } from './behaviors/index.js';
 export { entityFactory } from './entities/factory.js';
 export { device } from './entities/device.js';
 export { automation } from './entities/automation.js';
@@ -169,6 +170,7 @@ export type {
   ModeDefinition,
   CronDefinition,
   EntityDefinition,
+  StatefulEntityDefinition,
   EntityFactory,
   DeviceMemberDefinition,
   DeviceEntityHandle,
