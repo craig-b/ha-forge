@@ -74,7 +74,7 @@ declare const monaco: {
         setDiagnosticsOptions(opts: Record<string, unknown>): void;
         addExtraLib(content: string, uri: string): void;
       };
-      ScriptTarget: { ES2024: number };
+      ScriptTarget: { ESNext: number };
       ModuleResolutionKind: { NodeJs: number };
       ModuleKind: { ESNext: number };
     };
@@ -211,7 +211,7 @@ export class TseApp extends LitElement {
 
     require(['vs/editor/editor.main'], () => {
       monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ES2024,
+        target: monaco.languages.typescript.ScriptTarget.ESNext,
         moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
         module: monaco.languages.typescript.ModuleKind.ESNext,
         strict: true,
@@ -253,6 +253,15 @@ export class TseApp extends LitElement {
   }
 
   private _loadExtraTypes() {
+    // Inject ES2022-2024 lib types that Monaco's bundled TypeScript doesn't include
+    this._api('GET', '/api/types/es-libs').then((result) => {
+      if (result?.declaration) {
+        monaco.languages.typescript.typescriptDefaults.addExtraLib(
+          result.declaration as string, 'ts:lib/es2022-2024.d.ts',
+        );
+      }
+    }).catch(() => {});
+
     this._api('GET', '/api/types/sdk').then((result) => {
       if (result?.declaration) {
         const content = result.declaration as string;
