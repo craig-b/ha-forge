@@ -286,8 +286,15 @@ export class EntityLifecycleManager {
 
     // Device-owned entities: skip individual init and command registration.
     // The device's init() will set up command handlers via entity handles.
+    // Exception: computed entities still need their reactive subscriptions,
+    // and computed attributes still need their watchers wired up.
     if (ownedByDevice) {
-      instance.initialized = true;
+      if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
+        await this.initComputed(instance, entity.definition as ComputedDefinition);
+      } else {
+        instance.initialized = true;
+      }
+      this.initComputedAttributes(instance);
       this.logger.info(`Entity registered (device ${ownedByDevice}): ${entity.definition.id}`, {
         sourceFile: entity.sourceFile,
       });
