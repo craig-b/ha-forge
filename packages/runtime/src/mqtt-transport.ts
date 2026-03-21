@@ -232,8 +232,9 @@ export class MqttTransport implements Transport {
 
     const id = entity.definition.id;
 
-    // Unsubscribe from all command topics
-    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
+    // Unsubscribe from all command topics (entityType cast: see subscribeCommandTopics comment)
+    const entityType = entity.definition.type as string;
+    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entityType === 'button' || entityType === 'select';
     if (isBidirectional) {
       this.client?.unsubscribe(`ha-forge/${id}/set`);
 
@@ -379,8 +380,11 @@ export class MqttTransport implements Transport {
     const { definition } = entity;
     const id = definition.id;
 
-    // Check both marker properties (onCommand/onPress) and type (button/select always need commands)
-    const isBidirectional = 'onCommand' in definition || 'onPress' in definition || 'onNotify' in definition || 'onInstall' in definition || definition.type === 'button' || definition.type === 'select';
+    // Check both marker properties (onCommand/onPress) and type (button/select always need commands).
+    // Type assertion needed: synthetic entities (from tasks/modes) are cast to EntityDefinition
+    // but lack marker properties, so TS narrows the type and considers button/select impossible.
+    const entityType = definition.type as string;
+    const isBidirectional = 'onCommand' in definition || 'onPress' in definition || 'onNotify' in definition || 'onInstall' in definition || entityType === 'button' || entityType === 'select';
     if (!isBidirectional) return;
 
     this.client?.subscribe(`ha-forge/${id}/set`);
