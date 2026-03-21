@@ -1,4 +1,5 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback } from '@ha-forge/sdk';
+import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
 // ---- Event types ----
@@ -343,10 +344,13 @@ export class HAApiImpl implements HAApi {
   /** Creates an EventsContext that tracks subscriptions for lifecycle cleanup. */
   createScopedEvents(handles: EventHandleTracker): EventsContext {
     return {
-      on: (entityOrDomain: string | string[], callback: StateChangedCallback) => {
-        const unsub = this.on(entityOrDomain, callback);
-        handles.eventSubscriptions.push(unsub);
-        return unsub;
+      on: (entityOrDomain: string | string[], callback?: SDKStateChangedCallback) => {
+        const stream = createEventStream(
+          (cb) => this.on(entityOrDomain, cb as StateChangedCallback),
+          callback as StateChangedCallback | undefined,
+        );
+        handles.eventSubscriptions.push(() => stream.unsubscribe());
+        return stream;
       },
       reactions: (rules: Record<string, ReactionRule>) => {
         const unsub = this.reactions(rules);

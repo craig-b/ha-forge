@@ -7,10 +7,12 @@ import type {
   EntityDefinition,
   EntityLogger,
   EventsContext,
+  EventStream,
   StatelessHAApi,
   TaskContext,
   TaskDefinition,
 } from '@ha-forge/sdk';
+import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedDevice, ResolvedTask } from './loader.js';
 import type { Transport } from './transport.js';
@@ -405,7 +407,7 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
     };
 
@@ -841,7 +843,7 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
     };
 
@@ -965,7 +967,7 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return () => {}; },
+      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
     };
 

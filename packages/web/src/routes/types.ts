@@ -87,8 +87,8 @@ interface HAClient extends StatelessHAApi {}
  * Subscriptions are automatically cleaned up when the owning entity/device is torn down.
  */
 interface HAEventsContext extends EventsContext {
-  /** Subscribe to state changes for an entity, domain, or array of entities. Returns an unsubscribe function. */
-  on(entityOrDomain: string | string[], callback: (event: StateChangedEvent) => void): () => void;
+  /** Subscribe to state changes. Returns an EventStream with chainable operators (.filter, .debounce, .throttle, .distinctUntilChanged, .transition, .map). */
+  on(entityOrDomain: string | string[], callback?: (event: StateChangedEvent) => void): EventStream;
   /** Set up declarative reaction rules. Returns a cleanup function. */
   reactions(rules: Record<string, ReactionRule>): () => void;
 }

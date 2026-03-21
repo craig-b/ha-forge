@@ -20,6 +20,7 @@ export { alarmControlPanel } from './entities/alarm_control_panel.js';
 export { notify } from './entities/notify.js';
 export { update } from './entities/update.js';
 export { image } from './entities/image.js';
+export { createEventStream } from './event-stream.js';
 export { entityFactory } from './entities/factory.js';
 export { device } from './entities/device.js';
 export { automation } from './entities/automation.js';
@@ -58,6 +59,7 @@ export type {
   StateChangedEvent,
   TypedStateChangedEvent,
   StateChangedCallback,
+  EventStream,
   ReactionRule,
   HAClientBase,
   EventsContext,

@@ -132,6 +132,67 @@ export interface TypedStateChangedEvent<TState, TAttrs, TEntityId extends string
 export type StateChangedCallback = (event: StateChangedEvent) => void;
 
 /**
+ * A composable event stream returned by `this.events.on()`.
+ * Operators transform the event stream and return a new `EventStream`,
+ * enabling fluent chaining: `this.events.on('sensor.temp').filter(...).debounce(1000)`.
+ *
+ * Call the stream as a function or use `.unsubscribe()` to cancel.
+ * All internal timers and subscriptions are cleaned up on unsubscribe.
+ */
+export interface EventStream {
+  /** Unsubscribe from the event stream and clean up all internal timers. */
+  unsubscribe(): void;
+
+  /**
+   * Skip events that don't match a predicate.
+   * @param predicate - Return `true` to keep the event, `false` to skip it.
+   */
+  filter(predicate: (event: StateChangedEvent) => boolean): EventStream;
+
+  /**
+   * Transform the event before passing it to downstream handlers.
+   * @param transform - Function that receives the event and returns a modified event.
+   */
+  map(transform: (event: StateChangedEvent) => StateChangedEvent): EventStream;
+
+  /**
+   * Wait for the event to stabilize — only fires after no new events arrive
+   * for the specified duration. Useful for sustained state detection
+   * (e.g., "motion stays on for 30 seconds").
+   * @param ms - Debounce window in milliseconds.
+   */
+  debounce(ms: number): EventStream;
+
+  /**
+   * Limit event rate — fires at most once per interval.
+   * The first event passes immediately, then subsequent events are dropped
+   * until the interval expires.
+   * @param ms - Throttle interval in milliseconds.
+   */
+  throttle(ms: number): EventStream;
+
+  /**
+   * Skip events where `new_state` hasn't actually changed from the previous event.
+   * Useful for filtering out attribute-only updates.
+   */
+  distinctUntilChanged(): EventStream;
+
+  /**
+   * Only fire when the entity transitions between specific states.
+   * @param from - Previous state value (or `'*'` for any state).
+   * @param to - New state value (or `'*'` for any state).
+   *
+   * @example
+   * ```ts
+   * // Fire only when a door opens
+   * this.events.on('binary_sensor.front_door')
+   *   .transition('off', 'on');
+   * ```
+   */
+  transition(from: string | '*', to: string | '*'): EventStream;
+}
+
+/**
  * A declarative reaction rule for `ha.reactions()`.
  * Defines a condition and action to take when an entity's state changes.
  *
@@ -193,11 +254,26 @@ export interface EventsContext {
   /**
    * Subscribe to state changes for an entity, domain, or array of entities.
    * The subscription is automatically cleaned up when the owning entity is torn down.
+   *
+   * Returns an `EventStream` with chainable operators for filtering and transforming events.
+   *
    * @param entityOrDomain - Entity ID, domain name, or array of entity IDs.
-   * @param callback - Called with a state change event.
-   * @returns Unsubscribe function.
+   * @param callback - Called with a state change event. Optional when using stream operators.
+   * @returns An `EventStream` with `.filter()`, `.debounce()`, `.throttle()`, `.map()`, `.distinctUntilChanged()`, and `.transition()` operators.
+   *
+   * @example
+   * ```ts
+   * // Simple callback
+   * this.events.on('binary_sensor.motion', (event) => { ... });
+   *
+   * // With stream operators
+   * this.events.on('binary_sensor.motion')
+   *   .filter(e => e.new_state === 'on')
+   *   .debounce(5000)
+   *   .map(e => ({ ...e, new_state: 'sustained' }));
+   * ```
    */
-  on(entityOrDomain: string | string[], callback: StateChangedCallback): () => void;
+  on(entityOrDomain: string | string[], callback?: StateChangedCallback): EventStream;
   /**
    * Set up declarative reaction rules. Subscriptions and pending timers are
    * automatically cleaned up when the owning entity is torn down.
