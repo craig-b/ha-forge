@@ -264,9 +264,28 @@ export interface WatchdogRule {
   else: () => void | Promise<void>;
 }
 
+// ---- Cron expression type-level validation ----
+
+/** A single cron field atom: `*`, a number, a range, or a step expression. */
+type CronAtom = '*' | `${number}` | `${number}-${number}` | `*/${number}` | `${number}-${number}/${number}`;
+
+/** Validates a single cron field (atoms separated by commas). */
+type ValidCronField<F extends string> =
+  F extends CronAtom ? true :
+  F extends `${infer A},${infer Rest}` ? A extends CronAtom ? ValidCronField<Rest> : false :
+  false;
+
+/** Validates a 5-field cron expression at the type level. Resolves to `T` if valid, `never` otherwise. */
+type CronExpression<T extends string> =
+  T extends `${infer A} ${infer B} ${infer C} ${infer D} ${infer E}`
+    ? [ValidCronField<A>, ValidCronField<B>, ValidCronField<C>, ValidCronField<D>, ValidCronField<E>] extends [true, true, true, true, true]
+      ? T
+      : never
+    : never;
+
 /**
  * Scheduling options: either a fixed interval in milliseconds or a cron expression.
- * The two forms are mutually exclusive.
+ * The two forms are mutually exclusive. Cron expressions are validated at the type level.
  *
  * @example
  * ```ts
@@ -562,7 +581,8 @@ export interface EventsContext {
    * });
    * ```
    */
-  invariant(options: InvariantOptions): () => void;
+  invariant(options: Omit<InvariantOptions, 'check'> & { check: { interval: number } }): () => void;
+  invariant<T extends string>(options: Omit<InvariantOptions, 'check'> & { check: { cron: T & CronExpression<T> } }): () => void;
 
   /**
    * Detect a sequence of state changes across entities.
@@ -673,7 +693,8 @@ export interface EntityContext<TState = unknown, TAttrs extends Record<string, u
    * @param fn - Function to call each cycle. Return a value to auto-publish state.
    * @param opts - Schedule options (interval or cron) plus optional initial delay.
    */
-  poll(fn: () => TState | Promise<TState>, opts: ScheduleOptions & { initialDelay?: number }): void;
+  poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void;
+  poll<T extends string>(fn: () => TState | Promise<TState>, opts: { cron: T & CronExpression<T>; initialDelay?: number }): void;
   /** Scoped logger for this entity. Messages include the entity ID and source file automatically. */
   log: EntityLogger;
   /**
@@ -2070,7 +2091,8 @@ export interface DeviceContext<TEntities extends Record<string, EntityDefinition
    * @param fn - Function to call each cycle.
    * @param opts - Schedule options (interval or cron) plus optional initial delay.
    */
-  poll(fn: () => void | Promise<void>, opts: ScheduleOptions & { initialDelay?: number }): void;
+  poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void;
+  poll<T extends string>(fn: () => void | Promise<void>, opts: { cron: T & CronExpression<T>; initialDelay?: number }): void;
   /** Scoped logger for this device. Messages include the device ID and source file automatically. */
   log: EntityLogger;
   /**
