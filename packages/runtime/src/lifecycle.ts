@@ -610,9 +610,6 @@ export class EntityLifecycleManager {
         memberHandles[key] = {
           get state() { return modeInstance.currentState; },
           setState: async (state: string) => {
-            // Simulate a command to go through the full transition logic
-            const handler = this.transport.onCommand as unknown as { __deviceModeHandlers?: Map<string, (command: unknown) => void | Promise<void>> };
-            // Directly trigger transport command for this mode
             await this.setModeState(modeInstance, state);
           },
         };
