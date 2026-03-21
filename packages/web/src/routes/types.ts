@@ -154,6 +154,34 @@ declare function sensor(options: SensorOptions): SensorDefinition;
  */
 declare function computed(options: ComputedOptions): ComputedDefinition;
 /**
+ * Create a reactive computed attribute for use inside entity \`attributes\`.
+ * The runtime auto-subscribes to watched entities and re-publishes the
+ * owning entity's attributes when the derived value changes.
+ * @param fn - Pure function that derives the attribute value from watched entity snapshots.
+ * @param opts - Watch list and optional debounce.
+ * @returns A \`ComputedAttribute\` marker used by the runtime.
+ * @example
+ * \`\`\`ts
+ * export const temp = sensor({
+ *   id: 'cpu_temp',
+ *   name: 'CPU Temperature',
+ *   attributes: {
+ *     severity: computed(
+ *       (states) => {
+ *         const t = Number(states['sensor.cpu_temp']?.state);
+ *         return t > 80 ? 'critical' : t > 60 ? 'warning' : 'normal';
+ *       },
+ *       { watch: ['sensor.cpu_temp'] },
+ *     ),
+ *   },
+ * });
+ * \`\`\`
+ */
+declare function computed(
+  fn: (states: Record<string, EntitySnapshot | null>) => unknown,
+  opts: ComputedAttributeOptions,
+): ComputedAttribute;
+/**
  * Define a controllable on/off switch entity.
  * @param options - Switch configuration including id, name, and onCommand handler.
  * @returns A switch entity definition to export from your script.
