@@ -95,6 +95,8 @@ interface HAEventsContext extends EventsContext {
   combine(entities: string[], callback: (states: Record<string, string | null>) => void): () => void;
   /** Subscribe to state changes with a snapshot of context entities' current states. */
   withState(entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: Record<string, string | null>) => void): EventStream;
+  /** Set up watchdog timers that fire when entities go silent past a time window. Resets on matching state changes. */
+  watchdog(rules: Record<string, WatchdogRule>): () => void;
 }
 `;
 

@@ -411,6 +411,7 @@ export class EntityLifecycleManager {
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
       withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
     };
 
     const context: DeviceContext<Record<string, EntityDefinition>> = {
@@ -849,6 +850,7 @@ export class EntityLifecycleManager {
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
       withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
     };
 
     const context: EntityContext = {
@@ -975,6 +977,7 @@ export class EntityLifecycleManager {
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
       withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
     };
 
     return {

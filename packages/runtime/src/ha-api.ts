@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -391,6 +391,41 @@ export class HAApiImpl implements HAApi {
         );
         handles.eventSubscriptions.push(() => stream.unsubscribe());
         return stream;
+      },
+      watchdog: (rules: Record<string, WatchdogRule>) => {
+        const timers = new Map<string, ReturnType<typeof setTimeout>>();
+        const unsubscribers: Array<() => void> = [];
+
+        const startTimer = (entityId: string, rule: WatchdogRule) => {
+          const existing = timers.get(entityId);
+          if (existing) clearTimeout(existing);
+          const t = setTimeout(() => {
+            try { rule.else(); } catch { /* swallow */ }
+            // Restart timer — keeps firing if silence continues
+            startTimer(entityId, rule);
+          }, rule.within);
+          timers.set(entityId, t);
+        };
+
+        for (const [entityId, rule] of Object.entries(rules)) {
+          // Start initial timer
+          startTimer(entityId, rule);
+
+          // Subscribe to reset timer on matching events
+          const unsub = self.on(entityId, (event) => {
+            if (rule.expect && !rule.expect(event)) return;
+            startTimer(entityId, rule);
+          });
+          unsubscribers.push(unsub);
+        }
+
+        const cleanup = () => {
+          for (const unsub of unsubscribers) unsub();
+          for (const [, t] of timers) clearTimeout(t);
+          timers.clear();
+        };
+        handles.eventSubscriptions.push(cleanup);
+        return cleanup;
       },
     };
   }

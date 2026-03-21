@@ -218,6 +218,31 @@ export interface ReactionRule {
   after?: number;
 }
 
+/**
+ * A watchdog rule for detecting entity inactivity.
+ * Fires when an entity hasn't changed state within a specified time window.
+ *
+ * @example
+ * ```ts
+ * this.events.watchdog({
+ *   'sensor.heartbeat': {
+ *     within: 60_000,
+ *     else: () => this.ha.callService('notify.admin', 'send_message', {
+ *       message: 'Heartbeat sensor stopped responding!',
+ *     }),
+ *   },
+ * });
+ * ```
+ */
+export interface WatchdogRule {
+  /** Maximum time in ms between state changes. If exceeded, `else` fires. */
+  within: number;
+  /** Optional filter — only matching events reset the timer. */
+  expect?: (event: StateChangedEvent) => boolean;
+  /** Action to execute when the entity goes silent past the `within` window. */
+  else: () => void | Promise<void>;
+}
+
 /** Map of entity IDs to their current state string, or `null` if the state is unknown. */
 export type CombinedState = Record<string, string | null>;
 
@@ -342,6 +367,32 @@ export interface EventsContext {
     context: string[],
     callback: (event: StateChangedEvent, states: CombinedState) => void,
   ): EventStream;
+
+  /**
+   * Set up watchdog timers that fire when entities go silent.
+   * The timer resets on every matching state change. If no change arrives
+   * within the `within` window, the `else` handler fires. The timer then
+   * restarts, so `else` can fire repeatedly if silence continues.
+   *
+   * @param rules - Map of entity IDs to watchdog rules.
+   * @returns Cleanup function that cancels all watchdog timers.
+   *
+   * @example
+   * ```ts
+   * this.events.watchdog({
+   *   'sensor.heartbeat': {
+   *     within: 60_000,
+   *     else: () => this.log.warn('Heartbeat lost!'),
+   *   },
+   *   'binary_sensor.motion': {
+   *     within: 300_000,
+   *     expect: (e) => e.new_state === 'on',
+   *     else: () => this.ha.callService('light.hallway', 'turn_off'),
+   *   },
+   * });
+   * ```
+   */
+  watchdog(rules: Record<string, WatchdogRule>): () => void;
 }
 
 /**

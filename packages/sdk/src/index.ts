@@ -63,6 +63,7 @@ export type {
   ReactionRule,
   CombinedState,
   CombinedCallback,
+  WatchdogRule,
   HAClientBase,
   EventsContext,
   StatelessHAApi,
