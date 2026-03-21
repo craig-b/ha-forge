@@ -100,6 +100,53 @@ describe('analyzeUnexportedEntities', () => {
     const diags = analyzeUnexportedEntities(code);
     expect(diags).toHaveLength(2);
   });
+
+  it('warns on bare factory call without assignment', () => {
+    const code = `sensor({ id: 'temp', name: 'Temp' });`;
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('sensor()');
+    expect(diags[0].message).toContain('not assigned or exported');
+    expect(diags[0].severity).toBe('warning');
+  });
+
+  it('warns on bare namespaced factory call', () => {
+    const code = `ha.light({ id: 'l', name: 'L' });`;
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('light()');
+  });
+
+  it('warns on indented bare factory call', () => {
+    const code = `  computed({ watch: ['sensor.temp'], compute: (s) => s });`;
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(1);
+    expect(diags[0].message).toContain('computed()');
+  });
+
+  it('warns on multiple bare factory calls', () => {
+    const code = [
+      `sensor({ id: 'a', name: 'A' });`,
+      `light({ id: 'b', name: 'B' });`,
+      `export const c = cover({ id: 'c', name: 'C' });`,
+    ].join('\n');
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(2);
+    expect(diags[0].message).toContain('sensor()');
+    expect(diags[1].message).toContain('light()');
+  });
+
+  it('does not warn on export default factory call', () => {
+    const code = `export default sensor({ id: 'temp', name: 'Temp' });`;
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(0);
+  });
+
+  it('does not warn on factory call in return statement', () => {
+    const code = `return sensor({ id: 'temp', name: 'Temp' });`;
+    const diags = analyzeUnexportedEntities(code);
+    expect(diags).toHaveLength(0);
+  });
 });
 
 describe('findEntitySymbols', () => {

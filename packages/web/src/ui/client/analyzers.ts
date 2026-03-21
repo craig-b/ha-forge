@@ -5,6 +5,14 @@
  * (warnings/errors) that are shown as squiggly underlines via
  * monaco.editor.setModelMarkers(). Uses a separate owner string so
  * built-in TypeScript diagnostics are unaffected.
+ *
+ * NOTE: These analyzers are regex-based, not AST-based. They use
+ * line-start anchored patterns to detect common cases with high
+ * confidence, but cannot handle every syntactic variation (e.g.
+ * factory calls split across lines, or deeply nested expressions).
+ * This is a deliberate trade-off: regex analysis runs synchronously
+ * on every keystroke without needing a parser, and covers the vast
+ * majority of real user code.
  */
 
 export interface AnalyzerDiagnostic {
@@ -56,6 +64,21 @@ const DECL_PATTERN = new RegExp(
   'gm'
 );
 
+// Matches bare factory calls as statements: sensor({...}) or ha.sensor({...})
+// at the start of a line (with optional leading whitespace).
+// These are definitions that are constructed but never assigned or exported,
+// so they will never be deployed.
+// Does NOT match lines that start with export, const/let/var, or return.
+// Captures: [1]=factory name
+const BARE_CALL_PATTERN = new RegExp(
+  '^\\s*' +                                        // optional leading whitespace
+  '(?!export\\b|const\\b|let\\b|var\\b|return\\b)' + // not an assignment/export/return
+  '(?:\\w+\\.)?' +                                 // optional namespace (e.g. ha.)
+  '(' + FACTORY_NAMES.join('|') + ')' +            // factory function name
+  '\\s*\\(',                                       // opening paren
+  'gm'
+);
+
 export function analyzeUnexportedEntities(sourceText: string): AnalyzerDiagnostic[] {
   const diagnostics: AnalyzerDiagnostic[] = [];
   const lines = sourceText.split('\n');
@@ -99,6 +122,32 @@ export function analyzeUnexportedEntities(sourceText: string): AnalyzerDiagnosti
       endLine: lineNumber,
       endCol,
       message: `'${varName}' is created by ${factoryName}() but is not exported — it will not be deployed.`,
+      severity: 'warning',
+    });
+  }
+
+  // Detect bare factory calls: sensor({...}) without assignment or export.
+  // The definition is constructed but discarded — it will never be deployed.
+  BARE_CALL_PATTERN.lastIndex = 0;
+
+  while ((match = BARE_CALL_PATTERN.exec(sourceText)) !== null) {
+    const factoryName = match[1];
+
+    const beforeMatch = sourceText.slice(0, match.index);
+    const lineNumber = beforeMatch.split('\n').length;
+    const line = lines[lineNumber - 1];
+
+    // Find the factory name position within the line
+    const factoryStart = line.indexOf(factoryName);
+    const startCol = factoryStart + 1; // 1-based
+    const endCol = startCol + factoryName.length;
+
+    diagnostics.push({
+      startLine: lineNumber,
+      startCol,
+      endLine: lineNumber,
+      endCol,
+      message: `${factoryName}() is called but its result is not assigned or exported — it will not be deployed.`,
       severity: 'warning',
     });
   }
