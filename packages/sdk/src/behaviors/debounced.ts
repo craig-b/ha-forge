@@ -2,6 +2,7 @@ import type { EntityContext, StatefulEntityDefinition } from '../types.js';
 
 /**
  * Delays publishing until updates stop arriving for `wait` ms.
+ * The first update passes through immediately (no initial dead time).
  * Composes: `debounced(filtered(sensor({...}), pred), { wait: 500 })`
  */
 export function debounced<T extends StatefulEntityDefinition>(
@@ -16,7 +17,13 @@ export function debounced<T extends StatefulEntityDefinition>(
     init(this: EntityContext) {
       const originalUpdate = this.update;
       let timer: unknown;
+      let first = true;
       this.update = (value: unknown, attributes?: Record<string, unknown>) => {
+        if (first) {
+          first = false;
+          originalUpdate.call(this, value, attributes);
+          return;
+        }
         if (timer) this.clearTimeout(timer);
         timer = this.setTimeout(
           () => originalUpdate.call(this, value, attributes),

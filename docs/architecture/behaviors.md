@@ -16,7 +16,9 @@ All timer-based behaviors use `this.setTimeout` / `this.setInterval`, so timers 
 
 ### `debounced(entity, { wait })`
 
-Delays publishing until updates stop arriving for `wait` milliseconds. If a new update arrives during the wait, the timer resets. Only the last value is published.
+Delays publishing until updates stop arriving for `wait` milliseconds. If a new update arrives during the wait, the timer resets. Only the last value is published. The first update always passes through immediately (no initial dead time).
+
+**Important:** `debounced` is designed for bursty updates, not continuous streams. If your entity polls on a fixed interval shorter than the debounce `wait`, updates will never settle and only the first value will be published. For continuous streams, use `sampled` instead.
 
 ```typescript
 import { sensor, debounced } from 'ha-forge';
@@ -171,7 +173,7 @@ export const occupied = debounced(
 );
 ```
 
-Even with a 2-minute debounce, the transition to "on" is instant — debounce only delays when updates *stop*, so the first "on" after a period of "off" publishes immediately.
+Even with a 2-minute debounce, the first transition to "on" is instant — the first update always passes through. Subsequent rapid updates are debounced, so the "off" won't publish until 2 minutes of silence.
 
 ### Rate-Limited API Polling
 
