@@ -805,4 +805,83 @@ describe('generateTypes()', () => {
       cleanup();  // uses outer cleanup()
     });
   });
+
+  describe('legacy notify services', () => {
+    it('synthesizes HAEntityMap entries for notify services without entities', () => {
+      setup();
+      const data = makeRegistryData({
+        services: {
+          ...makeRegistryData().services,
+          notify: {
+            send_message: {
+              fields: { message: { required: true, selector: { text: {} } } },
+            },
+            mobile_app_phone: {
+              fields: {
+                message: { required: true, selector: { text: {} } },
+                title: { required: false, selector: { text: {} } },
+                data: { required: false },
+              },
+            },
+            group_family: {
+              fields: {
+                message: { required: true, selector: { text: {} } },
+                title: { required: false, selector: { text: {} } },
+              },
+            },
+          },
+        },
+      });
+      generateTypes(data, outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      // Legacy targets should appear in HAEntityMap
+      expect(content).toContain("'notify.mobile_app_phone':");
+      expect(content).toContain("'notify.group_family':");
+
+      // send_message is an entity-platform service, should NOT be synthesized
+      expect(content).not.toContain("'notify.send_message':");
+
+      // Should generate callService overload for legacy targets
+      expect(content).toContain("entity: 'notify', service: 'mobile_app_phone'");
+      expect(content).toContain("entity: 'notify', service: 'group_family'");
+
+      cleanup();
+    });
+
+    it('does not duplicate entries for notify entities that exist in state registry', () => {
+      setup();
+      const data = makeRegistryData({
+        services: {
+          ...makeRegistryData().services,
+          notify: {
+            send_message: {
+              fields: { message: { required: true, selector: { text: {} } } },
+            },
+            phone: {
+              fields: { message: { required: true, selector: { text: {} } } },
+            },
+          },
+        },
+        states: [
+          ...makeRegistryData().states,
+          {
+            entity_id: 'notify.phone',
+            state: 'unknown',
+            attributes: { friendly_name: 'Phone' },
+            last_changed: '2024-01-15T10:00:00.000Z',
+            last_updated: '2024-01-15T10:00:00.000Z',
+          },
+        ],
+      });
+      generateTypes(data, outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      // notify.phone exists in states — should appear once from state processing, not synthesized
+      const matches = content.match(/'notify\.phone':/g);
+      expect(matches).toHaveLength(1);
+
+      cleanup();
+    });
+  });
 });
