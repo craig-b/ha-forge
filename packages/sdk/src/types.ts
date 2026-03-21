@@ -243,6 +243,33 @@ export interface WatchdogRule {
   else: () => void | Promise<void>;
 }
 
+/**
+ * An invariant constraint that is checked periodically.
+ * Fires when the `check` function returns `false`, indicating a violated constraint.
+ *
+ * @example
+ * ```ts
+ * this.events.invariant({
+ *   check: async () => {
+ *     const temp = await this.ha.getState('sensor.server_temp');
+ *     return temp !== null && Number(temp.state) < 80;
+ *   },
+ *   interval: 30_000,
+ *   violated: () => this.ha.callService('notify.admin', 'send_message', {
+ *     message: 'Server temperature exceeds threshold!',
+ *   }),
+ * });
+ * ```
+ */
+export interface InvariantOptions {
+  /** Function that returns `true` when the constraint holds, `false` when violated. */
+  check: () => boolean | Promise<boolean>;
+  /** How often to evaluate the check, in milliseconds. */
+  interval: number;
+  /** Action to execute when `check()` returns `false`. */
+  violated: () => void | Promise<void>;
+}
+
 /** Map of entity IDs to their current state string, or `null` if the state is unknown. */
 export type CombinedState = Record<string, string | null>;
 
@@ -393,6 +420,30 @@ export interface EventsContext {
    * ```
    */
   watchdog(rules: Record<string, WatchdogRule>): () => void;
+
+  /**
+   * Set up a periodic invariant check. The `check` function is evaluated
+   * at the given interval. When it returns `false`, the `violated` handler fires.
+   * The check continues running even after a violation.
+   *
+   * @param options - Invariant configuration.
+   * @returns Cleanup function that stops the periodic check.
+   *
+   * @example
+   * ```ts
+   * this.events.invariant({
+   *   check: async () => {
+   *     const pump = await this.ha.getState('switch.pump');
+   *     const flow = await this.ha.getState('sensor.flow_rate');
+   *     // Pump is on but no flow — something is wrong
+   *     return !(pump?.state === 'on' && Number(flow?.state) === 0);
+   *   },
+   *   interval: 10_000,
+   *   violated: () => this.ha.callService('switch.pump', 'turn_off'),
+   * });
+   * ```
+   */
+  invariant(options: InvariantOptions): () => void;
 }
 
 /**

@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule, InvariantOptions } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -423,6 +423,25 @@ export class HAApiImpl implements HAApi {
           for (const unsub of unsubscribers) unsub();
           for (const [, t] of timers) clearTimeout(t);
           timers.clear();
+        };
+        handles.eventSubscriptions.push(cleanup);
+        return cleanup;
+      },
+      invariant: (options: InvariantOptions) => {
+        let stopped = false;
+        const tick = async () => {
+          if (stopped) return;
+          try {
+            const ok = await options.check();
+            if (!ok && !stopped) {
+              try { await options.violated(); } catch { /* swallow */ }
+            }
+          } catch { /* swallow check errors */ }
+        };
+        const timer = setInterval(tick, options.interval);
+        const cleanup = () => {
+          stopped = true;
+          clearInterval(timer);
         };
         handles.eventSubscriptions.push(cleanup);
         return cleanup;

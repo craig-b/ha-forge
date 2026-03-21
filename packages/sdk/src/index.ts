@@ -64,6 +64,7 @@ export type {
   CombinedState,
   CombinedCallback,
   WatchdogRule,
+  InvariantOptions,
   HAClientBase,
   EventsContext,
   StatelessHAApi,
