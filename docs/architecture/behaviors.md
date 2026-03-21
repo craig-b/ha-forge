@@ -163,9 +163,9 @@ export const occupied = debounced(
     name: 'Office Occupied',
     config: { device_class: 'occupancy' },
     init() {
-      this.events.on('binary_sensor.office_pir')
-        .filter((e) => e.new_state !== e.old_state)
-        .do((e) => this.update(e.new_state as 'on' | 'off'));
+      this.events.on('binary_sensor.office_pir', (e) => {
+        this.update(e.new_state as 'on' | 'off');
+      }).filter((e) => e.new_state !== e.old_state);
       return 'off';
     },
   }),
@@ -219,8 +219,9 @@ export const washerState = debounced(
       name: 'Washer Power',
       config: { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' },
       init() {
-        this.events.on('sensor.washer_ct_clamp')
-          .do((e) => this.update(Number(e.new_state)));
+        this.events.on('sensor.washer_ct_clamp', (e) => {
+          this.update(Number(e.new_state));
+        });
         return 0;
       },
     }),
@@ -239,13 +240,12 @@ export const washerDone = automation({
   id: 'washer_done_notify',
   name: 'Washer Finished',
   init() {
-    this.events.on('sensor.washer_power_smoothed')
-      .filter((e) => Number(e.old_state) > 10 && Number(e.new_state) <= 10)
-      .do(() => {
+    this.events.on('sensor.washer_power_smoothed', () => {
         this.ha.callService('notify.mobile', 'send_message', {
           message: 'Washing machine has finished',
         });
-      });
+      })
+      .filter((e) => Number(e.old_state) > 10 && Number(e.new_state) <= 10);
   },
 });
 ```
@@ -263,8 +263,9 @@ const ctClampSensor = (id: string, name: string) =>
     name,
     config: { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' },
     init() {
-      this.events.on(`sensor.${id}_raw` as any)
-        .do((e) => this.update(Number(e.new_state)));
+      this.events.on(`sensor.${id}_raw` as any, (e) => {
+        this.update(Number(e.new_state));
+      });
       return 0;
     },
   });
@@ -338,9 +339,8 @@ export const doorActivity = sampled(
     name: 'Door Opens (per hour)',
     init() {
       let count = 0;
-      this.events.on('binary_sensor.front_door')
-        .transition('off', 'on')        // only real opens (event stream filter)
-        .do(() => this.update(++count));
+      this.events.on('binary_sensor.front_door', () => this.update(++count))
+        .transition('off', 'on');       // only real opens (event stream filter)
 
       // Reset at midnight
       this.poll(() => { count = 0; return 0; }, { cron: '0 0 * * *' });
