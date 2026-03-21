@@ -73,6 +73,7 @@ export type {
   CombinedCallback,
   WatchdogExpect,
   WatchdogRule,
+  ScheduleOptions,
   InvariantOptions,
   SequenceStep,
   SequenceOptions,

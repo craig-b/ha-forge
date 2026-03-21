@@ -5,6 +5,7 @@ import type { ResolvedDevice } from '../loader.js';
 import type { DeviceDefinition, SensorDefinition, SwitchDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -247,6 +248,35 @@ describe('EntityLifecycleManager', () => {
     expect(transport.publishState).toHaveBeenLastCalledWith('poller', 'tick-4', undefined);
   });
 
+  // 9b. poll() with cron expression schedules at cron-defined times
+  it('sets up cron-based polling via context.poll()', async () => {
+    let callCount = 0;
+    const entity = makeSensorEntity('cron-poller', {
+      init() {
+        this.poll(() => {
+          callCount += 1;
+          return `cron-tick-${callCount}`;
+        }, { cron: '* * * * *' }); // every minute
+        return undefined as unknown as string;
+      },
+    });
+
+    await manager.deploy([entity]);
+
+    // No immediate fire for cron (unlike interval)
+    expect(callCount).toBe(0);
+
+    // Advance past the next minute boundary
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(callCount).toBe(1);
+    expect(transport.publishState).toHaveBeenCalledWith('cron-poller', 'cron-tick-1', undefined);
+
+    // Advance another minute — should fire again
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(callCount).toBe(2);
+  });
+
   // 10. teardown clears all tracked timer handles
   it('clears all timer handles when an entity is torn down', async () => {
     const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
@@ -444,6 +474,28 @@ describe('EntityLifecycleManager', () => {
 
       await vi.advanceTimersByTimeAsync(2000);
       expect(pollCount).toBe(3);
+    });
+
+    it('provides poll() with cron expression in device context', async () => {
+      const { entities, devices, initFn } = makeDeviceWithEntities();
+      let pollCount = 0;
+
+      initFn.mockImplementation(function(this: { poll: (fn: () => void, opts: { cron: string }) => void; entities: Record<string, { update: (v: unknown) => void }> }) {
+        this.poll(() => {
+          pollCount++;
+          this.entities.temperature.update(`cron-${pollCount}`);
+        }, { cron: '* * * * *' });
+      });
+
+      await manager.deploy(entities, devices);
+
+      // No immediate fire for cron
+      expect(pollCount).toBe(0);
+
+      // Advance past next minute boundary
+      await vi.advanceTimersByTimeAsync(60_000);
+
+      expect(pollCount).toBe(1);
     });
 
     it('registers command handlers for bidirectional entities in devices', async () => {

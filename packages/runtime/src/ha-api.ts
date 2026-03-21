@@ -1,4 +1,5 @@
 import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
+import { CronExpressionParser } from 'cron-parser';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -520,11 +521,34 @@ export class HAApiImpl implements HAApi {
             }
           } catch { /* swallow condition errors */ }
         };
-        const timer = setInterval(tick, options.check.interval);
-        const cleanup = () => {
-          stopped = true;
-          clearInterval(timer);
-        };
+
+        let cleanup: () => void;
+
+        if ('cron' in options.check && options.check.cron) {
+          const ref: { timer: ReturnType<typeof setTimeout> | null } = { timer: null };
+          const cronExpr = options.check.cron;
+          const scheduleNext = () => {
+            if (stopped) return;
+            const next = CronExpressionParser.parse(cronExpr).next().toDate();
+            const delay = Math.max(next.getTime() - Date.now(), 0);
+            ref.timer = globalThis.setTimeout(async () => {
+              await tick();
+              scheduleNext();
+            }, delay);
+          };
+          scheduleNext();
+          cleanup = () => {
+            stopped = true;
+            if (ref.timer) clearTimeout(ref.timer);
+          };
+        } else {
+          const timer = setInterval(tick, options.check.interval!);
+          cleanup = () => {
+            stopped = true;
+            clearInterval(timer);
+          };
+        }
+
         handles.eventSubscriptions.push(cleanup);
         return cleanup;
       },

@@ -14,6 +14,7 @@ import type {
   ModeContext,
   ModeDefinition,
   EventStream,
+  ScheduleOptions,
   StatelessHAApi,
   TaskContext,
   TaskDefinition,
@@ -23,6 +24,7 @@ import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
+import { CronExpressionParser } from 'cron-parser';
 
 export interface LifecycleLogger {
   debug(message: string, data?: Record<string, unknown>): void;
@@ -108,6 +110,23 @@ function createEmptyHandles(): TrackedHandles {
     mqttSubscriptions: [],
     eventSubscriptions: [],
   };
+}
+
+/**
+ * Schedule a callback to fire at cron-defined times using chained setTimeout.
+ * Each execution completes before the next is scheduled (no overlap).
+ */
+function scheduleCron(
+  cronExpr: string,
+  callback: () => void | Promise<void>,
+  ref: PollRef,
+): void {
+  const next = CronExpressionParser.parse(cronExpr).next().toDate();
+  const delay = Math.max(next.getTime() - Date.now(), 0);
+  ref.timer = globalThis.setTimeout(async () => {
+    await callback();
+    scheduleCron(cronExpr, callback, ref);
+  }, delay);
 }
 
 function isComputedAttribute(value: unknown): value is ComputedAttribute {
@@ -655,7 +674,7 @@ export class EntityLifecycleManager {
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
-      poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }) {
+      poll(fn: () => void | Promise<void>, opts: ScheduleOptions & { initialDelay?: number }) {
         const run = async () => {
           try {
             await fn();
@@ -665,26 +684,36 @@ export class EntityLifecycleManager {
             });
           }
         };
-        // Chained timeouts: wait for completion, then schedule next.
-        // Prevents overlapping executions when callback takes longer than interval.
-        const ref: { timer: ReturnType<typeof globalThis.setTimeout> | null } = { timer: null };
-        const scheduleNext = () => {
-          ref.timer = globalThis.setTimeout(async () => {
+        const ref: PollRef = { timer: null };
+        handles.pollRefs.push(ref);
+
+        if ('cron' in opts && opts.cron) {
+          const cronExpr = opts.cron;
+          const startCron = () => scheduleCron(cronExpr, run, ref);
+          if (opts.initialDelay) {
+            const t = globalThis.setTimeout(startCron, opts.initialDelay);
+            handles.timeouts.push(t);
+          } else {
+            startCron();
+          }
+        } else {
+          // Interval-based: fire immediately, then chain timeouts
+          const scheduleNext = () => {
+            ref.timer = globalThis.setTimeout(async () => {
+              await run();
+              scheduleNext();
+            }, opts.interval!);
+          };
+          const startPolling = async () => {
             await run();
             scheduleNext();
-          }, opts.interval);
-        };
-        const startPolling = async () => {
-          await run();
-          scheduleNext();
-        };
-        // Track ref for cleanup — pollRefs checked in disposeHandles
-        handles.pollRefs.push(ref);
-        if (opts.initialDelay) {
-          const t = globalThis.setTimeout(startPolling, opts.initialDelay);
-          handles.timeouts.push(t);
-        } else {
-          startPolling();
+          };
+          if (opts.initialDelay) {
+            const t = globalThis.setTimeout(startPolling, opts.initialDelay);
+            handles.timeouts.push(t);
+          } else {
+            startPolling();
+          }
         }
       },
 
@@ -1011,7 +1040,6 @@ export class EntityLifecycleManager {
     this.cronInstances.set(def.id, instance);
 
     // Parse the cron expression (validates on parse — throws on invalid)
-    const { CronExpressionParser } = await import('cron-parser');
     CronExpressionParser.parse(def.schedule);
 
     // Register a binary_sensor entity in HA
@@ -1406,7 +1434,7 @@ export class EntityLifecycleManager {
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
-      poll(fn: () => unknown | Promise<unknown>, opts: { interval: number; initialDelay?: number }) {
+      poll(fn: () => unknown | Promise<unknown>, opts: ScheduleOptions & { initialDelay?: number }) {
         const run = async () => {
           try {
             const value = await fn();
@@ -1419,23 +1447,35 @@ export class EntityLifecycleManager {
             });
           }
         };
-        const ref: { timer: ReturnType<typeof globalThis.setTimeout> | null } = { timer: null };
-        const scheduleNext = () => {
-          ref.timer = globalThis.setTimeout(async () => {
+        const ref: PollRef = { timer: null };
+        handles.pollRefs.push(ref);
+
+        if ('cron' in opts && opts.cron) {
+          const cronExpr = opts.cron;
+          const startCron = () => scheduleCron(cronExpr, run, ref);
+          if (opts.initialDelay) {
+            const t = globalThis.setTimeout(startCron, opts.initialDelay);
+            handles.timeouts.push(t);
+          } else {
+            startCron();
+          }
+        } else {
+          const scheduleNext = () => {
+            ref.timer = globalThis.setTimeout(async () => {
+              await run();
+              scheduleNext();
+            }, opts.interval!);
+          };
+          const startPolling = async () => {
             await run();
             scheduleNext();
-          }, opts.interval);
-        };
-        const startPolling = async () => {
-          await run();
-          scheduleNext();
-        };
-        handles.pollRefs.push(ref);
-        if (opts.initialDelay) {
-          const t = globalThis.setTimeout(startPolling, opts.initialDelay);
-          handles.timeouts.push(t);
-        } else {
-          startPolling();
+          };
+          if (opts.initialDelay) {
+            const t = globalThis.setTimeout(startPolling, opts.initialDelay);
+            handles.timeouts.push(t);
+          } else {
+            startPolling();
+          }
         }
       },
 

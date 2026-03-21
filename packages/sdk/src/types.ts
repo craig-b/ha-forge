@@ -265,6 +265,23 @@ export interface WatchdogRule {
 }
 
 /**
+ * Scheduling options: either a fixed interval in milliseconds or a cron expression.
+ * The two forms are mutually exclusive.
+ *
+ * @example
+ * ```ts
+ * // Fixed interval
+ * this.poll(fn, { interval: 30_000 });
+ *
+ * // Cron expression — every weekday at 7am
+ * this.poll(fn, { cron: '0 7 * * 1-5' });
+ * ```
+ */
+export type ScheduleOptions =
+  | { interval: number; cron?: never }
+  | { cron: string; interval?: never };
+
+/**
  * An invariant constraint that is checked periodically.
  * Fires when the `condition` function returns `false`, indicating a violated constraint.
  *
@@ -290,8 +307,8 @@ export interface InvariantOptions {
   name?: string;
   /** Function that returns `true` when the constraint holds, `false` when violated. */
   condition: () => boolean | Promise<boolean>;
-  /** How often to evaluate the condition. */
-  check: { interval: number };
+  /** How often to evaluate the condition — fixed interval or cron expression. */
+  check: ScheduleOptions;
   /** Action to execute when `condition()` returns `false`. */
   violated: () => void | Promise<void>;
 }
@@ -648,14 +665,15 @@ export interface EntityContext<TState = unknown, TAttrs extends Record<string, u
    */
   events: EventsContext;
   /**
-   * Start a polling loop that calls `fn` at a fixed interval.
+   * Start a polling loop that calls `fn` on a schedule.
+   * Accepts either a fixed interval (ms) or a cron expression.
    * If `fn` returns a value, it is automatically published via `update()`.
    * Uses chained timeouts to prevent overlapping executions.
    * Automatically cleaned up when the entity is destroyed.
-   * @param fn - Function to call each interval. Return a value to auto-publish state.
-   * @param opts - Polling options.
+   * @param fn - Function to call each cycle. Return a value to auto-publish state.
+   * @param opts - Schedule options (interval or cron) plus optional initial delay.
    */
-  poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void;
+  poll(fn: () => TState | Promise<TState>, opts: ScheduleOptions & { initialDelay?: number }): void;
   /** Scoped logger for this entity. Messages include the entity ID and source file automatically. */
   log: EntityLogger;
   /**
@@ -2044,14 +2062,15 @@ export interface DeviceContext<TEntities extends Record<string, EntityDefinition
    */
   events: EventsContext;
   /**
-   * Start a managed polling loop. Fires immediately, then repeats on interval.
+   * Start a managed polling loop on a schedule.
+   * Accepts either a fixed interval (ms) or a cron expression.
    * Uses chained timeouts to prevent overlapping executions.
    * Unlike entity poll(), this does NOT auto-update a state — call
    * `this.entities.xxx.update()` inside the callback.
-   * @param fn - Function to call each interval.
-   * @param opts - Polling options.
+   * @param fn - Function to call each cycle.
+   * @param opts - Schedule options (interval or cron) plus optional initial delay.
    */
-  poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void;
+  poll(fn: () => void | Promise<void>, opts: ScheduleOptions & { initialDelay?: number }): void;
   /** Scoped logger for this device. Messages include the device ID and source file automatically. */
   log: EntityLogger;
   /**
