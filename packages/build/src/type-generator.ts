@@ -359,7 +359,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
 
     // on() overload — includes entity_id literal as third TypedStateChangedEvent param
     onOverloads.push(
-      `  on(entity: '${escapedId}', callback: (event: TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>) => void): () => void;`,
+      `  on(entity: '${escapedId}', callback?: (event: TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>) => void): EventStream<TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>>;`,
     );
 
     // getState() overload
@@ -386,7 +386,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     const domainStateType = repState ? inferStateType(domain, repState) : 'string';
 
     domainOnOverloads.push(
-      `  on(domain: '${escapedDomain}', callback: (event: TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>) => void): () => void;`,
+      `  on(domain: '${escapedDomain}', callback?: (event: TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>) => void): EventStream<TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>>;`,
     );
   }
 
@@ -426,6 +426,12 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `type EntitiesInDomain<D extends HADomain> = {`,
     `  [K in HAEntityId]: HAEntityMap[K]['domain'] extends D ? K : never;`,
     `}[HAEntityId];`,
+    ``,
+    `/** Typed entity snapshot with per-entity state and attributes. */`,
+    `type TypedEntitySnapshot<E extends HAEntityId> = {`,
+    `  state: HAEntityMap[E]['state'];`,
+    `  attributes: HAEntityMap[E]['attributes'];`,
+    `};`,
     ``,
     `/**`,
     ` * Typed stateless Home Assistant client with per-entity overloads for autocomplete.`,
@@ -484,7 +490,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `   * @param callback - Called with a typed event each time any listed entity changes.`,
     `   * @returns Unsubscribe function.`,
     `   */`,
-    `  on<E extends HAEntityId>(entities: E[], callback: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => void): () => void;`,
+    `  on<E extends HAEntityId>(entities: E[], callback?: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => void): EventStream<TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>>;`,
     ``,
     `  /**`,
     `   * Set up typed declarative reaction rules. Entity IDs autocomplete and the \`to\` field`,
@@ -496,7 +502,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `    /** Fire action when the entity transitions to this state value. */`,
     `    to?: HAEntityMap[E]['state'];`,
     `    /** Custom condition — return \`true\` to trigger the action. */`,
-    `    when?: (event: StateChangedEvent) => boolean;`,
+    `    when?: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => boolean;`,
     `    /** Action to execute when the condition is met. */`,
     `    do: () => void | Promise<void>;`,
     `    /** Delay (ms) before executing. Cancelled if state changes again. */`,
@@ -504,26 +510,30 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `  } }): () => void;`,
     ``,
     `  /** Subscribe to multiple entities and receive a combined state snapshot on every change. */`,
-    `  combine<E extends HAEntityId>(entities: E[], callback: (states: { [K in E]: EntitySnapshot | null }) => void): () => void;`,
+    `  combine<E extends HAEntityId>(entities: E[], callback: (states: { [K in E]: TypedEntitySnapshot<K> | null }) => void): () => void;`,
     ``,
     `  /** Subscribe to state changes with typed context entity snapshots. */`,
-    `  withState<C extends HAEntityId>(entityOrDomain: HAEntityId | HADomain, context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void): EventStream;`,
-    `  withState<C extends HAEntityId>(entities: HAEntityId[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void): EventStream;`,
+    `  withState<C extends HAEntityId>(entityOrDomain: HAEntityId | HADomain, context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): EventStream;`,
+    `  withState<C extends HAEntityId>(entities: HAEntityId[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): EventStream;`,
     ``,
     `  /** Set up watchdog timers with typed entity IDs. */`,
-    `  watchdog<K extends HAEntityId>(rules: Record<K, WatchdogRule>): () => void;`,
+    `  watchdog<K extends HAEntityId>(rules: { [E in K]: {`,
+    `    within: number;`,
+    `    expect?: 'change' | { to: HAEntityMap[E]['state'] } | ((event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => boolean);`,
+    `    else: () => void | Promise<void>;`,
+    `  } }): () => void;`,
     ``,
     `  /** Set up a periodic invariant check. Fires violated() when condition() returns false. */`,
     `  invariant(options: InvariantOptions): () => void;`,
     ``,
     `  /** Detect an ordered sequence of state changes with typed entity IDs. */`,
-    `  sequence(options: { name?: string; steps: Array<SequenceStep<HAEntityId>>; do: () => void | Promise<void> }): () => void;`,
+    `  sequence(options: { name?: string; steps: Array<{ entity: HAEntityId; to: HAEntityMap[HAEntityId]['state'] | '*'; within?: number; negate?: boolean }>; do: () => void | Promise<void> }): () => void;`,
     `}`,
     ``,
     `/** Typed computed entity — watch list constrained to known HA entity IDs. */`,
     `declare function computed<TWatch extends HAEntityId>(options: ComputedOptions<TWatch>): ComputedDefinition<TWatch>;`,
     `/** Typed computed attribute — watch list constrained to known HA entity IDs. */`,
-    `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: EntitySnapshot | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
+    `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<TWatch> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
   ].join('\n');
 

@@ -14,7 +14,7 @@ type Processor = (event: StateChangedEvent, next: (event: StateChangedEvent) => 
 export function createEventStream(
   subscribe: (cb: (event: StateChangedEvent) => void) => () => void,
   callback?: (event: StateChangedEvent) => void,
-): EventStream {
+): EventStream<any> {
   const timers: Array<ReturnType<typeof setTimeout>> = [];
   const processors: Processor[] = [];
   const finalHandler = callback ?? (() => {});
@@ -51,7 +51,7 @@ export function createEventStream(
     if (idx !== -1) timers.splice(idx, 1);
   };
 
-  const stream: EventStream = {
+  const stream: EventStream<any> = {
     unsubscribe: cleanup,
 
     filter(predicate) {

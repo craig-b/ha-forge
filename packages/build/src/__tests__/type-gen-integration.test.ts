@@ -260,6 +260,7 @@ describe('Type generation integration', () => {
     expect(dts).toContain('type HAEntityId = keyof HAEntityMap');
     expect(dts).toContain('type HADomain');
     expect(dts).toContain('type EntitiesInDomain');
+    expect(dts).toContain('type TypedEntitySnapshot<E extends HAEntityId>');
 
     // Typed HAClient interface
     expect(dts).toContain('interface HAClient {');

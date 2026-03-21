@@ -139,7 +139,7 @@ export type StateChangedCallback = (event: StateChangedEvent) => void;
  * Call the stream as a function or use `.unsubscribe()` to cancel.
  * All internal timers and subscriptions are cleaned up on unsubscribe.
  */
-export interface EventStream {
+export interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
   /** Unsubscribe from the event stream and clean up all internal timers. */
   unsubscribe(): void;
 
@@ -147,13 +147,13 @@ export interface EventStream {
    * Skip events that don't match a predicate.
    * @param predicate - Return `true` to keep the event, `false` to skip it.
    */
-  filter(predicate: (event: StateChangedEvent) => boolean): EventStream;
+  filter(predicate: (event: TEvent) => boolean): EventStream<TEvent>;
 
   /**
    * Transform the event before passing it to downstream handlers.
    * @param transform - Function that receives the event and returns a modified event.
    */
-  map(transform: (event: StateChangedEvent) => StateChangedEvent): EventStream;
+  map(transform: (event: TEvent) => TEvent): EventStream<TEvent>;
 
   /**
    * Wait for the event to stabilize — only fires after no new events arrive
@@ -161,7 +161,7 @@ export interface EventStream {
    * (e.g., "motion stays on for 30 seconds").
    * @param ms - Debounce window in milliseconds.
    */
-  debounce(ms: number): EventStream;
+  debounce(ms: number): EventStream<TEvent>;
 
   /**
    * Limit event rate — fires at most once per interval.
@@ -169,13 +169,13 @@ export interface EventStream {
    * until the interval expires.
    * @param ms - Throttle interval in milliseconds.
    */
-  throttle(ms: number): EventStream;
+  throttle(ms: number): EventStream<TEvent>;
 
   /**
    * Skip events where `new_state` hasn't actually changed from the previous event.
    * Useful for filtering out attribute-only updates.
    */
-  distinctUntilChanged(): EventStream;
+  distinctUntilChanged(): EventStream<TEvent>;
 
   /**
    * Only fire when the entity transitions between specific states.
@@ -189,7 +189,7 @@ export interface EventStream {
    *   .transition('off', 'on');
    * ```
    */
-  transition(from: string | '*', to: string | '*'): EventStream;
+  transition(from: string | '*', to: string | '*'): EventStream<TEvent>;
 }
 
 /**

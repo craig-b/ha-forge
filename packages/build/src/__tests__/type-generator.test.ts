@@ -410,8 +410,8 @@ describe('generateTypes()', () => {
       expect(content).toContain("on(entity: 'light.living_room',");
       expect(content).toContain("on(entity: 'sensor.temperature',");
       expect(content).toContain('TypedStateChangedEvent<');
-      // Entity ID literal should be the third type parameter
-      expect(content).toContain("'light.living_room'>) => void): () => void;");
+      // Entity ID literal should be the third type parameter and on() returns EventStream
+      expect(content).toContain("'light.living_room'>) => void): EventStream<");
       // on() should be inside HAEventsContext, not HAClient
       const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('on(entity:');
@@ -540,11 +540,73 @@ describe('generateTypes()', () => {
       // Typed reactions with mapped entity keys
       expect(content).toContain('reactions<K extends HAEntityId>(rules: {');
       expect(content).toContain("to?: HAEntityMap[E]['state']");
+      // reactions when callback uses TypedStateChangedEvent
+      expect(content).toContain("when?: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => boolean;");
       // No string fallback
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>): () => void;');
       // reactions() should be inside HAEventsContext, not HAClient
       const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('reactions<K');
+      cleanup();
+    });
+
+    it('generates TypedEntitySnapshot mapped type', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain('type TypedEntitySnapshot<E extends HAEntityId>');
+      expect(content).toContain("state: HAEntityMap[E]['state']");
+      expect(content).toContain("attributes: HAEntityMap[E]['attributes']");
+      cleanup();
+    });
+
+    it('uses TypedEntitySnapshot in combine callback', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain('combine<E extends HAEntityId>(entities: E[], callback: (states: { [K in E]: TypedEntitySnapshot<K> | null })');
+      cleanup();
+    });
+
+    it('uses TypedEntitySnapshot in withState callback', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain('{ [K in C]: TypedEntitySnapshot<K> }');
+      cleanup();
+    });
+
+    it('generates typed watchdog rules with per-entity expect', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain("{ to: HAEntityMap[E]['state'] }");
+      expect(content).toContain("TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => boolean");
+      cleanup();
+    });
+
+    it('generates typed sequence steps with state union for to', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      expect(content).toContain("entity: HAEntityId; to: HAEntityMap[HAEntityId]['state'] | '*'");
+      cleanup();
+    });
+
+    it('on() returns EventStream with typed event', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
+
+      // Per-entity on() returns EventStream<TypedStateChangedEvent<...>>
+      expect(content).toMatch(/on\(entity: 'light\.living_room'[\s\S]*?\): EventStream<TypedStateChangedEvent</);
+      // Array on() returns EventStream too
+      expect(content).toMatch(/on<E extends HAEntityId>\(entities: E\[\][\s\S]*?\): EventStream<TypedStateChangedEvent</);
       cleanup();
     });
   });
