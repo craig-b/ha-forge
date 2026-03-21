@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, AutomationDefinition, TaskDefinition, ModeDefinition } from '@ha-forge/sdk';
+import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, AutomationDefinition, TaskDefinition, ModeDefinition, CronDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
@@ -30,12 +30,19 @@ export interface ResolvedMode {
   sourceFile: string;
 }
 
+/** A resolved cron definition with its source file. */
+export interface ResolvedCron {
+  definition: CronDefinition;
+  sourceFile: string;
+}
+
 export interface LoadResult {
   entities: ResolvedEntity[];
   devices: ResolvedDevice[];
   automations: ResolvedAutomation[];
   tasks: ResolvedTask[];
   modes: ResolvedMode[];
+  crons: ResolvedCron[];
   errors: LoadError[];
 }
 
@@ -79,6 +86,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.automation = sdk.automation;
   g.task = sdk.task;
   g.mode = sdk.mode;
+  g.cron = sdk.cron;
 
   // Always provide ha global — stateless only (no on/reactions).
   // Use this.events for lifecycle-managed subscriptions instead.
@@ -111,10 +119,11 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
   const automations: ResolvedAutomation[] = [];
   const tasks: ResolvedTask[] = [];
   const modes: ResolvedMode[] = [];
+  const crons: ResolvedCron[] = [];
   const errors: LoadError[] = [];
 
   if (!fs.existsSync(bundleDir)) {
-    return { entities, devices, automations, tasks, modes, errors };
+    return { entities, devices, automations, tasks, modes, crons, errors };
   }
 
   const jsFiles = findJsFiles(bundleDir);
@@ -127,6 +136,7 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
       automations.push(...result.automations);
       tasks.push(...result.tasks);
       modes.push(...result.modes);
+      crons.push(...result.crons);
     } catch (err) {
       errors.push({
         file,
@@ -135,13 +145,13 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
     }
   }
 
-  return { entities, devices, automations, tasks, modes, errors };
+  return { entities, devices, automations, tasks, modes, crons, errors };
 }
 
 async function loadSingleBundle(
   filePath: string,
   bundleDir: string,
-): Promise<{ entities: ResolvedEntity[]; devices: ResolvedDevice[]; automations: ResolvedAutomation[]; tasks: ResolvedTask[]; modes: ResolvedMode[] }> {
+): Promise<{ entities: ResolvedEntity[]; devices: ResolvedDevice[]; automations: ResolvedAutomation[]; tasks: ResolvedTask[]; modes: ResolvedMode[]; crons: ResolvedCron[] }> {
   // Dynamic import — file:// URL required for absolute paths on all platforms.
   // Append a cache-busting query string so Node returns fresh modules on redeploy.
   const fileUrl = `file://${filePath}?t=${Date.now()}`;
@@ -156,6 +166,7 @@ async function loadSingleBundle(
   const automationDefs: AutomationDefinition[] = [];
   const taskDefs: TaskDefinition[] = [];
   const modeDefs: ModeDefinition[] = [];
+  const cronDefs: CronDefinition[] = [];
 
   // Walk all exports — check __kind discriminants first since they also have id/name
   for (const [, value] of Object.entries(mod)) {
@@ -167,6 +178,8 @@ async function loadSingleBundle(
       taskDefs.push(value);
     } else if (isModeDefinition(value)) {
       modeDefs.push(value);
+    } else if (isCronDefinition(value)) {
+      cronDefs.push(value);
     } else if (isEntityDefinition(value)) {
       definitions.push(value);
     } else if (isEntityFactory(value)) {
@@ -234,7 +247,12 @@ async function loadSingleBundle(
     sourceFile,
   }));
 
-  return { entities, devices, automations, tasks, modes };
+  const crons: ResolvedCron[] = cronDefs.map((definition) => ({
+    definition,
+    sourceFile,
+  }));
+
+  return { entities, devices, automations, tasks, modes, crons };
 }
 
 function isDeviceDefinition(value: unknown): value is DeviceDefinition {
@@ -270,6 +288,15 @@ function isModeDefinition(value: unknown): value is ModeDefinition {
     value !== null &&
     '__kind' in value &&
     (value as Record<string, unknown>).__kind === 'mode'
+  );
+}
+
+function isCronDefinition(value: unknown): value is CronDefinition {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '__kind' in value &&
+    (value as Record<string, unknown>).__kind === 'cron'
   );
 }
 

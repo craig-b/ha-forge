@@ -11,6 +11,7 @@
   "dependencies": {
     "@ha-forge/sdk": "workspace:*",
     "better-sqlite3": "^12.8.0",
+    "cron-parser": "^5.5.0",
     "mqtt": "^5.0.0",
     "ws": "^8.0.0"
   },

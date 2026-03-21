@@ -10,6 +10,7 @@ import type {
   EntityLogger,
   EntitySnapshot,
   EventsContext,
+  CronDefinition,
   ModeContext,
   ModeDefinition,
   EventStream,
@@ -19,7 +20,7 @@ import type {
 } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedAutomation, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
+import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 
@@ -63,6 +64,14 @@ interface TaskInstance {
   handles: TrackedHandles;
   /** Whether the task is currently executing run(). */
   running: boolean;
+}
+
+interface CronInstance {
+  cron: ResolvedCron;
+  handles: TrackedHandles;
+  /** Current state: 'ON' or 'OFF'. */
+  currentState: string;
+  initialized: boolean;
 }
 
 interface ModeInstance {
@@ -116,6 +125,7 @@ export class EntityLifecycleManager {
   private automationInstances = new Map<string, AutomationInstance>();
   private taskInstances = new Map<string, TaskInstance>();
   private modeInstances = new Map<string, ModeInstance>();
+  private cronInstances = new Map<string, CronInstance>();
   private transport: Transport;
   private logger: LifecycleLogger;
   private rawMqtt: RawMqttAccess | null;
@@ -130,17 +140,17 @@ export class EntityLifecycleManager {
     this.haApi = haApi ?? null;
   }
 
-  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[]): Promise<void> {
+  async deploy(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[], crons?: ResolvedCron[]): Promise<void> {
     // Full deploy: teardown everything first, then register new entities
     await this.teardownAll();
-    await this.deployAdditive(entities, devices, automations, tasks, modes);
+    await this.deployAdditive(entities, devices, automations, tasks, modes, crons);
   }
 
   /**
    * Register and init entities/devices/automations/tasks without tearing down existing ones.
    * Used by BuildManager which handles teardown separately to support per-file isolation.
    */
-  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[]): Promise<void> {
+  async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[], crons?: ResolvedCron[]): Promise<void> {
     // Collect entity IDs owned by devices so we skip individual init for them
     const deviceOwnedEntityIds = new Set<string>();
     if (devices) {
@@ -214,6 +224,20 @@ export class EntityLifecycleManager {
           this.logger.error(`Failed to initialize mode ${m.definition.id}`, {
             error: err instanceof Error ? err.message : String(err),
             sourceFile: m.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init crons
+    if (crons) {
+      for (const c of crons) {
+        try {
+          await this.initCron(c);
+        } catch (err) {
+          this.logger.error(`Failed to initialize cron ${c.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: c.sourceFile,
           });
         }
       }
@@ -973,6 +997,72 @@ export class EntityLifecycleManager {
     };
   }
 
+  private async initCron(resolved: ResolvedCron): Promise<void> {
+    const def = resolved.definition;
+    const handles = createEmptyHandles();
+
+    const instance: CronInstance = {
+      cron: resolved,
+      handles,
+      currentState: 'OFF',
+      initialized: false,
+    };
+
+    this.cronInstances.set(def.id, instance);
+
+    // Parse the cron expression (validates on parse — throws on invalid)
+    const { CronExpressionParser } = await import('cron-parser');
+    CronExpressionParser.parse(def.schedule);
+
+    // Register a binary_sensor entity in HA
+    const syntheticEntity: ResolvedEntity = {
+      definition: {
+        id: def.id,
+        name: def.name,
+        type: 'binary_sensor',
+        config: { device_class: 'running' },
+        ...(def.device && { device: def.device }),
+        ...(def.icon && { icon: def.icon }),
+      } as unknown as EntityDefinition,
+      sourceFile: resolved.sourceFile,
+      deviceId: def.device?.id ?? def.id,
+    };
+    await this.transport.register(syntheticEntity);
+
+    // Check if "now" falls within a cron window
+    const evaluate = () => {
+      const now = new Date();
+      // Parse fresh each time to handle DST/timezone changes
+      const expr = CronExpressionParser.parse(def.schedule, { currentDate: now });
+
+      // Get the previous matching time
+      const prev = expr.prev().toDate();
+
+      // We're "ON" if the previous match was within the last 60 seconds
+      // (cron granularity is 1 minute, so if prev is within 60s, we're in a matching minute)
+      const msSincePrev = now.getTime() - prev.getTime();
+      const newState = msSincePrev < 60_000 ? 'ON' : 'OFF';
+
+      if (newState !== instance.currentState) {
+        instance.currentState = newState;
+        this.transport.publishState(def.id, newState).catch(() => {});
+        this.onStateChange?.(def.id, newState);
+      }
+    };
+
+    // Evaluate immediately
+    evaluate();
+
+    // Re-evaluate every 30 seconds (handles minute boundaries reliably)
+    const timer = globalThis.setInterval(evaluate, 30_000);
+    handles.intervals.push(timer);
+
+    instance.initialized = true;
+    this.logger.info(`Cron initialized: ${def.id} (schedule: ${def.schedule})`, {
+      sourceFile: resolved.sourceFile,
+    });
+  }
+
   /**
    * Teardown entities from specific source files, leaving others untouched.
    */
@@ -1011,6 +1101,12 @@ export class EntityLifecycleManager {
       await this.teardownMode(id);
     }
 
+    // Teardown crons from these files
+    for (const [id, instance] of this.cronInstances) {
+      if (!sourceFiles.has(instance.cron.sourceFile)) continue;
+      await this.teardownCron(id);
+    }
+
     // Teardown entities from these files
     for (const [id, instance] of this.instances) {
       if (!sourceFiles.has(instance.entity.sourceFile)) continue;
@@ -1018,7 +1114,7 @@ export class EntityLifecycleManager {
     }
   }
 
-  /** Get set of source files that have running entities/automations/tasks/modes. */
+  /** Get set of source files that have running entities/automations/tasks/modes/crons. */
   getActiveSourceFiles(): Set<string> {
     const files = new Set<string>();
     for (const instance of this.instances.values()) {
@@ -1032,6 +1128,9 @@ export class EntityLifecycleManager {
     }
     for (const instance of this.modeInstances.values()) {
       files.add(instance.mode.sourceFile);
+    }
+    for (const instance of this.cronInstances.values()) {
+      files.add(instance.cron.sourceFile);
     }
     return files;
   }
@@ -1079,6 +1178,12 @@ export class EntityLifecycleManager {
     const modeIds = [...this.modeInstances.keys()];
     for (const id of modeIds) {
       await this.teardownMode(id);
+    }
+
+    // Teardown crons
+    const cronIds = [...this.cronInstances.keys()];
+    for (const id of cronIds) {
+      await this.teardownCron(id);
     }
 
     // Then teardown all entities
@@ -1198,6 +1303,24 @@ export class EntityLifecycleManager {
     }
 
     this.modeInstances.delete(modeId);
+  }
+
+  private async teardownCron(cronId: string): Promise<void> {
+    const instance = this.cronInstances.get(cronId);
+    if (!instance) return;
+
+    this.disposeHandles(instance.handles);
+
+    // Deregister binary_sensor entity
+    try {
+      await this.transport.deregister(cronId);
+    } catch (err) {
+      this.logger.error(`Deregister failed for cron ${cronId}`, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    this.cronInstances.delete(cronId);
   }
 
   private disposeHandles(handles: TrackedHandles): void {

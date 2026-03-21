@@ -1,5 +1,5 @@
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { ResolvedAutomation, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
+import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 import { EntityLifecycleManager } from './lifecycle.js';
 import { loadBundles } from './loader.js';
@@ -66,7 +66,7 @@ export class BuildManager {
       }
     }
 
-    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0 || loadResult.modes.length > 0;
+    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0 || loadResult.modes.length > 0 || loadResult.crons.length > 0;
     if (!hasWork && loadResult.errors.length === 0) {
       this.logger.info('No entities to deploy');
       return {
@@ -126,9 +126,15 @@ export class BuildManager {
       if (!group) { group = []; modesByFile.set(m.sourceFile, group); }
       group.push(m);
     }
+    const cronsByFile = new Map<string, ResolvedCron[]>();
+    for (const c of loadResult.crons) {
+      let group = cronsByFile.get(c.sourceFile);
+      if (!group) { group = []; cronsByFile.set(c.sourceFile, group); }
+      group.push(c);
+    }
 
     // Collect all source files
-    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys(), ...modesByFile.keys()]);
+    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys(), ...modesByFile.keys(), ...cronsByFile.keys()]);
 
     // Deploy each file's definitions independently
     let deployedCount = 0;
@@ -139,9 +145,10 @@ export class BuildManager {
         const automations = automationsByFile.get(file) ?? [];
         const tasks = tasksByFile.get(file) ?? [];
         const modes = modesByFile.get(file) ?? [];
-        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes);
-        deployedCount += entities.length + automations.length + tasks.length + modes.length;
-        this.logger.info(`Deployed ${entities.length} entities, ${automations.length} automations, ${tasks.length} tasks, ${modes.length} modes from ${file}`);
+        const crons = cronsByFile.get(file) ?? [];
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes, crons);
+        deployedCount += entities.length + automations.length + tasks.length + modes.length + crons.length;
+        this.logger.info(`Deployed ${entities.length} entities, ${automations.length} automations, ${tasks.length} tasks, ${modes.length} modes, ${crons.length} crons from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
         deployErrors.push({ file, error: errorMsg });
@@ -202,10 +209,16 @@ export class BuildManager {
       if (!group) { group = []; newModesByFile.set(m.sourceFile, group); }
       group.push(m);
     }
+    const newCronsByFile = new Map<string, ResolvedCron[]>();
+    for (const c of loadResult.crons) {
+      let group = newCronsByFile.get(c.sourceFile);
+      if (!group) { group = []; newCronsByFile.set(c.sourceFile, group); }
+      group.push(c);
+    }
 
     // Determine which files actually changed
     const activeFiles = this.lifecycle.getActiveSourceFiles();
-    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys(), ...newModesByFile.keys()]);
+    const allFiles = new Set([...activeFiles, ...newByFile.keys(), ...newAutomationsByFile.keys(), ...newTasksByFile.keys(), ...newModesByFile.keys(), ...newCronsByFile.keys()]);
     const changedFiles = new Set<string>();
 
     for (const file of allFiles) {
@@ -236,10 +249,11 @@ export class BuildManager {
       const automations = newAutomationsByFile.get(file) ?? [];
       const tasks = newTasksByFile.get(file) ?? [];
       const modes = newModesByFile.get(file) ?? [];
-      if (entities.length === 0 && automations.length === 0 && tasks.length === 0 && modes.length === 0) continue; // File was removed
+      const crons = newCronsByFile.get(file) ?? [];
+      if (entities.length === 0 && automations.length === 0 && tasks.length === 0 && modes.length === 0 && crons.length === 0) continue; // File was removed
       try {
-        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes);
-        deployedCount += entities.length + automations.length + tasks.length + modes.length;
+        await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes, crons);
+        deployedCount += entities.length + automations.length + tasks.length + modes.length + crons.length;
         this.logger.info(`Redeployed from ${file}`);
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
