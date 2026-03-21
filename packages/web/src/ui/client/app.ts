@@ -212,7 +212,6 @@ export class TseApp extends LitElement {
     require(['vs/editor/editor.main'], () => {
       monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
         target: monaco.languages.typescript.ScriptTarget.ES2024,
-        lib: ['es2024'],
         moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
         module: monaco.languages.typescript.ModuleKind.ESNext,
         strict: true,
