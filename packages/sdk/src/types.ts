@@ -765,6 +765,589 @@ export interface ClimateDefinition extends BaseEntity<ClimateState, ClimateConfi
   onCommand(this: EntityContext<ClimateState>, command: ClimateCommand): void | Promise<void>;
 }
 
+// ---- Fan ----
+
+/** MQTT discovery configuration for fan entities. */
+export interface FanConfig {
+  /** List of preset fan modes (e.g. `['auto', 'smart', 'sleep']`). */
+  preset_modes?: string[];
+  /** Minimum speed percentage (default: 1). */
+  speed_range_min?: number;
+  /** Maximum speed percentage (default: 100). */
+  speed_range_max?: number;
+}
+
+/**
+ * Command received from HA when a user interacts with a fan entity.
+ * All fields are optional — only changed values are sent.
+ */
+export interface FanCommand {
+  /** Desired power state. */
+  state?: 'ON' | 'OFF';
+  /** Speed percentage (0–100). */
+  percentage?: number;
+  /** Target preset mode. */
+  preset_mode?: string;
+  /** Oscillation state. */
+  oscillation?: 'oscillate_on' | 'oscillate_off';
+  /** Fan direction. */
+  direction?: 'forward' | 'reverse';
+}
+
+/** Current state of a fan entity published to HA. */
+export interface FanState {
+  /** Power state. */
+  state: 'on' | 'off';
+  /** Current speed percentage (0–100). */
+  percentage?: number;
+  /** Current preset mode. */
+  preset_mode?: string;
+  /** Current oscillation state. */
+  oscillation?: 'on' | 'off';
+  /** Current direction. */
+  direction?: 'forward' | 'reverse';
+}
+
+/** Entity definition for a controllable fan. */
+export interface FanDefinition extends BaseEntity<FanState, FanConfig> {
+  type: 'fan';
+  /**
+   * Called when HA sends a command to this fan.
+   * @param command - The fan command with desired state and parameters.
+   */
+  onCommand(this: EntityContext<FanState>, command: FanCommand): void | Promise<void>;
+}
+
+// ---- Lock ----
+
+/** MQTT discovery configuration for lock entities. */
+export interface LockConfig {
+  /** Regex pattern for code validation (e.g. `'^\\d{4,6}$'` for 4–6 digit PIN). */
+  code_format?: string;
+}
+
+/** Commands that can be sent to a lock entity. */
+export type LockCommand = 'LOCK' | 'UNLOCK' | 'OPEN';
+
+/**
+ * Possible states for a lock entity.
+ *
+ * - `'locked'` — Fully locked.
+ * - `'locking'` — Currently locking (transitioning).
+ * - `'unlocked'` — Fully unlocked.
+ * - `'unlocking'` — Currently unlocking (transitioning).
+ * - `'jammed'` — Lock is jammed and unable to operate.
+ */
+export type LockState = 'locked' | 'locking' | 'unlocked' | 'unlocking' | 'jammed';
+
+/** Entity definition for a controllable lock. */
+export interface LockDefinition extends BaseEntity<LockState, LockConfig> {
+  type: 'lock';
+  /**
+   * Called when HA sends a command to this lock.
+   * @param command - `'LOCK'`, `'UNLOCK'`, or `'OPEN'`.
+   */
+  onCommand(this: EntityContext<LockState>, command: LockCommand): void | Promise<void>;
+}
+
+// ---- Number ----
+
+/**
+ * Device class for number entities.
+ *
+ * @see https://developers.home-assistant.io/docs/core/entity/number/#available-device-classes
+ */
+export type NumberDeviceClass =
+  | 'apparent_power'
+  | 'aqi'
+  | 'atmospheric_pressure'
+  | 'battery'
+  | 'carbon_dioxide'
+  | 'carbon_monoxide'
+  | 'current'
+  | 'data_rate'
+  | 'data_size'
+  | 'distance'
+  | 'duration'
+  | 'energy'
+  | 'energy_storage'
+  | 'frequency'
+  | 'gas'
+  | 'humidity'
+  | 'illuminance'
+  | 'irradiance'
+  | 'moisture'
+  | 'monetary'
+  | 'nitrogen_dioxide'
+  | 'nitrogen_monoxide'
+  | 'nitrous_oxide'
+  | 'ozone'
+  | 'ph'
+  | 'pm1'
+  | 'pm10'
+  | 'pm25'
+  | 'power'
+  | 'power_factor'
+  | 'precipitation'
+  | 'precipitation_intensity'
+  | 'pressure'
+  | 'reactive_power'
+  | 'signal_strength'
+  | 'sound_pressure'
+  | 'speed'
+  | 'sulphur_dioxide'
+  | 'temperature'
+  | 'volatile_organic_compounds'
+  | 'volatile_organic_compounds_parts'
+  | 'voltage'
+  | 'volume'
+  | 'volume_flow_rate'
+  | 'volume_storage'
+  | 'water'
+  | 'weight'
+  | 'wind_speed';
+
+/** MQTT discovery configuration for number entities. */
+export interface NumberConfig {
+  /** Number device class — determines icon and default unit in HA. */
+  device_class?: NumberDeviceClass;
+  /** Minimum value (default: 1). */
+  min?: number;
+  /** Maximum value (default: 100). */
+  max?: number;
+  /** Step size (default: 1, minimum: 0.001). */
+  step?: number;
+  /** Unit of measurement displayed alongside the value. */
+  unit_of_measurement?: string;
+  /** Display mode — `'auto'`, `'box'`, or `'slider'`. */
+  mode?: 'auto' | 'box' | 'slider';
+}
+
+/** Entity definition for a numeric input entity. */
+export interface NumberDefinition extends BaseEntity<number, NumberConfig> {
+  type: 'number';
+  /**
+   * Called when HA sends a new value to this number entity.
+   * @param command - The new numeric value.
+   */
+  onCommand(this: EntityContext<number>, command: number): void | Promise<void>;
+}
+
+// ---- Select ----
+
+/** MQTT discovery configuration for select entities. */
+export interface SelectConfig {
+  /** List of selectable options. Required. */
+  options: string[];
+}
+
+/** Entity definition for a dropdown selection entity. */
+export interface SelectDefinition extends BaseEntity<string, SelectConfig> {
+  type: 'select';
+  /**
+   * Called when HA sends a new selection to this select entity.
+   * @param command - The selected option string.
+   */
+  onCommand(this: EntityContext<string>, command: string): void | Promise<void>;
+}
+
+// ---- Text ----
+
+/** MQTT discovery configuration for text entities. */
+export interface TextConfig {
+  /** Minimum text length (default: 0). */
+  min?: number;
+  /** Maximum text length (default: 255). */
+  max?: number;
+  /** Regex pattern for input validation. */
+  pattern?: string;
+  /** Display mode — `'text'` or `'password'`. */
+  mode?: 'text' | 'password';
+}
+
+/** Entity definition for a text input entity. */
+export interface TextDefinition extends BaseEntity<string, TextConfig> {
+  type: 'text';
+  /**
+   * Called when HA sends new text to this text entity.
+   * @param command - The new text value.
+   */
+  onCommand(this: EntityContext<string>, command: string): void | Promise<void>;
+}
+
+// ---- Button ----
+
+/**
+ * Device class for button entities.
+ *
+ * @see https://developers.home-assistant.io/docs/core/entity/button/#available-device-classes
+ */
+export type ButtonDeviceClass = 'identify' | 'restart' | 'update';
+
+/** MQTT discovery configuration for button entities. */
+export interface ButtonConfig {
+  /** Button device class — determines icon in HA. */
+  device_class?: ButtonDeviceClass;
+}
+
+/** Entity definition for a momentary button entity (command only, no state). */
+export interface ButtonDefinition extends BaseEntity<never, ButtonConfig> {
+  type: 'button';
+  /**
+   * Called when the button is pressed in HA.
+   */
+  onPress(this: EntityContext<never>): void | Promise<void>;
+}
+
+// ---- Siren ----
+
+/** MQTT discovery configuration for siren entities. */
+export interface SirenConfig {
+  /** List of available alarm tones. */
+  available_tones?: string[];
+  /** Whether the siren supports setting duration. */
+  support_duration?: boolean;
+  /** Whether the siren supports setting volume (0–1). */
+  support_volume_set?: boolean;
+}
+
+/**
+ * Command received from HA when a user interacts with a siren entity.
+ */
+export interface SirenCommand {
+  /** Desired power state. */
+  state: 'ON' | 'OFF';
+  /** Selected tone name. */
+  tone?: string;
+  /** Duration in seconds. */
+  duration?: number;
+  /** Volume level (0.0–1.0). */
+  volume_level?: number;
+}
+
+/** Entity definition for a siren/alarm entity. */
+export interface SirenDefinition extends BaseEntity<'on' | 'off', SirenConfig> {
+  type: 'siren';
+  /**
+   * Called when HA sends a command to this siren.
+   * @param command - The siren command with desired state and parameters.
+   */
+  onCommand(this: EntityContext<'on' | 'off'>, command: SirenCommand): void | Promise<void>;
+}
+
+// ---- Humidifier ----
+
+/**
+ * Device class for humidifier entities.
+ */
+export type HumidifierDeviceClass = 'humidifier' | 'dehumidifier';
+
+/** MQTT discovery configuration for humidifier entities. */
+export interface HumidifierConfig {
+  /** Device class — `'humidifier'` or `'dehumidifier'`. */
+  device_class?: HumidifierDeviceClass;
+  /** Minimum target humidity (default: 0). */
+  min_humidity?: number;
+  /** Maximum target humidity (default: 100). */
+  max_humidity?: number;
+  /** Supported operating modes. */
+  modes?: string[];
+}
+
+/**
+ * Command received from HA when a user interacts with a humidifier entity.
+ * All fields are optional — only changed values are sent.
+ */
+export interface HumidifierCommand {
+  /** Desired power state. */
+  state?: 'ON' | 'OFF';
+  /** Target humidity percentage. */
+  humidity?: number;
+  /** Target operating mode. */
+  mode?: string;
+}
+
+/** Current state of a humidifier entity published to HA. */
+export interface HumidifierState {
+  /** Power state. */
+  state: 'on' | 'off';
+  /** Current target humidity. */
+  humidity?: number;
+  /** Current operating mode. */
+  mode?: string;
+  /** Current measured humidity. */
+  current_humidity?: number;
+  /** Current action — what the device is actually doing. */
+  action?: 'off' | 'humidifying' | 'drying' | 'idle';
+}
+
+/** Entity definition for a humidifier/dehumidifier entity. */
+export interface HumidifierDefinition extends BaseEntity<HumidifierState, HumidifierConfig> {
+  type: 'humidifier';
+  /**
+   * Called when HA sends a command to this humidifier.
+   * @param command - The humidifier command with desired state and parameters.
+   */
+  onCommand(this: EntityContext<HumidifierState>, command: HumidifierCommand): void | Promise<void>;
+}
+
+// ---- Valve ----
+
+/**
+ * Device class for valve entities.
+ */
+export type ValveDeviceClass = 'gas' | 'water';
+
+/** MQTT discovery configuration for valve entities. */
+export interface ValveConfig {
+  /** Valve device class — determines icon in HA. */
+  device_class?: ValveDeviceClass;
+  /** Whether this valve reports numeric position (0–100). */
+  reports_position?: boolean;
+}
+
+/**
+ * Command received from HA when a user interacts with a valve entity.
+ * Discriminated union on the `action` field.
+ */
+export type ValveCommand =
+  | { action: 'open' }
+  | { action: 'close' }
+  | { action: 'stop' }
+  | { action: 'set_position'; position: number };
+
+/**
+ * Possible states for a valve entity.
+ */
+export type ValveState = 'open' | 'opening' | 'closed' | 'closing' | 'stopped';
+
+/** Entity definition for a controllable valve. */
+export interface ValveDefinition extends BaseEntity<ValveState, ValveConfig> {
+  type: 'valve';
+  /**
+   * Called when HA sends a command to this valve.
+   * @param command - The valve command (open, close, stop, set_position).
+   */
+  onCommand(this: EntityContext<ValveState>, command: ValveCommand): void | Promise<void>;
+}
+
+// ---- Water Heater ----
+
+/**
+ * Operating modes for water heater entities.
+ */
+export type WaterHeaterMode = 'off' | 'eco' | 'electric' | 'gas' | 'heat_pump' | 'high_demand' | 'performance';
+
+/** MQTT discovery configuration for water heater entities. */
+export interface WaterHeaterConfig {
+  /** Supported operating modes. */
+  modes: WaterHeaterMode[];
+  /** Minimum settable temperature. */
+  min_temp?: number;
+  /** Maximum settable temperature. */
+  max_temp?: number;
+  /** Temperature precision (e.g. `0.1` or `1.0`). */
+  precision?: number;
+  /** Temperature unit — `'C'` for Celsius, `'F'` for Fahrenheit. */
+  temperature_unit?: 'C' | 'F';
+}
+
+/**
+ * Command received from HA when a user interacts with a water heater entity.
+ * All fields are optional — only changed values are sent.
+ */
+export interface WaterHeaterCommand {
+  /** Target operating mode. */
+  mode?: WaterHeaterMode;
+  /** Target temperature. */
+  temperature?: number;
+}
+
+/** Current state of a water heater entity published to HA. */
+export interface WaterHeaterState {
+  /** Current operating mode. */
+  mode: WaterHeaterMode;
+  /** Target temperature. */
+  temperature?: number;
+  /** Current measured temperature. */
+  current_temperature?: number;
+}
+
+/** Entity definition for a water heater entity. */
+export interface WaterHeaterDefinition extends BaseEntity<WaterHeaterState, WaterHeaterConfig> {
+  type: 'water_heater';
+  /**
+   * Called when HA sends a command to this water heater.
+   * @param command - The water heater command with changed settings.
+   */
+  onCommand(this: EntityContext<WaterHeaterState>, command: WaterHeaterCommand): void | Promise<void>;
+}
+
+// ---- Vacuum ----
+
+/** MQTT discovery configuration for vacuum entities. */
+export interface VacuumConfig {
+  /** List of supported fan speed levels. */
+  fan_speed_list?: string[];
+}
+
+/** Commands that can be sent to a vacuum entity. */
+export type VacuumCommand =
+  | { action: 'start' }
+  | { action: 'pause' }
+  | { action: 'stop' }
+  | { action: 'return_to_base' }
+  | { action: 'clean_spot' }
+  | { action: 'locate' }
+  | { action: 'set_fan_speed'; fan_speed: string };
+
+/**
+ * Possible states for a vacuum entity.
+ */
+export type VacuumState = 'cleaning' | 'docked' | 'paused' | 'idle' | 'returning' | 'error';
+
+/** Entity definition for a robot vacuum entity. */
+export interface VacuumDefinition extends BaseEntity<VacuumState, VacuumConfig> {
+  type: 'vacuum';
+  /**
+   * Called when HA sends a command to this vacuum.
+   * @param command - The vacuum command.
+   */
+  onCommand(this: EntityContext<VacuumState>, command: VacuumCommand): void | Promise<void>;
+}
+
+// ---- Lawn Mower ----
+
+/** Commands that can be sent to a lawn mower entity. */
+export type LawnMowerCommand = 'start_mowing' | 'pause' | 'dock';
+
+/**
+ * Possible activity states for a lawn mower entity.
+ */
+export type LawnMowerActivity = 'mowing' | 'paused' | 'docked' | 'error';
+
+/** Entity definition for a robotic lawn mower entity. */
+export interface LawnMowerDefinition extends BaseEntity<LawnMowerActivity> {
+  type: 'lawn_mower';
+  /**
+   * Called when HA sends a command to this lawn mower.
+   * @param command - `'start_mowing'`, `'pause'`, or `'dock'`.
+   */
+  onCommand(this: EntityContext<LawnMowerActivity>, command: LawnMowerCommand): void | Promise<void>;
+}
+
+// ---- Alarm Control Panel ----
+
+/** MQTT discovery configuration for alarm control panel entities. */
+export interface AlarmControlPanelConfig {
+  /** Whether a code is required to arm. */
+  code_arm_required?: boolean;
+  /** Whether a code is required to disarm. */
+  code_disarm_required?: boolean;
+  /** Whether a code is required to trigger. */
+  code_trigger_required?: boolean;
+}
+
+/** Commands that can be sent to an alarm control panel entity. */
+export type AlarmControlPanelCommand =
+  | 'ARM_HOME'
+  | 'ARM_AWAY'
+  | 'ARM_NIGHT'
+  | 'ARM_VACATION'
+  | 'ARM_CUSTOM_BYPASS'
+  | 'DISARM'
+  | 'TRIGGER';
+
+/**
+ * Possible states for an alarm control panel entity.
+ */
+export type AlarmControlPanelState =
+  | 'disarmed'
+  | 'armed_home'
+  | 'armed_away'
+  | 'armed_night'
+  | 'armed_vacation'
+  | 'armed_custom_bypass'
+  | 'pending'
+  | 'triggered'
+  | 'arming'
+  | 'disarming';
+
+/** Entity definition for a security alarm control panel entity. */
+export interface AlarmControlPanelDefinition extends BaseEntity<AlarmControlPanelState, AlarmControlPanelConfig> {
+  type: 'alarm_control_panel';
+  /**
+   * Called when HA sends a command to this alarm panel.
+   * @param command - The alarm command (e.g. `'ARM_HOME'`, `'DISARM'`).
+   */
+  onCommand(this: EntityContext<AlarmControlPanelState>, command: AlarmControlPanelCommand): void | Promise<void>;
+}
+
+// ---- Notify ----
+
+/** Entity definition for a notification target entity (write-only). */
+export interface NotifyDefinition extends BaseEntity<never> {
+  type: 'notify';
+  /**
+   * Called when a notification is sent to this entity.
+   * @param message - The notification message text.
+   */
+  onNotify(this: EntityContext<never>, message: string): void | Promise<void>;
+}
+
+// ---- Update ----
+
+/**
+ * Device class for update entities.
+ *
+ * @see https://developers.home-assistant.io/docs/core/entity/update/#available-device-classes
+ */
+export type UpdateDeviceClass = 'firmware';
+
+/** MQTT discovery configuration for update entities. */
+export interface UpdateConfig {
+  /** Update device class. */
+  device_class?: UpdateDeviceClass;
+}
+
+/** Current state of an update entity published to HA (JSON). */
+export interface UpdateState {
+  /** Currently installed version string. */
+  installed_version: string | null;
+  /** Latest available version string. */
+  latest_version: string | null;
+  /** Update title/name. */
+  title?: string;
+  /** Release summary/changelog. */
+  release_summary?: string;
+  /** URL to full release notes. */
+  release_url?: string;
+  /** URL to entity picture/icon. */
+  entity_picture?: string;
+}
+
+/** Entity definition for an update availability indicator entity. */
+export interface UpdateDefinition extends BaseEntity<UpdateState, UpdateConfig> {
+  type: 'update';
+  /**
+   * Called when HA requests installation of the update.
+   */
+  onInstall?(this: EntityContext<UpdateState>): void | Promise<void>;
+}
+
+// ---- Image ----
+
+/** MQTT discovery configuration for image entities. */
+export interface ImageConfig {
+  /** Content type of the image (default: `'image/jpeg'`). */
+  content_type?: string;
+}
+
+/** Entity definition for a static image entity. State is the image URL. */
+export interface ImageDefinition extends BaseEntity<string, ImageConfig> {
+  type: 'image';
+}
+
 /** Union of all supported entity definition types. */
 export type EntityDefinition =
   | SensorDefinition
@@ -772,7 +1355,23 @@ export type EntityDefinition =
   | SwitchDefinition
   | LightDefinition
   | CoverDefinition
-  | ClimateDefinition;
+  | ClimateDefinition
+  | FanDefinition
+  | LockDefinition
+  | NumberDefinition
+  | SelectDefinition
+  | TextDefinition
+  | ButtonDefinition
+  | SirenDefinition
+  | HumidifierDefinition
+  | ValveDefinition
+  | WaterHeaterDefinition
+  | VacuumDefinition
+  | LawnMowerDefinition
+  | AlarmControlPanelDefinition
+  | NotifyDefinition
+  | UpdateDefinition
+  | ImageDefinition;
 
 /**
  * A function that returns an array of entity definitions.
@@ -863,8 +1462,22 @@ export type EntityHandleFor<T extends EntityDefinition> =
   T extends LightDefinition ? DeviceCommandEntityHandle<LightState, LightCommand> :
   T extends CoverDefinition ? DeviceCommandEntityHandle<CoverState, CoverCommand> :
   T extends ClimateDefinition ? DeviceCommandEntityHandle<ClimateState, ClimateCommand> :
+  T extends FanDefinition ? DeviceCommandEntityHandle<FanState, FanCommand> :
+  T extends LockDefinition ? DeviceCommandEntityHandle<LockState, LockCommand> :
+  T extends NumberDefinition ? DeviceCommandEntityHandle<number, number> :
+  T extends SelectDefinition ? DeviceCommandEntityHandle<string, string> :
+  T extends TextDefinition ? DeviceCommandEntityHandle<string, string> :
+  T extends SirenDefinition ? DeviceCommandEntityHandle<'on' | 'off', SirenCommand> :
+  T extends HumidifierDefinition ? DeviceCommandEntityHandle<HumidifierState, HumidifierCommand> :
+  T extends ValveDefinition ? DeviceCommandEntityHandle<ValveState, ValveCommand> :
+  T extends WaterHeaterDefinition ? DeviceCommandEntityHandle<WaterHeaterState, WaterHeaterCommand> :
+  T extends VacuumDefinition ? DeviceCommandEntityHandle<VacuumState, VacuumCommand> :
+  T extends LawnMowerDefinition ? DeviceCommandEntityHandle<LawnMowerActivity, LawnMowerCommand> :
+  T extends AlarmControlPanelDefinition ? DeviceCommandEntityHandle<AlarmControlPanelState, AlarmControlPanelCommand> :
   T extends SensorDefinition ? DeviceEntityHandle<string | number> :
   T extends BinarySensorDefinition ? DeviceEntityHandle<'on' | 'off'> :
+  T extends UpdateDefinition ? DeviceEntityHandle<UpdateState> :
+  T extends ImageDefinition ? DeviceEntityHandle<string> :
   DeviceEntityHandle<unknown>;
 
 /**

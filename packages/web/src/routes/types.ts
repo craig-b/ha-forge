@@ -168,6 +168,108 @@ declare function cover(options: CoverOptions): CoverDefinition;
  */
 declare function climate(options: ClimateOptions): ClimateDefinition;
 /**
+ * Define a read-only binary (on/off) sensor entity.
+ * @param options - Binary sensor configuration including id, name, device_class, and lifecycle hooks.
+ * @returns A binary sensor entity definition to export from your script.
+ */
+declare function binarySensor(options: BinarySensorOptions): BinarySensorDefinition;
+/**
+ * Define a controllable fan entity with optional speed, oscillation, and direction support.
+ * @param options - Fan configuration including id, name, and onCommand handler.
+ * @returns A fan entity definition to export from your script.
+ */
+declare function fan(options: FanOptions): FanDefinition;
+/**
+ * Define a controllable lock entity.
+ * @param options - Lock configuration including id, name, and onCommand handler.
+ * @returns A lock entity definition to export from your script.
+ */
+declare function lock(options: LockOptions): LockDefinition;
+/**
+ * Define a numeric input entity with min/max bounds.
+ * @param options - Number configuration including id, name, and onCommand handler.
+ * @returns A number entity definition to export from your script.
+ */
+declare function number(options: NumberOptions): NumberDefinition;
+/**
+ * Define a dropdown selection entity.
+ * @param options - Select configuration including id, name, options list, and onCommand handler.
+ * @returns A select entity definition to export from your script.
+ */
+declare function select(options: SelectOptions): SelectDefinition;
+/**
+ * Define a text input entity.
+ * @param options - Text configuration including id, name, and onCommand handler.
+ * @returns A text entity definition to export from your script.
+ */
+declare function text(options: TextOptions): TextDefinition;
+/**
+ * Define a momentary button entity (command only, no state).
+ * @param options - Button configuration including id, name, and onPress handler.
+ * @returns A button entity definition to export from your script.
+ */
+declare function button(options: ButtonOptions): ButtonDefinition;
+/**
+ * Define a siren/alarm entity.
+ * @param options - Siren configuration including id, name, and onCommand handler.
+ * @returns A siren entity definition to export from your script.
+ */
+declare function siren(options: SirenOptions): SirenDefinition;
+/**
+ * Define a humidifier/dehumidifier entity.
+ * @param options - Humidifier configuration including id, name, and onCommand handler.
+ * @returns A humidifier entity definition to export from your script.
+ */
+declare function humidifier(options: HumidifierOptions): HumidifierDefinition;
+/**
+ * Define a controllable valve entity (water valve, gas valve, etc.).
+ * @param options - Valve configuration including id, name, and onCommand handler.
+ * @returns A valve entity definition to export from your script.
+ */
+declare function valve(options: ValveOptions): ValveDefinition;
+/**
+ * Define a water heater entity with temperature and mode control.
+ * @param options - Water heater configuration including id, name, modes, and onCommand handler.
+ * @returns A water heater entity definition to export from your script.
+ */
+declare function waterHeater(options: WaterHeaterOptions): WaterHeaterDefinition;
+/**
+ * Define a robot vacuum entity.
+ * @param options - Vacuum configuration including id, name, and onCommand handler.
+ * @returns A vacuum entity definition to export from your script.
+ */
+declare function vacuum(options: VacuumOptions): VacuumDefinition;
+/**
+ * Define a robotic lawn mower entity.
+ * @param options - Lawn mower configuration including id, name, and onCommand handler.
+ * @returns A lawn mower entity definition to export from your script.
+ */
+declare function lawnMower(options: LawnMowerOptions): LawnMowerDefinition;
+/**
+ * Define a security alarm control panel entity.
+ * @param options - Alarm panel configuration including id, name, and onCommand handler.
+ * @returns An alarm control panel entity definition to export from your script.
+ */
+declare function alarmControlPanel(options: AlarmControlPanelOptions): AlarmControlPanelDefinition;
+/**
+ * Define a notification target entity (write-only).
+ * @param options - Notify configuration including id, name, and onNotify handler.
+ * @returns A notify entity definition to export from your script.
+ */
+declare function notify(options: NotifyOptions): NotifyDefinition;
+/**
+ * Define an update availability indicator entity.
+ * @param options - Update configuration including id, name, and optional onInstall handler.
+ * @returns An update entity definition to export from your script.
+ */
+declare function update(options: UpdateOptions): UpdateDefinition;
+/**
+ * Define a static image entity. State is the image URL.
+ * @param options - Image configuration including id, name, and lifecycle hooks.
+ * @returns An image entity definition to export from your script.
+ */
+declare function image(options: ImageOptions): ImageDefinition;
+/**
  * Create an entity factory for dynamic entity generation at runtime.
  * The factory function is called during deploy to produce entity definitions.
  * @param factory - A function that returns an array of entity definitions (sync or async).

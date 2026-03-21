@@ -7,6 +7,22 @@ import type {
   LightDefinition,
   CoverDefinition,
   ClimateDefinition,
+  FanDefinition,
+  LockDefinition,
+  NumberDefinition,
+  SelectDefinition,
+  TextDefinition,
+  ButtonDefinition,
+  SirenDefinition,
+  HumidifierDefinition,
+  ValveDefinition,
+  WaterHeaterDefinition,
+  VacuumDefinition,
+  LawnMowerDefinition,
+  AlarmControlPanelDefinition,
+  NotifyDefinition,
+  UpdateDefinition,
+  ImageDefinition,
 } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { Transport } from './transport.js';
@@ -120,7 +136,7 @@ export class MqttTransport implements Transport {
     const id = entity.definition.id;
 
     // Subscribe to command topics for bidirectional entities
-    if ('onCommand' in entity.definition) {
+    if ('onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition) {
       this.client?.subscribe(`ha-forge/${id}/set`);
 
       // Cover needs additional position/tilt command topics
@@ -151,6 +167,61 @@ export class MqttTransport implements Transport {
           this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
         }
       }
+
+      // Fan needs separate command topics per feature
+      if (entity.definition.type === 'fan') {
+        this.client?.subscribe(`ha-forge/${id}/percentage/set`);
+        this.client?.subscribe(`ha-forge/${id}/oscillation/set`);
+        this.client?.subscribe(`ha-forge/${id}/direction/set`);
+        const fanConfig = (entity.definition as FanDefinition).config;
+        if (fanConfig?.preset_modes) {
+          this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
+        }
+      }
+
+      // Humidifier needs separate command topics
+      if (entity.definition.type === 'humidifier') {
+        this.client?.subscribe(`ha-forge/${id}/humidity/set`);
+        const humConfig = (entity.definition as HumidifierDefinition).config;
+        if (humConfig?.modes) {
+          this.client?.subscribe(`ha-forge/${id}/mode/set`);
+        }
+      }
+
+      // Water heater uses separate topics per feature
+      if (entity.definition.type === 'water_heater') {
+        this.client?.subscribe(`ha-forge/${id}/mode/set`);
+        this.client?.subscribe(`ha-forge/${id}/temperature/set`);
+      }
+
+      // Valve position control
+      if (entity.definition.type === 'valve') {
+        const valveConfig = (entity.definition as ValveDefinition).config;
+        if (valveConfig?.reports_position) {
+          this.client?.subscribe(`ha-forge/${id}/position/set`);
+        }
+      }
+
+      // Vacuum fan speed
+      if (entity.definition.type === 'vacuum') {
+        this.client?.subscribe(`ha-forge/${id}/command`);
+        const vacConfig = (entity.definition as VacuumDefinition).config;
+        if (vacConfig?.fan_speed_list) {
+          this.client?.subscribe(`ha-forge/${id}/fan_speed/set`);
+        }
+      }
+
+      // Lawn mower uses separate command topics
+      if (entity.definition.type === 'lawn_mower') {
+        this.client?.subscribe(`ha-forge/${id}/start_mowing`);
+        this.client?.subscribe(`ha-forge/${id}/pause`);
+        this.client?.subscribe(`ha-forge/${id}/dock`);
+      }
+
+      // Update install command
+      if (entity.definition.type === 'update' && 'onInstall' in entity.definition) {
+        this.client?.subscribe(`ha-forge/${id}/install`);
+      }
     }
 
     // Build and publish device discovery
@@ -180,36 +251,60 @@ export class MqttTransport implements Transport {
 
     await this.publish(topic, payload, { retain: false });
 
-    // Climate also publishes to individual state topics for HA compatibility
-    if (entity?.definition.type === 'climate' && typeof state === 'object' && state !== null) {
+    if (entity && typeof state === 'object' && state !== null) {
       const cs = state as Record<string, unknown>;
-      if (cs.mode !== undefined) {
-        await this.publish(`ha-forge/${entityId}/mode/state`, String(cs.mode), { retain: false });
+      const type = entity.definition.type;
+
+      // Climate publishes to individual state topics for HA compatibility
+      if (type === 'climate') {
+        if (cs.mode !== undefined) await this.publish(`ha-forge/${entityId}/mode/state`, String(cs.mode), { retain: false });
+        if (cs.temperature !== undefined) await this.publish(`ha-forge/${entityId}/temperature/state`, String(cs.temperature), { retain: false });
+        if (cs.target_temp_high !== undefined) await this.publish(`ha-forge/${entityId}/temperature_high/state`, String(cs.target_temp_high), { retain: false });
+        if (cs.target_temp_low !== undefined) await this.publish(`ha-forge/${entityId}/temperature_low/state`, String(cs.target_temp_low), { retain: false });
+        if (cs.current_temperature !== undefined) await this.publish(`ha-forge/${entityId}/current_temperature`, String(cs.current_temperature), { retain: false });
+        if (cs.fan_mode !== undefined) await this.publish(`ha-forge/${entityId}/fan_mode/state`, String(cs.fan_mode), { retain: false });
+        if (cs.swing_mode !== undefined) await this.publish(`ha-forge/${entityId}/swing_mode/state`, String(cs.swing_mode), { retain: false });
+        if (cs.preset_mode !== undefined) await this.publish(`ha-forge/${entityId}/preset_mode/state`, String(cs.preset_mode), { retain: false });
+        if (cs.action !== undefined) await this.publish(`ha-forge/${entityId}/action`, String(cs.action), { retain: false });
       }
-      if (cs.temperature !== undefined) {
-        await this.publish(`ha-forge/${entityId}/temperature/state`, String(cs.temperature), { retain: false });
+
+      // Fan publishes to individual state topics
+      if (type === 'fan') {
+        if (cs.percentage !== undefined) await this.publish(`ha-forge/${entityId}/percentage/state`, String(cs.percentage), { retain: false });
+        if (cs.oscillation !== undefined) await this.publish(`ha-forge/${entityId}/oscillation/state`, cs.oscillation === 'on' ? 'oscillate_on' : 'oscillate_off', { retain: false });
+        if (cs.direction !== undefined) await this.publish(`ha-forge/${entityId}/direction/state`, String(cs.direction), { retain: false });
+        if (cs.preset_mode !== undefined) await this.publish(`ha-forge/${entityId}/preset_mode/state`, String(cs.preset_mode), { retain: false });
       }
-      if (cs.target_temp_high !== undefined) {
-        await this.publish(`ha-forge/${entityId}/temperature_high/state`, String(cs.target_temp_high), { retain: false });
+
+      // Humidifier publishes to individual state topics
+      if (type === 'humidifier') {
+        if (cs.humidity !== undefined) await this.publish(`ha-forge/${entityId}/humidity/state`, String(cs.humidity), { retain: false });
+        if (cs.current_humidity !== undefined) await this.publish(`ha-forge/${entityId}/current_humidity`, String(cs.current_humidity), { retain: false });
+        if (cs.mode !== undefined) await this.publish(`ha-forge/${entityId}/mode/state`, String(cs.mode), { retain: false });
+        if (cs.action !== undefined) await this.publish(`ha-forge/${entityId}/action`, String(cs.action), { retain: false });
       }
-      if (cs.target_temp_low !== undefined) {
-        await this.publish(`ha-forge/${entityId}/temperature_low/state`, String(cs.target_temp_low), { retain: false });
+
+      // Water heater publishes to individual state topics
+      if (type === 'water_heater') {
+        if (cs.mode !== undefined) await this.publish(`ha-forge/${entityId}/mode/state`, String(cs.mode), { retain: false });
+        if (cs.temperature !== undefined) await this.publish(`ha-forge/${entityId}/temperature/state`, String(cs.temperature), { retain: false });
+        if (cs.current_temperature !== undefined) await this.publish(`ha-forge/${entityId}/current_temperature`, String(cs.current_temperature), { retain: false });
       }
-      if (cs.current_temperature !== undefined) {
-        await this.publish(`ha-forge/${entityId}/current_temperature`, String(cs.current_temperature), { retain: false });
+
+      // Update publishes latest_version separately
+      if (type === 'update') {
+        if (cs.latest_version !== undefined) await this.publish(`ha-forge/${entityId}/latest_version`, String(cs.latest_version ?? ''), { retain: false });
       }
-      if (cs.fan_mode !== undefined) {
-        await this.publish(`ha-forge/${entityId}/fan_mode/state`, String(cs.fan_mode), { retain: false });
-      }
-      if (cs.swing_mode !== undefined) {
-        await this.publish(`ha-forge/${entityId}/swing_mode/state`, String(cs.swing_mode), { retain: false });
-      }
-      if (cs.preset_mode !== undefined) {
-        await this.publish(`ha-forge/${entityId}/preset_mode/state`, String(cs.preset_mode), { retain: false });
-      }
-      if (cs.action !== undefined) {
-        await this.publish(`ha-forge/${entityId}/action`, String(cs.action), { retain: false });
-      }
+    }
+
+    // Lawn mower publishes activity to its own topic
+    if (entity?.definition.type === 'lawn_mower' && typeof state === 'string') {
+      await this.publish(`ha-forge/${entityId}/activity`, state, { retain: false });
+    }
+
+    // Image publishes URL to its own topic
+    if (entity?.definition.type === 'image' && typeof state === 'string') {
+      await this.publish(`ha-forge/${entityId}/url`, state, { retain: false });
     }
   }
 
@@ -224,7 +319,7 @@ export class MqttTransport implements Transport {
     const id = entity.definition.id;
 
     // Unsubscribe from all command topics
-    if ('onCommand' in entity.definition) {
+    if ('onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition) {
       this.client?.unsubscribe(`ha-forge/${id}/set`);
 
       if (entity.definition.type === 'cover') {
@@ -242,6 +337,46 @@ export class MqttTransport implements Transport {
         if (climateConfig?.fan_modes) this.client?.unsubscribe(`ha-forge/${id}/fan_mode/set`);
         if (climateConfig?.swing_modes) this.client?.unsubscribe(`ha-forge/${id}/swing_mode/set`);
         if (climateConfig?.preset_modes) this.client?.unsubscribe(`ha-forge/${id}/preset_mode/set`);
+      }
+
+      if (entity.definition.type === 'fan') {
+        this.client?.unsubscribe(`ha-forge/${id}/percentage/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/oscillation/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/direction/set`);
+        const fanConfig = (entity.definition as FanDefinition).config;
+        if (fanConfig?.preset_modes) this.client?.unsubscribe(`ha-forge/${id}/preset_mode/set`);
+      }
+
+      if (entity.definition.type === 'humidifier') {
+        this.client?.unsubscribe(`ha-forge/${id}/humidity/set`);
+        const humConfig = (entity.definition as HumidifierDefinition).config;
+        if (humConfig?.modes) this.client?.unsubscribe(`ha-forge/${id}/mode/set`);
+      }
+
+      if (entity.definition.type === 'water_heater') {
+        this.client?.unsubscribe(`ha-forge/${id}/mode/set`);
+        this.client?.unsubscribe(`ha-forge/${id}/temperature/set`);
+      }
+
+      if (entity.definition.type === 'valve') {
+        const valveConfig = (entity.definition as ValveDefinition).config;
+        if (valveConfig?.reports_position) this.client?.unsubscribe(`ha-forge/${id}/position/set`);
+      }
+
+      if (entity.definition.type === 'vacuum') {
+        this.client?.unsubscribe(`ha-forge/${id}/command`);
+        const vacConfig = (entity.definition as VacuumDefinition).config;
+        if (vacConfig?.fan_speed_list) this.client?.unsubscribe(`ha-forge/${id}/fan_speed/set`);
+      }
+
+      if (entity.definition.type === 'lawn_mower') {
+        this.client?.unsubscribe(`ha-forge/${id}/start_mowing`);
+        this.client?.unsubscribe(`ha-forge/${id}/pause`);
+        this.client?.unsubscribe(`ha-forge/${id}/dock`);
+      }
+
+      if (entity.definition.type === 'update' && 'onInstall' in entity.definition) {
+        this.client?.unsubscribe(`ha-forge/${id}/install`);
       }
     }
 
@@ -445,6 +580,54 @@ export class MqttTransport implements Transport {
       case 'climate':
         this.applyClimateConfig(base, definition as ClimateDefinition);
         break;
+      case 'fan':
+        this.applyFanConfig(base, definition as FanDefinition);
+        break;
+      case 'lock':
+        this.applyLockConfig(base, definition as LockDefinition);
+        break;
+      case 'number':
+        this.applyNumberConfig(base, definition as NumberDefinition);
+        break;
+      case 'select':
+        this.applySelectConfig(base, definition as SelectDefinition);
+        break;
+      case 'text':
+        this.applyTextConfig(base, definition as TextDefinition);
+        break;
+      case 'button':
+        this.applyButtonConfig(base, definition as ButtonDefinition);
+        break;
+      case 'siren':
+        this.applySirenConfig(base, definition as SirenDefinition);
+        break;
+      case 'humidifier':
+        this.applyHumidifierConfig(base, definition as HumidifierDefinition);
+        break;
+      case 'valve':
+        this.applyValveConfig(base, definition as ValveDefinition);
+        break;
+      case 'water_heater':
+        this.applyWaterHeaterConfig(base, definition as WaterHeaterDefinition);
+        break;
+      case 'vacuum':
+        this.applyVacuumConfig(base, definition as VacuumDefinition);
+        break;
+      case 'lawn_mower':
+        this.applyLawnMowerConfig(base, definition as LawnMowerDefinition);
+        break;
+      case 'alarm_control_panel':
+        this.applyAlarmControlPanelConfig(base, definition as AlarmControlPanelDefinition);
+        break;
+      case 'notify':
+        this.applyNotifyConfig(base, definition as NotifyDefinition);
+        break;
+      case 'update':
+        this.applyUpdateConfig(base, definition as UpdateDefinition);
+        break;
+      case 'image':
+        this.applyImageConfig(base, definition as ImageDefinition);
+        break;
     }
 
     return base;
@@ -584,6 +767,222 @@ export class MqttTransport implements Transport {
     base.act_t = `ha-forge/${id}/action`;
   }
 
+  private applyFanConfig(base: Record<string, unknown>, def: FanDefinition): void {
+    const config = def.config;
+    const id = def.id;
+
+    // Fan uses JSON schema for clean command/state payloads
+    base.schema = 'json';
+
+    // Percentage support via separate topics
+    base.pct_cmd_t = `ha-forge/${id}/percentage/set`;
+    base.pct_stat_t = `ha-forge/${id}/percentage/state`;
+
+    // Oscillation
+    base.osc_cmd_t = `ha-forge/${id}/oscillation/set`;
+    base.osc_stat_t = `ha-forge/${id}/oscillation/state`;
+
+    // Direction
+    base.dir_cmd_t = `ha-forge/${id}/direction/set`;
+    base.dir_stat_t = `ha-forge/${id}/direction/state`;
+
+    if (config?.preset_modes && config.preset_modes.length > 0) {
+      base.pr_mode_cmd_t = `ha-forge/${id}/preset_mode/set`;
+      base.pr_mode_stat_t = `ha-forge/${id}/preset_mode/state`;
+      base.pr_modes = config.preset_modes;
+    }
+
+    if (config?.speed_range_min != null) base.spd_rng_min = config.speed_range_min;
+    if (config?.speed_range_max != null) base.spd_rng_max = config.speed_range_max;
+  }
+
+  private applyLockConfig(base: Record<string, unknown>, def: LockDefinition): void {
+    const config = def.config;
+    base.stat_locked = 'locked';
+    base.stat_locking = 'locking';
+    base.stat_unlocked = 'unlocked';
+    base.stat_unlocking = 'unlocking';
+    base.stat_jammed = 'jammed';
+    base.pl_lock = 'LOCK';
+    base.pl_unlk = 'UNLOCK';
+    base.pl_open = 'OPEN';
+    if (config?.code_format) base.code_format = config.code_format;
+  }
+
+  private applyNumberConfig(base: Record<string, unknown>, def: NumberDefinition): void {
+    const config = def.config;
+    if (!config) return;
+    if (config.device_class) base.dev_cla = config.device_class;
+    if (config.min != null) base.min = config.min;
+    if (config.max != null) base.max = config.max;
+    if (config.step != null) base.step = config.step;
+    if (config.unit_of_measurement) base.unit_of_meas = config.unit_of_measurement;
+    if (config.mode) base.mode = config.mode;
+  }
+
+  private applySelectConfig(base: Record<string, unknown>, def: SelectDefinition): void {
+    const config = def.config;
+    if (config?.options) base.options = config.options;
+  }
+
+  private applyTextConfig(base: Record<string, unknown>, def: TextDefinition): void {
+    const config = def.config;
+    if (!config) return;
+    if (config.min != null) base.min = config.min;
+    if (config.max != null) base.max = config.max;
+    if (config.pattern) base.pattern = config.pattern;
+    if (config.mode) base.mode = config.mode;
+  }
+
+  private applyButtonConfig(base: Record<string, unknown>, def: ButtonDefinition): void {
+    const config = def.config;
+    // Button has no state topic — remove it
+    delete base.stat_t;
+    base.pl_prs = 'PRESS';
+    if (config?.device_class) base.dev_cla = config.device_class;
+  }
+
+  private applySirenConfig(base: Record<string, unknown>, def: SirenDefinition): void {
+    const config = def.config;
+    // Siren uses JSON commands when tones/volume/duration are supported
+    if (config?.available_tones && config.available_tones.length > 0) {
+      base.available_tones = config.available_tones;
+    }
+    if (config?.support_duration) base.support_duration = true;
+    if (config?.support_volume_set) base.support_volume_set = true;
+  }
+
+  private applyHumidifierConfig(base: Record<string, unknown>, def: HumidifierDefinition): void {
+    const config = def.config;
+    const id = def.id;
+
+    if (config?.device_class) base.dev_cla = config.device_class;
+
+    // Humidity target via separate topics
+    base.tgt_hum_cmd_t = `ha-forge/${id}/humidity/set`;
+    base.tgt_hum_stat_t = `ha-forge/${id}/humidity/state`;
+    base.curr_hum_t = `ha-forge/${id}/current_humidity`;
+    base.act_t = `ha-forge/${id}/action`;
+
+    if (config?.min_humidity != null) base.min_hum = config.min_humidity;
+    if (config?.max_humidity != null) base.max_hum = config.max_humidity;
+
+    if (config?.modes && config.modes.length > 0) {
+      base.mode_cmd_t = `ha-forge/${id}/mode/set`;
+      base.mode_stat_t = `ha-forge/${id}/mode/state`;
+      base.modes = config.modes;
+    }
+  }
+
+  private applyValveConfig(base: Record<string, unknown>, def: ValveDefinition): void {
+    const config = def.config;
+    const id = def.id;
+
+    if (config?.device_class) base.dev_cla = config.device_class;
+
+    base.pl_open = 'OPEN';
+    base.pl_cls = 'CLOSE';
+    base.pl_stop = 'STOP';
+    base.stat_open = 'open';
+    base.stat_opening = 'opening';
+    base.stat_clsd = 'closed';
+    base.stat_closing = 'closing';
+
+    if (config?.reports_position) {
+      base.pos_t = `ha-forge/${id}/position`;
+      base.set_pos_t = `ha-forge/${id}/position/set`;
+      base.rpts_pos = true;
+    }
+  }
+
+  private applyWaterHeaterConfig(base: Record<string, unknown>, def: WaterHeaterDefinition): void {
+    const config = def.config!;
+    const id = def.id;
+
+    // Water heater uses separate topics per feature (like climate)
+    delete base.cmd_t;
+
+    base.mode_cmd_t = `ha-forge/${id}/mode/set`;
+    base.mode_stat_t = `ha-forge/${id}/mode/state`;
+    base.modes = config.modes;
+
+    base.temp_cmd_t = `ha-forge/${id}/temperature/set`;
+    base.temp_stat_t = `ha-forge/${id}/temperature/state`;
+    base.curr_temp_t = `ha-forge/${id}/current_temperature`;
+
+    if (config.min_temp != null) base.min_temp = config.min_temp;
+    if (config.max_temp != null) base.max_temp = config.max_temp;
+    if (config.precision != null) base.precision = config.precision;
+    if (config.temperature_unit) base.temp_unit = config.temperature_unit;
+  }
+
+  private applyVacuumConfig(base: Record<string, unknown>, def: VacuumDefinition): void {
+    const config = def.config;
+    const id = def.id;
+
+    // Vacuum uses JSON state topic
+    base.schema = 'state';
+    const supFeat = ['start', 'pause', 'stop', 'return_home', 'clean_spot', 'locate'];
+
+    if (config?.fan_speed_list && config.fan_speed_list.length > 0) {
+      base.fanspd_lst = config.fan_speed_list;
+      base.set_fan_spd_t = `ha-forge/${id}/fan_speed/set`;
+      supFeat.push('fan_speed');
+    }
+
+    base.sup_feat = supFeat;
+
+    base.send_cmd_t = `ha-forge/${id}/command`;
+  }
+
+  private applyLawnMowerConfig(base: Record<string, unknown>, def: LawnMowerDefinition): void {
+    const id = def.id;
+
+    // Lawn mower uses separate command topics and an activity state topic
+    delete base.cmd_t;
+    delete base.stat_t;
+
+    base.act_stat_t = `ha-forge/${id}/activity`;
+    base.start_mowing_cmd_t = `ha-forge/${id}/start_mowing`;
+    base.pause_cmd_t = `ha-forge/${id}/pause`;
+    base.dock_cmd_t = `ha-forge/${id}/dock`;
+  }
+
+  private applyAlarmControlPanelConfig(base: Record<string, unknown>, def: AlarmControlPanelDefinition): void {
+    const config = def.config;
+    if (config?.code_arm_required != null) base.cod_arm_req = config.code_arm_required;
+    if (config?.code_disarm_required != null) base.cod_dis_req = config.code_disarm_required;
+    if (config?.code_trigger_required != null) base.cod_trig_req = config.code_trigger_required;
+  }
+
+  private applyNotifyConfig(base: Record<string, unknown>, _def: NotifyDefinition): void {
+    // Notify has no state topic — write-only
+    delete base.stat_t;
+  }
+
+  private applyUpdateConfig(base: Record<string, unknown>, def: UpdateDefinition): void {
+    const config = def.config;
+    const id = def.id;
+
+    if (config?.device_class) base.dev_cla = config.device_class;
+
+    // Update uses JSON state and a separate latest version topic
+    base.l_ver_t = `ha-forge/${id}/latest_version`;
+
+    // Install command topic if onInstall is defined
+    if (def.onInstall) {
+      base.cmd_t = `ha-forge/${id}/install`;
+    }
+  }
+
+  private applyImageConfig(base: Record<string, unknown>, def: ImageDefinition): void {
+    const config = def.config;
+    // Image uses url_topic instead of state_topic
+    delete base.stat_t;
+    base.url_t = `ha-forge/${def.id}/url`;
+    if (config?.content_type) base.cont_type = config.content_type;
+  }
+
   private handleMessage(topic: string, payload: string): void {
     // Handle HA restart
     if (topic === HA_STATUS_TOPIC && payload === 'online') {
@@ -606,10 +1005,10 @@ export class MqttTransport implements Transport {
       return;
     }
 
-    // Handle cover position/tilt: ha-forge/<id>/position/set or ha-forge/<id>/tilt/set
-    const coverPosMatch = topic.match(/^ha-forge\/([^/]+)\/(position|tilt)\/set$/);
-    if (coverPosMatch) {
-      const [, entityId, subCommand] = coverPosMatch;
+    // Handle cover/valve position/tilt: ha-forge/<id>/position/set or ha-forge/<id>/tilt/set
+    const posMatch = topic.match(/^ha-forge\/([^/]+)\/(position|tilt)\/set$/);
+    if (posMatch) {
+      const [, entityId, subCommand] = posMatch;
       const handler = this.commandHandlers.get(entityId);
       if (handler) {
         const value = Number(payload);
@@ -622,14 +1021,21 @@ export class MqttTransport implements Transport {
       return;
     }
 
-    // Handle climate sub-topics: ha-forge/<id>/<feature>/set
-    const climateMatch = topic.match(
-      /^ha-forge\/([^/]+)\/(mode|temperature|temperature_high|temperature_low|fan_mode|swing_mode|preset_mode)\/set$/,
+    // Handle sub-topic commands: ha-forge/<id>/<feature>/set
+    // Covers climate, fan, humidifier, water heater features
+    const subTopicMatch = topic.match(
+      /^ha-forge\/([^/]+)\/(mode|temperature|temperature_high|temperature_low|fan_mode|swing_mode|preset_mode|percentage|oscillation|direction|humidity|fan_speed)\/set$/,
     );
-    if (climateMatch) {
-      const [, entityId, feature] = climateMatch;
+    if (subTopicMatch) {
+      const [, entityId, feature] = subTopicMatch;
       const handler = this.commandHandlers.get(entityId);
-      if (handler) {
+      if (!handler) return;
+
+      const entity = this.registeredEntities.get(entityId);
+      const type = entity?.definition.type;
+
+      // Climate commands
+      if (type === 'climate') {
         const command: Record<string, unknown> = {};
         if (feature === 'temperature' || feature === 'temperature_high' || feature === 'temperature_low') {
           command[feature === 'temperature' ? 'temperature' : feature === 'temperature_high' ? 'target_temp_high' : 'target_temp_low'] = Number(payload);
@@ -639,6 +1045,87 @@ export class MqttTransport implements Transport {
           command[feature] = payload;
         }
         handler(command);
+        return;
+      }
+
+      // Fan commands
+      if (type === 'fan') {
+        const command: Record<string, unknown> = {};
+        if (feature === 'percentage') {
+          command.percentage = Number(payload);
+        } else if (feature === 'oscillation') {
+          command.oscillation = payload;
+        } else if (feature === 'direction') {
+          command.direction = payload;
+        } else if (feature === 'preset_mode') {
+          command.preset_mode = payload;
+        }
+        handler(command);
+        return;
+      }
+
+      // Humidifier commands
+      if (type === 'humidifier') {
+        const command: Record<string, unknown> = {};
+        if (feature === 'humidity') {
+          command.humidity = Number(payload);
+        } else if (feature === 'mode') {
+          command.mode = payload;
+        }
+        handler(command);
+        return;
+      }
+
+      // Water heater commands
+      if (type === 'water_heater') {
+        const command: Record<string, unknown> = {};
+        if (feature === 'mode') {
+          command.mode = payload;
+        } else if (feature === 'temperature') {
+          command.temperature = Number(payload);
+        }
+        handler(command);
+        return;
+      }
+
+      // Vacuum fan speed
+      if (type === 'vacuum' && feature === 'fan_speed') {
+        handler({ action: 'set_fan_speed', fan_speed: payload });
+        return;
+      }
+
+      return;
+    }
+
+    // Handle vacuum command topic: ha-forge/<id>/command
+    const vacuumMatch = topic.match(/^ha-forge\/([^/]+)\/command$/);
+    if (vacuumMatch) {
+      const entityId = vacuumMatch[1];
+      const handler = this.commandHandlers.get(entityId);
+      if (handler) {
+        handler({ action: payload });
+      }
+      return;
+    }
+
+    // Handle lawn mower commands: ha-forge/<id>/(start_mowing|pause|dock)
+    const lawnMowerMatch = topic.match(/^ha-forge\/([^/]+)\/(start_mowing|pause|dock)$/);
+    if (lawnMowerMatch) {
+      const [, entityId, action] = lawnMowerMatch;
+      const handler = this.commandHandlers.get(entityId);
+      if (handler) {
+        handler(action);
+      }
+      return;
+    }
+
+    // Handle update install: ha-forge/<id>/install
+    const installMatch = topic.match(/^ha-forge\/([^/]+)\/install$/);
+    if (installMatch) {
+      const entityId = installMatch[1];
+      const handler = this.commandHandlers.get(entityId);
+      if (handler) {
+        handler('install');
       }
       return;
     }

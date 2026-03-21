@@ -224,6 +224,57 @@ export class EntityLifecycleManager {
       });
     }
 
+    // Set up press handler for button entities
+    if ('onPress' in entity.definition && typeof entity.definition.onPress === 'function') {
+      const def = entity.definition as EntityDefinition & {
+        onPress: (this: EntityContext) => void | Promise<void>;
+      };
+      const context = this.createContext(instance);
+      this.transport.onCommand(entity.definition.id, () => {
+        try {
+          def.onPress.call(context);
+        } catch (err) {
+          this.logger.error(`Press handler error for ${entity.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    }
+
+    // Set up notify handler for notify entities
+    if ('onNotify' in entity.definition && typeof entity.definition.onNotify === 'function') {
+      const def = entity.definition as EntityDefinition & {
+        onNotify: (this: EntityContext, message: string) => void | Promise<void>;
+      };
+      const context = this.createContext(instance);
+      this.transport.onCommand(entity.definition.id, (command) => {
+        try {
+          def.onNotify.call(context, String(command));
+        } catch (err) {
+          this.logger.error(`Notify handler error for ${entity.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    }
+
+    // Set up install handler for update entities
+    if ('onInstall' in entity.definition && typeof entity.definition.onInstall === 'function') {
+      const def = entity.definition as EntityDefinition & {
+        onInstall: (this: EntityContext) => void | Promise<void>;
+      };
+      const context = this.createContext(instance);
+      this.transport.onCommand(entity.definition.id, () => {
+        try {
+          def.onInstall.call(context);
+        } catch (err) {
+          this.logger.error(`Install handler error for ${entity.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      });
+    }
+
     // Call init()
     if (entity.definition.init) {
       const context = this.createContext(instance);
@@ -296,7 +347,7 @@ export class EntityLifecycleManager {
       };
 
       // Add onCommand for bidirectional entity types
-      if (entityDef.type === 'switch' || entityDef.type === 'light' || entityDef.type === 'cover' || entityDef.type === 'climate') {
+      if ('onCommand' in entityDef) {
         handle.onCommand = (handler: (command: unknown) => void | Promise<void>) => {
           commandHandlers.set(entityId, handler);
         };
