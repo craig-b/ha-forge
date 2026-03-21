@@ -651,8 +651,9 @@ export class EntityLifecycleManager {
           },
         };
 
-        // Add onCommand for bidirectional entity types
-        if ('onCommand' in memberDef) {
+        // Add onCommand for bidirectional entity types (onCommand, onPress, onNotify, onInstall)
+        const isBidirectional = 'onCommand' in memberDef || 'onPress' in memberDef || 'onNotify' in memberDef || 'onInstall' in memberDef;
+        if (isBidirectional) {
           handle.onCommand = (handler: (command: unknown) => void | Promise<void>) => {
             commandHandlers.set(entityId, handler);
           };
@@ -1253,11 +1254,14 @@ export class EntityLifecycleManager {
     }
   }
 
-  /** Get set of source files that have running entities/automations/tasks/modes/crons. */
+  /** Get set of source files that have running entities/devices/automations/tasks/modes/crons. */
   getActiveSourceFiles(): Set<string> {
     const files = new Set<string>();
     for (const instance of this.instances.values()) {
       files.add(instance.entity.sourceFile);
+    }
+    for (const instance of this.deviceInstances.values()) {
+      files.add(instance.device.sourceFile);
     }
     for (const instance of this.automationInstances.values()) {
       files.add(instance.automation.sourceFile);
@@ -1730,7 +1734,13 @@ export class EntityLifecycleManager {
   }
 
   getEntityState(entityId: string): unknown {
-    return this.instances.get(entityId)?.currentState;
+    const entity = this.instances.get(entityId);
+    if (entity) return entity.currentState;
+    const mode = this.modeInstances.get(entityId);
+    if (mode) return mode.currentState;
+    const cron = this.cronInstances.get(entityId);
+    if (cron) return cron.currentState;
+    return undefined;
   }
 
   getEntityIds(): string[] {
@@ -1793,6 +1803,11 @@ export class EntityLifecycleManager {
   }
 
   isInitialized(entityId: string): boolean {
-    return this.instances.get(entityId)?.initialized ?? false;
+    return this.instances.get(entityId)?.initialized
+      ?? this.deviceInstances.get(entityId)?.initialized
+      ?? this.automationInstances.get(entityId)?.initialized
+      ?? this.modeInstances.get(entityId)?.initialized
+      ?? this.cronInstances.get(entityId)?.initialized
+      ?? false;
   }
 }

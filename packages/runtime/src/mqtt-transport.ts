@@ -136,95 +136,7 @@ export class MqttTransport implements Transport {
     const id = entity.definition.id;
 
     // Subscribe to command topics for bidirectional entities
-    // Check both marker properties (onCommand/onPress) and type (button/select always need commands)
-    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
-    if (isBidirectional) {
-      this.client?.subscribe(`ha-forge/${id}/set`);
-
-      // Cover needs additional position/tilt command topics
-      if (entity.definition.type === 'cover') {
-        const coverConfig = (entity.definition as CoverDefinition).config;
-        if (coverConfig?.position) {
-          this.client?.subscribe(`ha-forge/${id}/position/set`);
-        }
-        if (coverConfig?.tilt) {
-          this.client?.subscribe(`ha-forge/${id}/tilt/set`);
-        }
-      }
-
-      // Climate needs separate command topics per feature
-      if (entity.definition.type === 'climate') {
-        this.client?.subscribe(`ha-forge/${id}/mode/set`);
-        this.client?.subscribe(`ha-forge/${id}/temperature/set`);
-        this.client?.subscribe(`ha-forge/${id}/temperature_high/set`);
-        this.client?.subscribe(`ha-forge/${id}/temperature_low/set`);
-        const climateConfig = (entity.definition as ClimateDefinition).config;
-        if (climateConfig?.fan_modes) {
-          this.client?.subscribe(`ha-forge/${id}/fan_mode/set`);
-        }
-        if (climateConfig?.swing_modes) {
-          this.client?.subscribe(`ha-forge/${id}/swing_mode/set`);
-        }
-        if (climateConfig?.preset_modes) {
-          this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
-        }
-      }
-
-      // Fan needs separate command topics per feature
-      if (entity.definition.type === 'fan') {
-        this.client?.subscribe(`ha-forge/${id}/percentage/set`);
-        this.client?.subscribe(`ha-forge/${id}/oscillation/set`);
-        this.client?.subscribe(`ha-forge/${id}/direction/set`);
-        const fanConfig = (entity.definition as FanDefinition).config;
-        if (fanConfig?.preset_modes) {
-          this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
-        }
-      }
-
-      // Humidifier needs separate command topics
-      if (entity.definition.type === 'humidifier') {
-        this.client?.subscribe(`ha-forge/${id}/humidity/set`);
-        const humConfig = (entity.definition as HumidifierDefinition).config;
-        if (humConfig?.modes) {
-          this.client?.subscribe(`ha-forge/${id}/mode/set`);
-        }
-      }
-
-      // Water heater uses separate topics per feature
-      if (entity.definition.type === 'water_heater') {
-        this.client?.subscribe(`ha-forge/${id}/mode/set`);
-        this.client?.subscribe(`ha-forge/${id}/temperature/set`);
-      }
-
-      // Valve position control
-      if (entity.definition.type === 'valve') {
-        const valveConfig = (entity.definition as ValveDefinition).config;
-        if (valveConfig?.reports_position) {
-          this.client?.subscribe(`ha-forge/${id}/position/set`);
-        }
-      }
-
-      // Vacuum fan speed
-      if (entity.definition.type === 'vacuum') {
-        this.client?.subscribe(`ha-forge/${id}/command`);
-        const vacConfig = (entity.definition as VacuumDefinition).config;
-        if (vacConfig?.fan_speed_list) {
-          this.client?.subscribe(`ha-forge/${id}/fan_speed/set`);
-        }
-      }
-
-      // Lawn mower uses separate command topics
-      if (entity.definition.type === 'lawn_mower') {
-        this.client?.subscribe(`ha-forge/${id}/start_mowing`);
-        this.client?.subscribe(`ha-forge/${id}/pause`);
-        this.client?.subscribe(`ha-forge/${id}/dock`);
-      }
-
-      // Update install command
-      if (entity.definition.type === 'update' && 'onInstall' in entity.definition) {
-        this.client?.subscribe(`ha-forge/${id}/install`);
-      }
-    }
+    this.subscribeCommandTopics(entity);
 
     // Build and publish device discovery
     await this.publishDeviceDiscovery(entity);
@@ -405,11 +317,7 @@ export class MqttTransport implements Transport {
 
     // Re-subscribe to command topics for all registered entities
     for (const [, entity] of this.registeredEntities) {
-      const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
-      if (isBidirectional) {
-        const id = entity.definition.id;
-        this.client?.subscribe(`ha-forge/${id}/set`);
-      }
+      this.subscribeCommandTopics(entity);
     }
   }
 
@@ -465,6 +373,102 @@ export class MqttTransport implements Transport {
   }
 
   // --- Internal methods ---
+
+  /** Subscribe to all command topics needed by this entity. */
+  private subscribeCommandTopics(entity: ResolvedEntity): void {
+    const { definition } = entity;
+    const id = definition.id;
+
+    // Check both marker properties (onCommand/onPress) and type (button/select always need commands)
+    const isBidirectional = 'onCommand' in definition || 'onPress' in definition || 'onNotify' in definition || 'onInstall' in definition || definition.type === 'button' || definition.type === 'select';
+    if (!isBidirectional) return;
+
+    this.client?.subscribe(`ha-forge/${id}/set`);
+
+    // Cover needs additional position/tilt command topics
+    if (definition.type === 'cover') {
+      const coverConfig = (definition as CoverDefinition).config;
+      if (coverConfig?.position) {
+        this.client?.subscribe(`ha-forge/${id}/position/set`);
+      }
+      if (coverConfig?.tilt) {
+        this.client?.subscribe(`ha-forge/${id}/tilt/set`);
+      }
+    }
+
+    // Climate needs separate command topics per feature
+    if (definition.type === 'climate') {
+      this.client?.subscribe(`ha-forge/${id}/mode/set`);
+      this.client?.subscribe(`ha-forge/${id}/temperature/set`);
+      this.client?.subscribe(`ha-forge/${id}/temperature_high/set`);
+      this.client?.subscribe(`ha-forge/${id}/temperature_low/set`);
+      const climateConfig = (definition as ClimateDefinition).config;
+      if (climateConfig?.fan_modes) {
+        this.client?.subscribe(`ha-forge/${id}/fan_mode/set`);
+      }
+      if (climateConfig?.swing_modes) {
+        this.client?.subscribe(`ha-forge/${id}/swing_mode/set`);
+      }
+      if (climateConfig?.preset_modes) {
+        this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
+      }
+    }
+
+    // Fan needs separate command topics per feature
+    if (definition.type === 'fan') {
+      this.client?.subscribe(`ha-forge/${id}/percentage/set`);
+      this.client?.subscribe(`ha-forge/${id}/oscillation/set`);
+      this.client?.subscribe(`ha-forge/${id}/direction/set`);
+      const fanConfig = (definition as FanDefinition).config;
+      if (fanConfig?.preset_modes) {
+        this.client?.subscribe(`ha-forge/${id}/preset_mode/set`);
+      }
+    }
+
+    // Humidifier needs separate command topics
+    if (definition.type === 'humidifier') {
+      this.client?.subscribe(`ha-forge/${id}/humidity/set`);
+      const humConfig = (definition as HumidifierDefinition).config;
+      if (humConfig?.modes) {
+        this.client?.subscribe(`ha-forge/${id}/mode/set`);
+      }
+    }
+
+    // Water heater uses separate topics per feature
+    if (definition.type === 'water_heater') {
+      this.client?.subscribe(`ha-forge/${id}/mode/set`);
+      this.client?.subscribe(`ha-forge/${id}/temperature/set`);
+    }
+
+    // Valve position control
+    if (definition.type === 'valve') {
+      const valveConfig = (definition as ValveDefinition).config;
+      if (valveConfig?.reports_position) {
+        this.client?.subscribe(`ha-forge/${id}/position/set`);
+      }
+    }
+
+    // Vacuum fan speed
+    if (definition.type === 'vacuum') {
+      this.client?.subscribe(`ha-forge/${id}/command`);
+      const vacConfig = (definition as VacuumDefinition).config;
+      if (vacConfig?.fan_speed_list) {
+        this.client?.subscribe(`ha-forge/${id}/fan_speed/set`);
+      }
+    }
+
+    // Lawn mower uses separate command topics
+    if (definition.type === 'lawn_mower') {
+      this.client?.subscribe(`ha-forge/${id}/start_mowing`);
+      this.client?.subscribe(`ha-forge/${id}/pause`);
+      this.client?.subscribe(`ha-forge/${id}/dock`);
+    }
+
+    // Update install command
+    if (definition.type === 'update' && 'onInstall' in definition) {
+      this.client?.subscribe(`ha-forge/${id}/install`);
+    }
+  }
 
   private async publishDeviceDiscovery(entity: ResolvedEntity): Promise<void> {
     const { definition, deviceId } = entity;

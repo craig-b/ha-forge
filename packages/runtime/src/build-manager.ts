@@ -71,7 +71,7 @@ export class BuildManager {
       }
     }
 
-    const hasWork = loadResult.entities.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0 || loadResult.modes.length > 0 || loadResult.crons.length > 0;
+    const hasWork = loadResult.entities.length > 0 || loadResult.devices.length > 0 || loadResult.automations.length > 0 || loadResult.tasks.length > 0 || loadResult.modes.length > 0 || loadResult.crons.length > 0;
     if (!hasWork && loadResult.errors.length === 0) {
       this.logger.info('No entities to deploy');
       return {
@@ -138,8 +138,8 @@ export class BuildManager {
       group.push(c);
     }
 
-    // Collect all source files
-    const allFiles = new Set([...byFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys(), ...modesByFile.keys(), ...cronsByFile.keys()]);
+    // Collect all source files (include devicesByFile for devices with lifecycle-only init/destroy)
+    const allFiles = new Set([...byFile.keys(), ...devicesByFile.keys(), ...automationsByFile.keys(), ...tasksByFile.keys(), ...modesByFile.keys(), ...cronsByFile.keys()]);
 
     // Deploy each file's definitions independently
     let deployedCount = 0;
@@ -255,7 +255,7 @@ export class BuildManager {
       const tasks = newTasksByFile.get(file) ?? [];
       const modes = newModesByFile.get(file) ?? [];
       const crons = newCronsByFile.get(file) ?? [];
-      if (entities.length === 0 && automations.length === 0 && tasks.length === 0 && modes.length === 0 && crons.length === 0) continue; // File was removed
+      if (entities.length === 0 && devices.length === 0 && automations.length === 0 && tasks.length === 0 && modes.length === 0 && crons.length === 0) continue; // File was removed
       try {
         await this.lifecycle.deployAdditive(entities, devices, automations, tasks, modes, crons);
         deployedCount += entities.length + automations.length + tasks.length + modes.length + crons.length;
