@@ -304,9 +304,9 @@ export interface InvariantOptions {
  * { entity: 'binary_sensor.front_door', to: 'on', within: 5000 }
  * ```
  */
-export interface SequenceStep {
+export interface SequenceStep<TEntity extends string = string> {
   /** Entity to watch for this step. */
-  entity: string;
+  entity: TEntity;
   /** State the entity must transition to (or `'*'` for any change). */
   to: string | '*';
   /** Maximum time in ms to wait for this step before the sequence resets. First step has no timeout. */
@@ -356,13 +356,13 @@ export interface EntitySnapshot {
  * The runtime auto-subscribes to watched entities and re-publishes
  * the owning entity's attributes when the computed value changes.
  */
-export interface ComputedAttribute {
+export interface ComputedAttribute<TWatch extends string = string> {
   /** Runtime marker — distinguishes from plain attribute values. */
   __computedAttr: true;
   /** Entity IDs to watch. */
-  watch: string[];
+  watch: TWatch[];
   /** Pure function that derives the attribute value from watched entity snapshots. */
-  compute: (states: Record<string, EntitySnapshot | null>) => unknown;
+  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => unknown;
   /** Debounce window in ms. Default: `100`. */
   debounce?: number;
 }
@@ -460,7 +460,7 @@ export interface EventsContext {
    * );
    * ```
    */
-  combine(entities: string[], callback: CombinedCallback): () => void;
+  combine<E extends string>(entities: E[], callback: (states: { [K in E]: EntitySnapshot | null }) => void): () => void;
 
   /**
    * Subscribe to an entity's state changes with access to the current state of other entities.
@@ -490,10 +490,10 @@ export interface EventsContext {
    * );
    * ```
    */
-  withState(
+  withState<C extends string>(
     entityOrDomain: string | string[],
-    context: string[],
-    callback: (event: StateChangedEvent, states: Record<string, EntitySnapshot>) => void,
+    context: C[],
+    callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void,
   ): EventStream;
 
   /**
@@ -520,7 +520,7 @@ export interface EventsContext {
    * });
    * ```
    */
-  watchdog(rules: Record<string, WatchdogRule>): () => void;
+  watchdog<K extends string>(rules: Record<K, WatchdogRule>): () => void;
 
   /**
    * Set up a periodic invariant check. The `check` function is evaluated
@@ -855,7 +855,7 @@ export interface SensorDefinition extends BaseEntity<string | number, SensorConf
  * });
  * ```
  */
-export interface ComputedDefinition {
+export interface ComputedDefinition<TWatch extends string = string> {
   type: 'sensor';
   /** Runtime marker — distinguishes from regular sensors. */
   __computed: true;
@@ -872,13 +872,13 @@ export interface ComputedDefinition {
   /** Sensor-specific MQTT discovery config. */
   config?: SensorConfig;
   /** Entity IDs to watch. When any changes state, `compute()` is re-evaluated. */
-  watch: string[];
+  watch: TWatch[];
   /**
    * Pure function that derives state from current values of watched entities.
-   * Receives a map of entity IDs to their current state snapshot (or `null` if unknown).
+   * Receives a map of watched entity IDs to their current state snapshot (or `null` if unknown).
    * Return value becomes the entity's published state.
    */
-  compute: (states: Record<string, EntitySnapshot | null>) => string | number;
+  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number;
   /**
    * Debounce window in ms for coalescing rapid input changes.
    * When multiple watched entities change in quick succession, `compute()` runs

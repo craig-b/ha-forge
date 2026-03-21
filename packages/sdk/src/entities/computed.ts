@@ -1,7 +1,7 @@
 import type { SensorConfig, ComputedDefinition, ComputedAttribute, DeviceInfo, EntitySnapshot } from '../types.js';
 
 /** Options for defining a computed (derived) sensor entity. */
-export interface ComputedOptions {
+export interface ComputedOptions<TWatch extends string = string> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'comfort_index'` → `sensor.comfort_index`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -15,10 +15,10 @@ export interface ComputedOptions {
   /** Sensor-specific MQTT discovery config (device_class, unit_of_measurement, state_class). */
   config?: SensorConfig;
   /** Entity IDs to watch. When any changes state, `compute()` is re-evaluated. */
-  watch: string[];
+  watch: TWatch[];
   /**
    * Pure function that derives state from current values of watched entities.
-   * Receives a map of entity IDs to their current state snapshot (or `null` if unknown).
+   * Receives a map of watched entity IDs to their current state snapshot (or `null` if unknown).
    * Return value becomes the entity's published state.
    *
    * @example
@@ -29,7 +29,7 @@ export interface ComputedOptions {
    * }
    * ```
    */
-  compute: (states: Record<string, EntitySnapshot | null>) => string | number;
+  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number;
   /**
    * Debounce window in ms for coalescing rapid input changes. Default: `100`.
    * Set to `0` to re-evaluate immediately on every change.
@@ -38,9 +38,9 @@ export interface ComputedOptions {
 }
 
 /** Options for a computed attribute (second argument to `computed(fn, opts)`). */
-export interface ComputedAttributeOptions {
+export interface ComputedAttributeOptions<TWatch extends string = string> {
   /** Entity IDs to watch. When any changes state, the attribute is re-evaluated. */
-  watch: string[];
+  watch: TWatch[];
   /** Debounce window in ms. Default: `100`. */
   debounce?: number;
 }
@@ -69,7 +69,7 @@ export interface ComputedAttributeOptions {
  * });
  * ```
  */
-export function computed(options: ComputedOptions): ComputedDefinition;
+export function computed<TWatch extends string>(options: ComputedOptions<TWatch>): ComputedDefinition<TWatch>;
 /**
  * Create a reactive computed attribute for use inside entity `attributes`.
  * The runtime auto-subscribes to watched entities and re-publishes the
@@ -96,10 +96,10 @@ export function computed(options: ComputedOptions): ComputedDefinition;
  * });
  * ```
  */
-export function computed(
-  fn: (states: Record<string, EntitySnapshot | null>) => unknown,
-  opts: ComputedAttributeOptions,
-): ComputedAttribute;
+export function computed<TWatch extends string>(
+  fn: (states: { [K in TWatch]: EntitySnapshot | null }) => unknown,
+  opts: ComputedAttributeOptions<TWatch>,
+): ComputedAttribute<TWatch>;
 export function computed(
   optionsOrFn: ComputedOptions | ((states: Record<string, EntitySnapshot | null>) => unknown),
   opts?: ComputedAttributeOptions,

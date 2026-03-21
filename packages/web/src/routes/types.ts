@@ -92,11 +92,11 @@ interface HAEventsContext extends EventsContext {
   /** Set up declarative reaction rules. Returns a cleanup function. */
   reactions(rules: Record<string, ReactionRule>): () => void;
   /** Subscribe to multiple entities and receive a combined state snapshot on every change. */
-  combine(entities: string[], callback: (states: Record<string, EntitySnapshot | null>) => void): () => void;
+  combine<E extends string>(entities: E[], callback: (states: { [K in E]: EntitySnapshot | null }) => void): () => void;
   /** Subscribe to state changes with context entity snapshots. Only fires when all context entities are available (not unknown/unavailable). */
-  withState(entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: Record<string, EntitySnapshot>) => void): EventStream;
+  withState<C extends string>(entityOrDomain: string | string[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void): EventStream;
   /** Set up watchdog timers that fire when entities go silent past a time window. expect: 'change' | { to } | predicate. */
-  watchdog(rules: Record<string, WatchdogRule>): () => void;
+  watchdog<K extends string>(rules: Record<K, WatchdogRule>): () => void;
   /** Set up a periodic invariant constraint. Fires violated() when condition() returns false. */
   invariant(options: InvariantOptions): () => void;
   /** Detect an ordered sequence of state changes across entities. Fires do() when all steps complete in order. */
