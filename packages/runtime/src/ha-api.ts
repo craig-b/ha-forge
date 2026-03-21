@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, CombinedState, CombinedCallback, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -330,10 +330,11 @@ export class HAApiImpl implements HAApi {
     };
   }
 
-  /** Synchronous state lookup from cache. Returns null if not cached. */
-  getCachedStateSync(entityId: string): string | null {
+  /** Synchronous state snapshot from cache. Returns null if not cached. */
+  getCachedSnapshot(entityId: string): EntitySnapshot | null {
     const cached = this.stateCache.get(entityId);
-    return cached ? cached.state : null;
+    if (!cached) return null;
+    return { state: cached.state, attributes: cached.attributes };
   }
 
   /** Returns a stateless view — no subscriptions or logging, safe to pass around. */
@@ -368,7 +369,7 @@ export class HAApiImpl implements HAApi {
         const buildSnapshot = (): CombinedState => {
           const states: CombinedState = {};
           for (const eid of entities) {
-            states[eid] = self.getCachedStateSync(eid);
+            states[eid] = self.getCachedSnapshot(eid);
           }
           return states;
         };
@@ -378,13 +379,15 @@ export class HAApiImpl implements HAApi {
         handles.eventSubscriptions.push(unsub);
         return unsub;
       },
-      withState: (entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: CombinedState) => void) => {
+      withState: (entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: Record<string, EntitySnapshot>) => void) => {
         const stream = createEventStream(
           (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
           ((event: StateChangedEvent) => {
-            const states: CombinedState = {};
+            const states: Record<string, EntitySnapshot> = {};
             for (const eid of context) {
-              states[eid] = self.getCachedStateSync(eid);
+              const snap = self.getCachedSnapshot(eid);
+              if (!snap || snap.state === 'unavailable' || snap.state === 'unknown') return;
+              states[eid] = snap;
             }
             callback(event, states);
           }) as StateChangedCallback,
@@ -395,6 +398,14 @@ export class HAApiImpl implements HAApi {
       watchdog: (rules: Record<string, WatchdogRule>) => {
         const timers = new Map<string, ReturnType<typeof setTimeout>>();
         const unsubscribers: Array<() => void> = [];
+
+        // Normalize WatchdogExpect to a predicate function
+        const normExpect = (expect: WatchdogExpect | undefined): ((event: StateChangedEvent) => boolean) | null => {
+          if (!expect || expect === 'change') return null; // any change
+          if (typeof expect === 'function') return expect;
+          // { to: string }
+          return (event) => event.new_state === expect.to;
+        };
 
         const startTimer = (entityId: string, rule: WatchdogRule) => {
           const existing = timers.get(entityId);
@@ -408,12 +419,14 @@ export class HAApiImpl implements HAApi {
         };
 
         for (const [entityId, rule] of Object.entries(rules)) {
+          const predicate = normExpect(rule.expect);
+
           // Start initial timer
           startTimer(entityId, rule);
 
           // Subscribe to reset timer on matching events
           const unsub = self.on(entityId, (event) => {
-            if (rule.expect && !rule.expect(event)) return;
+            if (predicate && !predicate(event)) return;
             startTimer(entityId, rule);
           });
           unsubscribers.push(unsub);
@@ -437,6 +450,32 @@ export class HAApiImpl implements HAApi {
           if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
         };
 
+        const complete = () => {
+          reset();
+          try { options.do(); } catch { /* swallow */ }
+        };
+
+        const advanceAndSetup = () => {
+          currentStep++;
+          if (currentStep >= options.steps.length) {
+            complete();
+            return;
+          }
+          // Set up timeout for next step if it has a `within` window
+          const nextStep = options.steps[currentStep];
+          if (nextStep?.within) {
+            if (nextStep.negate) {
+              // Negated step with timeout: advances if entity does NOT reach state within window
+              stepTimer = setTimeout(() => {
+                stepTimer = null;
+                advanceAndSetup();
+              }, nextStep.within);
+            } else {
+              stepTimer = setTimeout(reset, nextStep.within);
+            }
+          }
+        };
+
         // Collect unique entity IDs from steps
         const entityIds = [...new Set(options.steps.map(s => s.entity))];
 
@@ -444,7 +483,7 @@ export class HAApiImpl implements HAApi {
           const step = options.steps[currentStep];
           if (!step) return;
 
-          if (step.not) {
+          if (step.negate) {
             // Negated step: if entity matches and reaches the state, reset
             if (event.entity_id === step.entity && (step.to === '*' || event.new_state === step.to)) {
               reset();
@@ -458,38 +497,7 @@ export class HAApiImpl implements HAApi {
 
           // Step matched — advance
           if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
-          currentStep++;
-
-          if (currentStep >= options.steps.length) {
-            // Sequence complete
-            reset();
-            try { options.then(); } catch { /* swallow */ }
-            return;
-          }
-
-          // Start timeout for next step if it has a `within` window
-          const nextStep = options.steps[currentStep];
-          if (nextStep && nextStep.within) {
-            if (nextStep.not) {
-              // Negated step with timeout: if entity does NOT reach state within window, advance
-              stepTimer = setTimeout(() => {
-                stepTimer = null;
-                currentStep++;
-                if (currentStep >= options.steps.length) {
-                  reset();
-                  try { options.then(); } catch { /* swallow */ }
-                } else {
-                  // Set up timeout for the following step if needed
-                  const following = options.steps[currentStep];
-                  if (following?.within && !following.not) {
-                    stepTimer = setTimeout(reset, following.within);
-                  }
-                }
-              }, nextStep.within);
-            } else {
-              stepTimer = setTimeout(reset, nextStep.within);
-            }
-          }
+          advanceAndSetup();
         });
         unsubscribers.push(unsub);
 
@@ -505,13 +513,13 @@ export class HAApiImpl implements HAApi {
         const tick = async () => {
           if (stopped) return;
           try {
-            const ok = await options.check();
+            const ok = await options.condition();
             if (!ok && !stopped) {
               try { await options.violated(); } catch { /* swallow */ }
             }
-          } catch { /* swallow check errors */ }
+          } catch { /* swallow condition errors */ }
         };
-        const timer = setInterval(tick, options.interval);
+        const timer = setInterval(tick, options.check.interval);
         const cleanup = () => {
           stopped = true;
           clearInterval(timer);

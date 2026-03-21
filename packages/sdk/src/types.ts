@@ -219,6 +219,17 @@ export interface ReactionRule {
 }
 
 /**
+ * Expectation filter for watchdog rules.
+ * - `'change'` — any state change resets the timer.
+ * - `{ to: 'off' }` — only resets when entity transitions to the given state.
+ * - `(event) => boolean` — custom predicate for full control.
+ */
+export type WatchdogExpect =
+  | 'change'
+  | { to: string }
+  | ((event: StateChangedEvent) => boolean);
+
+/**
  * A watchdog rule for detecting entity inactivity.
  * Fires when an entity hasn't changed state within a specified time window.
  *
@@ -231,42 +242,57 @@ export interface ReactionRule {
  *       message: 'Heartbeat sensor stopped responding!',
  *     }),
  *   },
+ *   'binary_sensor.fridge_door': {
+ *     expect: { to: 'off' },
+ *     within: 300_000,
+ *     else: () => this.ha.callService('tts.speak', 'say', { message: 'Fridge door is still open' }),
+ *   },
  * });
  * ```
  */
 export interface WatchdogRule {
   /** Maximum time in ms between state changes. If exceeded, `else` fires. */
   within: number;
-  /** Optional filter — only matching events reset the timer. */
-  expect?: (event: StateChangedEvent) => boolean;
+  /**
+   * Which events reset the timer. Default: any state change.
+   * - `'change'` — any state change (same as omitting).
+   * - `{ to: 'off' }` — only when entity transitions to the given state.
+   * - `(event) => boolean` — custom predicate.
+   */
+  expect?: WatchdogExpect;
   /** Action to execute when the entity goes silent past the `within` window. */
   else: () => void | Promise<void>;
 }
 
 /**
  * An invariant constraint that is checked periodically.
- * Fires when the `check` function returns `false`, indicating a violated constraint.
+ * Fires when the `condition` function returns `false`, indicating a violated constraint.
  *
  * @example
  * ```ts
  * this.events.invariant({
- *   check: async () => {
- *     const temp = await this.ha.getState('sensor.server_temp');
- *     return temp !== null && Number(temp.state) < 80;
+ *   name: 'garage_locked_at_night',
+ *   condition: async () => {
+ *     const hour = new Date().getHours();
+ *     const garage = await this.ha.getState('cover.garage');
+ *     return hour < 6 || hour > 22 ? garage?.state === 'closed' : true;
  *   },
- *   interval: 30_000,
- *   violated: () => this.ha.callService('notify.admin', 'send_message', {
- *     message: 'Server temperature exceeds threshold!',
- *   }),
+ *   check: { interval: 60_000 },
+ *   violated: () => {
+ *     this.ha.callService('cover.garage', 'close_cover');
+ *     this.ha.callService('notify.mobile', 'send_message', { message: 'Garage was open at night — closing.' });
+ *   },
  * });
  * ```
  */
 export interface InvariantOptions {
+  /** Human-readable name for logging and debugging. */
+  name?: string;
   /** Function that returns `true` when the constraint holds, `false` when violated. */
-  check: () => boolean | Promise<boolean>;
-  /** How often to evaluate the check, in milliseconds. */
-  interval: number;
-  /** Action to execute when `check()` returns `false`. */
+  condition: () => boolean | Promise<boolean>;
+  /** How often to evaluate the condition. */
+  check: { interval: number };
+  /** Action to execute when `condition()` returns `false`. */
   violated: () => void | Promise<void>;
 }
 
@@ -285,8 +311,8 @@ export interface SequenceStep {
   to: string | '*';
   /** Maximum time in ms to wait for this step before the sequence resets. First step has no timeout. */
   within?: number;
-  /** If true, this step is *negated*: it matches when the entity does NOT reach the state within the window. */
-  not?: boolean;
+  /** If true, this step is *negated*: it matches when the entity does NOT reach the state within the window. Requires `within`. */
+  negate?: boolean;
 }
 
 /**
@@ -296,24 +322,36 @@ export interface SequenceStep {
  * @example
  * ```ts
  * this.events.sequence({
+ *   name: 'doorbell_then_no_answer',
  *   steps: [
- *     { entity: 'binary_sensor.front_door', to: 'on' },
- *     { entity: 'binary_sensor.hallway_motion', to: 'on', within: 10_000 },
- *     { entity: 'binary_sensor.living_room_motion', to: 'on', within: 15_000 },
+ *     { entity: 'binary_sensor.doorbell', to: 'on' },
+ *     { entity: 'lock.front_door', to: 'unlocked', within: 120_000, negate: true },
  *   ],
- *   then: () => this.ha.callService('light.welcome', 'turn_on'),
+ *   do: () => this.ha.callService('notify.mobile', 'send_message', {
+ *     message: 'Someone rang the doorbell and nobody answered',
+ *   }),
  * });
  * ```
  */
 export interface SequenceOptions {
+  /** Human-readable name for logging and debugging. */
+  name?: string;
   /** Ordered steps that must all match. */
   steps: SequenceStep[];
   /** Action to execute when all steps complete in order. */
-  then: () => void | Promise<void>;
+  do: () => void | Promise<void>;
 }
 
-/** Map of entity IDs to their current state string, or `null` if the state is unknown. */
-export type CombinedState = Record<string, string | null>;
+/** A snapshot of an entity's state and attributes, as returned by combine/withState. */
+export interface EntitySnapshot {
+  /** Current state value (e.g. `'on'`, `'23.5'`). */
+  state: string;
+  /** Current entity attributes. */
+  attributes: Record<string, unknown>;
+}
+
+/** Map of entity IDs to their current state snapshot, or `null` if the entity state is unknown. */
+export type CombinedState = Record<string, EntitySnapshot | null>;
 
 /** Callback for `this.events.combine()` — receives a snapshot of all watched entity states. */
 export type CombinedCallback = (states: CombinedState) => void;
@@ -388,7 +426,7 @@ export interface EventsContext {
    * with the current state of *all* watched entities.
    *
    * @param entities - Array of entity IDs to watch.
-   * @param callback - Called with a map of entity IDs to their current state (or `null` if unknown).
+   * @param callback - Called with a map of entity IDs to their current state snapshot (or `null` if unknown).
    * @returns Cleanup function.
    *
    * @example
@@ -399,7 +437,7 @@ export interface EventsContext {
    *     const temp = states['sensor.temperature'];
    *     const humidity = states['sensor.humidity'];
    *     if (temp && humidity) {
-   *       this.update(Number(temp) > 30 && Number(humidity) > 70 ? 'on' : 'off');
+   *       this.update(Number(temp.state) > 30 && Number(humidity.state) > 70 ? 'on' : 'off');
    *     }
    *   },
    * );
@@ -412,9 +450,13 @@ export interface EventsContext {
    * Like `on()`, but the callback receives a second argument with a snapshot
    * of specified context entities' states.
    *
+   * The callback is **only invoked when all context entities are available** —
+   * if any context entity has no cached state, the event is silently skipped.
+   * This acts as a Maybe-chain: no null checks needed inside the callback.
+   *
    * @param entityOrDomain - Entity ID, domain, or array to watch for changes.
-   * @param context - Array of entity IDs whose current state should be provided.
-   * @param callback - Called with the event and a state snapshot of the context entities.
+   * @param context - Array of entity IDs whose current state must be available.
+   * @param callback - Called with the event and a guaranteed-present state snapshot of all context entities.
    * @returns An `EventStream`.
    *
    * @example
@@ -423,8 +465,8 @@ export interface EventsContext {
    *   'binary_sensor.motion',
    *   ['sensor.lux', 'input_boolean.night_mode'],
    *   (event, states) => {
-   *     const lux = states['sensor.lux'];
-   *     if (event.new_state === 'on' && Number(lux) < 50) {
+   *     // states are guaranteed non-null — no checks needed
+   *     if (event.new_state === 'on' && Number(states['sensor.lux'].state) < 50) {
    *       this.ha.callService('light.hallway', 'turn_on');
    *     }
    *   },
@@ -434,7 +476,7 @@ export interface EventsContext {
   withState(
     entityOrDomain: string | string[],
     context: string[],
-    callback: (event: StateChangedEvent, states: CombinedState) => void,
+    callback: (event: StateChangedEvent, states: Record<string, EntitySnapshot>) => void,
   ): EventStream;
 
   /**
@@ -453,10 +495,10 @@ export interface EventsContext {
    *     within: 60_000,
    *     else: () => this.log.warn('Heartbeat lost!'),
    *   },
-   *   'binary_sensor.motion': {
+   *   'binary_sensor.fridge_door': {
+   *     expect: { to: 'off' },
    *     within: 300_000,
-   *     expect: (e) => e.new_state === 'on',
-   *     else: () => this.ha.callService('light.hallway', 'turn_off'),
+   *     else: () => this.ha.callService('tts.speak', 'say', { message: 'Fridge door is still open' }),
    *   },
    * });
    * ```
@@ -474,13 +516,14 @@ export interface EventsContext {
    * @example
    * ```ts
    * this.events.invariant({
-   *   check: async () => {
+   *   name: 'pump_flow_check',
+   *   condition: async () => {
    *     const pump = await this.ha.getState('switch.pump');
    *     const flow = await this.ha.getState('sensor.flow_rate');
    *     // Pump is on but no flow — something is wrong
    *     return !(pump?.state === 'on' && Number(flow?.state) === 0);
    *   },
-   *   interval: 10_000,
+   *   check: { interval: 10_000 },
    *   violated: () => this.ha.callService('switch.pump', 'turn_off'),
    * });
    * ```
@@ -500,11 +543,12 @@ export interface EventsContext {
    * ```ts
    * // Detect "arrive home" pattern: door opens, then motion within 10s
    * this.events.sequence({
+   *   name: 'arrive_home',
    *   steps: [
    *     { entity: 'binary_sensor.front_door', to: 'on' },
    *     { entity: 'binary_sensor.hallway_motion', to: 'on', within: 10_000 },
    *   ],
-   *   then: () => this.ha.callService('scene.welcome_home', 'turn_on'),
+   *   do: () => this.ha.callService('scene.welcome_home', 'turn_on'),
    * });
    * ```
    */
