@@ -372,21 +372,23 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed HAClient interface extending StatelessHAApi', () => {
+    it('generates standalone HAClient interface (no extends)', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain('interface HAClient extends StatelessHAApi');
+      expect(content).toContain('interface HAClient {');
+      expect(content).not.toContain('interface HAClient extends');
       cleanup();
     });
 
-    it('generates HAEventsContext interface extending EventsContext', () => {
+    it('generates standalone HAEventsContext interface (no extends)', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain('interface HAEventsContext extends EventsContext');
+      expect(content).toContain('interface HAEventsContext {');
+      expect(content).not.toContain('interface HAEventsContext extends');
       cleanup();
     });
 
@@ -411,7 +413,7 @@ describe('generateTypes()', () => {
       // Entity ID literal should be the third type parameter
       expect(content).toContain("'light.living_room'>) => void): () => void;");
       // on() should be inside HAEventsContext, not HAClient
-      const haClientBlock = content.match(/interface HAClient extends StatelessHAApi \{[\s\S]*?\n\}/)?.[0] ?? '';
+      const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('on(entity:');
       cleanup();
     });
@@ -541,7 +543,7 @@ describe('generateTypes()', () => {
       // No string fallback
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>): () => void;');
       // reactions() should be inside HAEventsContext, not HAClient
-      const haClientBlock = content.match(/interface HAClient extends StatelessHAApi \{[\s\S]*?\n\}/)?.[0] ?? '';
+      const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
       expect(haClientBlock).not.toContain('reactions<K');
       cleanup();
     });

@@ -262,7 +262,7 @@ describe('Type generation integration', () => {
     expect(dts).toContain('type EntitiesInDomain');
 
     // Typed HAClient interface
-    expect(dts).toContain('interface HAClient extends StatelessHAApi');
+    expect(dts).toContain('interface HAClient {');
     expect(dts).not.toMatch(/^import\b/m);
     expect(dts).not.toMatch(/^export\b/m);
 

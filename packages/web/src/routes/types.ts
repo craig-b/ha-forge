@@ -60,6 +60,11 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
       let types = fs.readFileSync(path.join(sdkDist, typesChunk), 'utf-8');
       types = types.replace(/^export type \{.*\};\s*$/m, '');
 
+      // Replace base types with generated typed versions in EntityContext/DeviceContext
+      // so users never see untyped `string` where a typed entity ID should be
+      types = types.replace(/\bha: StatelessHAApi\b/g, 'ha: HAClient');
+      types = types.replace(/\bevents: EventsContext\b/g, 'events: HAEventsContext');
+
       // Read index.d.ts to get the SensorOptions etc. (function parameter types)
       const indexDts = fs.readFileSync(path.join(sdkDist, 'index.d.ts'), 'utf-8');
       // Extract the interface blocks (SensorOptions, SwitchOptions, etc.)
@@ -72,36 +77,24 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
       const registryPath = path.join(opts.generatedDir, 'ha-registry.d.ts');
       const hasGeneratedTypes = fs.existsSync(registryPath);
 
-      // When no generated types, append an untyped HAClient fallback
+      // When no generated types, provide empty HAClient/HAEventsContext stubs.
+      // Users must generate types from their HA instance to get typed entity IDs and autocomplete.
       const untypedFallback = hasGeneratedTypes ? '' : `
 /**
- * Stateless Home Assistant client API. Provides service calls, state queries, and entity listing.
- * Access via \`this.ha\` in entity/device callbacks. Safe to pass to utility functions.
+ * Home Assistant client API. **Click "Regenerate Types" to enable typed entity IDs, services, and autocomplete.**
  *
- * Generate types from your HA instance for typed entity IDs and service parameters.
+ * Without generated types, \`this.ha\` methods are unavailable.
+ * Generate types from your HA instance to unlock full IntelliSense.
  */
-interface HAClient extends StatelessHAApi {}
+interface HAClient {}
 
 /**
- * Scoped event subscription context. Access via \`this.events\` in entity/device callbacks.
- * Subscriptions are automatically cleaned up when the owning entity/device is torn down.
+ * Event subscription context. **Click "Regenerate Types" to enable typed entity subscriptions and autocomplete.**
+ *
+ * Without generated types, \`this.events\` methods are unavailable.
+ * Generate types from your HA instance to unlock full IntelliSense.
  */
-interface HAEventsContext extends EventsContext {
-  /** Subscribe to state changes. Returns an EventStream with chainable operators (.filter, .debounce, .throttle, .distinctUntilChanged, .transition, .map). */
-  on(entityOrDomain: string | string[], callback?: (event: StateChangedEvent) => void): EventStream;
-  /** Set up declarative reaction rules. Returns a cleanup function. */
-  reactions(rules: Record<string, ReactionRule>): () => void;
-  /** Subscribe to multiple entities and receive a combined state snapshot on every change. */
-  combine<E extends string>(entities: E[], callback: (states: { [K in E]: EntitySnapshot | null }) => void): () => void;
-  /** Subscribe to state changes with context entity snapshots. Only fires when all context entities are available (not unknown/unavailable). */
-  withState<C extends string>(entityOrDomain: string | string[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void): EventStream;
-  /** Set up watchdog timers that fire when entities go silent past a time window. expect: 'change' | { to } | predicate. */
-  watchdog<K extends string>(rules: Record<K, WatchdogRule>): () => void;
-  /** Set up a periodic invariant constraint. Fires violated() when condition() returns false. */
-  invariant(options: InvariantOptions): () => void;
-  /** Detect an ordered sequence of state changes across entities. Fires do() when all steps complete in order. */
-  sequence(options: SequenceOptions): () => void;
-}
+interface HAEventsContext {}
 `;
 
       // Build a single self-contained declaration
