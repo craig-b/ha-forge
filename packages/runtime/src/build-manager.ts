@@ -260,9 +260,11 @@ export class BuildManager {
       if (defA.id !== defB.id || defA.name !== defB.name || defA.type !== defB.type) return false;
       // For functions (init, onCommand, destroy), compare their string representations
       // This catches code changes even when the definition shape is the same
-      if (String(defA.init) !== String(defB.init)) return false;
-      if (String((defA as unknown as Record<string, unknown>).onCommand) !== String((defB as unknown as Record<string, unknown>).onCommand)) return false;
-      if (String(defA.destroy) !== String(defB.destroy)) return false;
+      const a = defA as unknown as Record<string, unknown>;
+      const b = defB as unknown as Record<string, unknown>;
+      if (String(a.init) !== String(b.init)) return false;
+      if (String(a.onCommand) !== String(b.onCommand)) return false;
+      if (String(a.destroy) !== String(b.destroy)) return false;
     }
     return true;
   }

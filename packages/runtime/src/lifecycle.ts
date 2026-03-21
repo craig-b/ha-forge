@@ -1,6 +1,7 @@
 import type {
   AutomationContext,
   AutomationDefinition,
+  ComputedAttribute,
   ComputedDefinition,
   DeviceContext,
   DeviceDefinition,
@@ -88,6 +89,15 @@ function createEmptyHandles(): TrackedHandles {
     mqttSubscriptions: [],
     eventSubscriptions: [],
   };
+}
+
+function isComputedAttribute(value: unknown): value is ComputedAttribute {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '__computedAttr' in value &&
+    (value as Record<string, unknown>).__computedAttr === true
+  );
 }
 
 export class EntityLifecycleManager {
@@ -314,6 +324,9 @@ export class EntityLifecycleManager {
         sourceFile: entity.sourceFile,
       });
     }
+
+    // Wire up computed attributes (reactive attribute values)
+    this.initComputedAttributes(instance);
   }
 
   private async initComputed(instance: EntityInstance, def: ComputedDefinition): Promise<void> {
@@ -387,6 +400,96 @@ export class EntityLifecycleManager {
     logger.info(`Computed entity initialized: ${entityId} (watching ${def.watch.length} entities)`, {
       sourceFile: entity.sourceFile,
     });
+  }
+
+  /**
+   * Scan an entity's `attributes` for ComputedAttribute markers and wire up
+   * reactive subscriptions that re-publish attributes when watched entities change.
+   */
+  private initComputedAttributes(instance: EntityInstance): void {
+    const def = instance.entity.definition as EntityDefinition & { attributes?: Record<string, unknown> };
+    if (!def.attributes) return;
+
+    const haApi = this.haApi;
+    if (!haApi) return;
+
+    const transport = this.transport;
+    const logger = this.logger;
+    const entityId = def.id;
+    const { handles } = instance;
+
+    // Collect computed attribute entries
+    const computedAttrs: Array<{ key: string; attr: ComputedAttribute }> = [];
+    for (const [key, value] of Object.entries(def.attributes)) {
+      if (isComputedAttribute(value)) {
+        computedAttrs.push({ key, attr: value });
+      }
+    }
+
+    if (computedAttrs.length === 0) return;
+
+    // Collect all unique watch targets across all computed attributes
+    const allWatchTargets = new Set<string>();
+    for (const { attr } of computedAttrs) {
+      for (const eid of attr.watch) allWatchTargets.add(eid);
+    }
+
+    // Build merged attributes (static + computed) and publish
+    const evaluateAttributes = () => {
+      try {
+        const attrs: Record<string, unknown> = {};
+
+        // Static attributes first
+        for (const [key, value] of Object.entries(def.attributes!)) {
+          if (!isComputedAttribute(value)) {
+            attrs[key] = value;
+          }
+        }
+
+        // Evaluate computed attributes
+        for (const { key, attr } of computedAttrs) {
+          const states: Record<string, EntitySnapshot | null> = {};
+          for (const eid of attr.watch) {
+            states[eid] = haApi.getCachedSnapshot(eid);
+          }
+          attrs[key] = attr.compute(states);
+        }
+
+        // Re-publish current state with updated attributes
+        transport.publishState(entityId, instance.currentState, attrs).catch(() => {});
+      } catch (err) {
+        logger.error(`Computed attributes failed for ${entityId}`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+
+    // Use the finest debounce across all computed attributes (default 100ms)
+    const debounceMs = Math.min(...computedAttrs.map(({ attr }) => attr.debounce ?? 100));
+    let pending: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const debouncedEvaluate = () => {
+      if (pending !== null) clearTimeout(pending);
+      if (debounceMs <= 0) {
+        evaluateAttributes();
+      } else {
+        pending = globalThis.setTimeout(() => {
+          pending = null;
+          evaluateAttributes();
+        }, debounceMs);
+      }
+    };
+
+    // Subscribe to all watched entities
+    const unsub = haApi.on([...allWatchTargets], debouncedEvaluate);
+    handles.eventSubscriptions.push(() => {
+      unsub();
+      if (pending !== null) clearTimeout(pending);
+    });
+
+    // Initial evaluation
+    evaluateAttributes();
+
+    logger.debug(`Computed attributes wired for ${entityId}: ${computedAttrs.map(c => c.key).join(', ')}`);
   }
 
   private async initDevice(resolvedDevice: ResolvedDevice): Promise<void> {
