@@ -253,15 +253,6 @@ export class TseApp extends LitElement {
   }
 
   private _loadExtraTypes() {
-    // Inject ES2022-2024 lib types that Monaco's bundled TypeScript doesn't include
-    this._api('GET', '/api/types/es-libs').then((result) => {
-      if (result?.declaration) {
-        monaco.languages.typescript.typescriptDefaults.addExtraLib(
-          result.declaration as string, 'ts:lib/es2022-2024.d.ts',
-        );
-      }
-    }).catch(() => {});
-
     this._api('GET', '/api/types/sdk').then((result) => {
       if (result?.declaration) {
         const content = result.declaration as string;

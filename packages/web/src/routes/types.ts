@@ -481,55 +481,6 @@ interface Console {
     }
   });
 
-  // Serve ES2022-2024 lib type definitions for Monaco.
-  // Monaco bundles an older TypeScript (~5.0) whose libs only go up to ES2021.
-  // We read the missing lib sub-files from our installed TypeScript and inject
-  // them via addExtraLib so users get Object.hasOwn, Array.at, Object.groupBy, etc.
-  app.get('/es-libs', (c) => {
-    try {
-      // Locate TypeScript's lib directory — try common locations.
-      // tsup bundles everything into dist/index.js, so import.meta.dirname
-      // is packages/web/dist/. We check multiple traversal depths to handle
-      // both monorepo dev and add-on container layouts.
-      const baseDir = import.meta.dirname ?? __dirname;
-      const candidates = [
-        path.resolve('/app/node_modules/typescript/lib'),
-        path.resolve(process.cwd(), 'node_modules/typescript/lib'),
-        path.resolve(baseDir, '../node_modules/typescript/lib'),
-        path.resolve(baseDir, '../../node_modules/typescript/lib'),
-        path.resolve(baseDir, '../../../node_modules/typescript/lib'),
-      ];
-      const tsLibDir = candidates.find(p => fs.existsSync(path.join(p, 'lib.es2022.object.d.ts')));
-      if (!tsLibDir) {
-        return c.json({ error: 'TypeScript lib directory not found' }, 404);
-      }
-
-      const libFiles = [
-        'lib.es2022.array.d.ts', 'lib.es2022.error.d.ts', 'lib.es2022.intl.d.ts',
-        'lib.es2022.object.d.ts', 'lib.es2022.regexp.d.ts', 'lib.es2022.string.d.ts',
-        'lib.es2023.array.d.ts', 'lib.es2023.collection.d.ts', 'lib.es2023.intl.d.ts',
-        'lib.es2024.arraybuffer.d.ts', 'lib.es2024.collection.d.ts', 'lib.es2024.object.d.ts',
-        'lib.es2024.promise.d.ts', 'lib.es2024.regexp.d.ts', 'lib.es2024.sharedmemory.d.ts',
-        'lib.es2024.string.d.ts',
-      ];
-
-      const chunks: string[] = [];
-      for (const file of libFiles) {
-        const filePath = path.join(tsLibDir, file);
-        if (fs.existsSync(filePath)) {
-          let content = fs.readFileSync(filePath, 'utf-8');
-          // Strip /// <reference> directives — they can't resolve in Monaco's virtual FS
-          content = content.replace(/^\/\/\/\s*<reference\b.*$/gm, '');
-          chunks.push(`// --- ${file} ---\n${content}`);
-        }
-      }
-
-      return c.json({ declaration: chunks.join('\n\n') });
-    } catch {
-      return c.json({ error: 'Failed to read ES lib types' }, 500);
-    }
-  });
-
   // Trigger type regeneration
   app.post('/regenerate', async (c) => {
     try {
