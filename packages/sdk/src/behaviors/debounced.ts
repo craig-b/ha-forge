@@ -5,10 +5,10 @@ import type { EntityContext, StatefulEntityDefinition } from '../types.js';
  * The first update passes through immediately (no initial dead time).
  * Composes: `debounced(filtered(sensor({...}), pred), { wait: 500 })`
  */
-export function debounced<T extends StatefulEntityDefinition>(
-  entity: T,
+export function debounced(
+  entity: StatefulEntityDefinition,
   opts: { wait: number },
-): T {
+): StatefulEntityDefinition {
   const originalInit = entity.init as
     | ((this: EntityContext) => unknown)
     | undefined;
@@ -32,5 +32,5 @@ export function debounced<T extends StatefulEntityDefinition>(
       };
       return originalInit?.call(this);
     },
-  } as T;
+  } as StatefulEntityDefinition;
 }

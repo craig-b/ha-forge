@@ -12,10 +12,10 @@ export const count = (values: unknown[]) => values.length;
 /**
  * Collects values into a buffer and publishes `reduce(buffer)` at each interval tick.
  */
-export function buffered<T extends StatefulEntityDefinition>(
-  entity: T,
+export function buffered(
+  entity: StatefulEntityDefinition,
   opts: { interval: number; reduce: (values: any[]) => any },
-): T {
+): StatefulEntityDefinition {
   const originalInit = entity.init as
     | ((this: EntityContext) => unknown)
     | undefined;
@@ -39,5 +39,5 @@ export function buffered<T extends StatefulEntityDefinition>(
 
       return originalInit?.call(this);
     },
-  } as T;
+  } as StatefulEntityDefinition;
 }

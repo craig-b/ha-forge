@@ -4,10 +4,10 @@ import type { EntityContext, StatefulEntityDefinition } from '../types.js';
  * Captures the latest value on each update but only publishes at a fixed interval.
  * The first update publishes immediately (no initial delay).
  */
-export function sampled<T extends StatefulEntityDefinition>(
-  entity: T,
+export function sampled(
+  entity: StatefulEntityDefinition,
   opts: { interval: number },
-): T {
+): StatefulEntityDefinition {
   const originalInit = entity.init as
     | ((this: EntityContext) => unknown)
     | undefined;
@@ -32,5 +32,5 @@ export function sampled<T extends StatefulEntityDefinition>(
       };
       return originalInit?.call(this);
     },
-  } as T;
+  } as StatefulEntityDefinition;
 }

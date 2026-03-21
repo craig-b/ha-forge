@@ -4,10 +4,10 @@ import type { EntityContext, StatefulEntityDefinition } from '../types.js';
  * Skips updates that fail the predicate.
  * Composes: `filtered(sensor({...}), (v) => v > 0)`
  */
-export function filtered<T extends StatefulEntityDefinition>(
-  entity: T,
+export function filtered(
+  entity: StatefulEntityDefinition,
   predicate: (value: any, attributes?: any) => boolean,
-): T {
+): StatefulEntityDefinition {
   const originalInit = entity.init as
     | ((this: EntityContext) => unknown)
     | undefined;
@@ -22,5 +22,5 @@ export function filtered<T extends StatefulEntityDefinition>(
       };
       return originalInit?.call(this);
     },
-  } as T;
+  } as StatefulEntityDefinition;
 }
