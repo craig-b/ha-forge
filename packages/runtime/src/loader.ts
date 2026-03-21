@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, AutomationDefinition, TaskDefinition, ModeDefinition, CronDefinition } from '@ha-forge/sdk';
+import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, DeviceMemberDefinition, AutomationDefinition, TaskDefinition, ModeDefinition, CronDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
@@ -218,15 +218,34 @@ async function loadSingleBundle(
     };
 
     const entityIds: string[] = [];
-    for (const [, entityDef] of Object.entries(dev.entities)) {
-      // Stamp device info onto each entity
-      entityDef.device = deviceInfo;
-      entityIds.push(entityDef.id);
-      entities.push({
-        definition: entityDef,
-        sourceFile,
-        deviceId: dev.id,
-      });
+    for (const [, memberDef] of Object.entries(dev.entities)) {
+      if (isTaskDefinition(memberDef)) {
+        memberDef.device = deviceInfo;
+        entityIds.push(memberDef.id);
+        taskDefs.push(memberDef);
+      } else if (isModeDefinition(memberDef)) {
+        memberDef.device = deviceInfo;
+        entityIds.push(memberDef.id);
+        modeDefs.push(memberDef);
+      } else if (isCronDefinition(memberDef)) {
+        memberDef.device = deviceInfo;
+        entityIds.push(memberDef.id);
+        cronDefs.push(memberDef);
+      } else if (isAutomationDefinition(memberDef)) {
+        memberDef.entity = true;
+        memberDef.device = deviceInfo;
+        entityIds.push(memberDef.id);
+        automationDefs.push(memberDef);
+      } else {
+        // Standard EntityDefinition
+        memberDef.device = deviceInfo;
+        entityIds.push(memberDef.id);
+        entities.push({
+          definition: memberDef,
+          sourceFile,
+          deviceId: dev.id,
+        });
+      }
     }
 
     devices.push({ definition: dev, sourceFile, entityIds });
@@ -255,7 +274,7 @@ async function loadSingleBundle(
   return { entities, devices, automations, tasks, modes, crons };
 }
 
-function isDeviceDefinition(value: unknown): value is DeviceDefinition {
+export function isDeviceDefinition(value: unknown): value is DeviceDefinition {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -264,7 +283,7 @@ function isDeviceDefinition(value: unknown): value is DeviceDefinition {
   );
 }
 
-function isAutomationDefinition(value: unknown): value is AutomationDefinition {
+export function isAutomationDefinition(value: unknown): value is AutomationDefinition {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -273,7 +292,7 @@ function isAutomationDefinition(value: unknown): value is AutomationDefinition {
   );
 }
 
-function isTaskDefinition(value: unknown): value is TaskDefinition {
+export function isTaskDefinition(value: unknown): value is TaskDefinition {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -282,7 +301,7 @@ function isTaskDefinition(value: unknown): value is TaskDefinition {
   );
 }
 
-function isModeDefinition(value: unknown): value is ModeDefinition {
+export function isModeDefinition(value: unknown): value is ModeDefinition {
   return (
     typeof value === 'object' &&
     value !== null &&
@@ -291,7 +310,7 @@ function isModeDefinition(value: unknown): value is ModeDefinition {
   );
 }
 
-function isCronDefinition(value: unknown): value is CronDefinition {
+export function isCronDefinition(value: unknown): value is CronDefinition {
   return (
     typeof value === 'object' &&
     value !== null &&

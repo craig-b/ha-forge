@@ -1,10 +1,13 @@
-import type { EntityDefinition, DeviceOptions, DeviceDefinition } from '../types.js';
+import type { DeviceMemberDefinition, DeviceOptions, DeviceDefinition } from '../types.js';
 
 /**
  * Define a device that groups multiple entities with a shared lifecycle.
  *
  * The device's `init()` receives a context with `this.entities` for updating
  * each entity, plus managed timers, HTTP, HA client, and MQTT access.
+ *
+ * Members can be entity definitions (sensor, switch, etc.) or non-entity
+ * definitions (task, mode, cron, automation) — each gets a typed handle.
  *
  * @example
  * ```ts
@@ -17,23 +20,16 @@ import type { EntityDefinition, DeviceOptions, DeviceDefinition } from '../types
  *       name: 'Temperature',
  *       config: { device_class: 'temperature', unit_of_measurement: '°C' },
  *     }),
- *     humidity: sensor({
- *       id: 'ws_humidity',
- *       name: 'Humidity',
- *       config: { device_class: 'humidity', unit_of_measurement: '%' },
- *     }),
+ *     reboot: task({ id: 'reboot', name: 'Reboot', run() {} }),
  *   },
  *   init() {
- *     this.poll(async () => {
- *       const data = await this.fetch('http://api/weather').then(r => r.json());
- *       this.entities.temperature.update(data.temp);
- *       this.entities.humidity.update(data.humidity);
- *     }, { interval: 60_000 });
+ *     this.entities.temperature.update(22.5);
+ *     this.entities.reboot.trigger();
  *   },
  * });
  * ```
  */
-export function device<TEntities extends Record<string, EntityDefinition>>(
+export function device<TEntities extends Record<string, DeviceMemberDefinition>>(
   options: DeviceOptions<TEntities>,
 ): DeviceDefinition<TEntities> {
   return {

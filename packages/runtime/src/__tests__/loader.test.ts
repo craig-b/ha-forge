@@ -120,6 +120,69 @@ describe('loadBundles()', () => {
     expect(result.errors).toHaveLength(0);
   });
 
+  it('routes device members by __kind into correct definition arrays', async () => {
+    const jsContent = `
+      export default {
+        __kind: 'device',
+        id: 'smart_home',
+        name: 'Smart Home',
+        entities: {
+          temperature: { id: 'sh_temp', name: 'Temp', type: 'sensor' },
+          reboot: { __kind: 'task', id: 'sh_reboot', name: 'Reboot', run() {} },
+          houseMode: {
+            __kind: 'mode', id: 'sh_mode', name: 'Mode',
+            states: ['home', 'away'], initial: 'home',
+          },
+          workHours: {
+            __kind: 'cron', id: 'sh_cron', name: 'Work Hours',
+            schedule: '0 9-17 * * 1-5',
+          },
+          monitor: {
+            __kind: 'automation', id: 'sh_monitor', entity: false,
+            init() {},
+          },
+        },
+        init() {},
+      };
+    `;
+    fs.writeFileSync(path.join(tmpDir, 'smart_home.js'), jsContent);
+
+    const result = await loadBundles(tmpDir);
+    expect(result.errors).toHaveLength(0);
+
+    // Standard entity goes to entities array with device info stamped
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].definition.id).toBe('sh_temp');
+    expect(result.entities[0].definition.device).toEqual({ id: 'smart_home', name: 'Smart Home' });
+
+    // Task routed to tasks array with device info
+    expect(result.tasks).toHaveLength(1);
+    expect(result.tasks[0].definition.id).toBe('sh_reboot');
+    expect(result.tasks[0].definition.device).toEqual({ id: 'smart_home', name: 'Smart Home' });
+
+    // Mode routed to modes array with device info
+    expect(result.modes).toHaveLength(1);
+    expect(result.modes[0].definition.id).toBe('sh_mode');
+    expect(result.modes[0].definition.device).toEqual({ id: 'smart_home', name: 'Smart Home' });
+
+    // Cron routed to crons array with device info
+    expect(result.crons).toHaveLength(1);
+    expect(result.crons[0].definition.id).toBe('sh_cron');
+    expect(result.crons[0].definition.device).toEqual({ id: 'smart_home', name: 'Smart Home' });
+
+    // Automation routed to automations with entity forced true and device info
+    expect(result.automations).toHaveLength(1);
+    expect(result.automations[0].definition.id).toBe('sh_monitor');
+    expect(result.automations[0].definition.entity).toBe(true);
+    expect(result.automations[0].definition.device).toEqual({ id: 'smart_home', name: 'Smart Home' });
+
+    // Device entityIds includes all member IDs
+    expect(result.devices).toHaveLength(1);
+    expect(result.devices[0].entityIds).toEqual(
+      expect.arrayContaining(['sh_temp', 'sh_reboot', 'sh_mode', 'sh_cron', 'sh_monitor']),
+    );
+  });
+
   it('ignores exports that are not entity definitions or factories', async () => {
     const jsContent = `
       export const config = { someKey: 'value' };

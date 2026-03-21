@@ -529,6 +529,120 @@ describe('EntityLifecycleManager', () => {
       expect(transport.onCommand).toHaveBeenCalledWith('dev_switch', expect.any(Function));
     });
 
+    it('provides task handle with trigger() in device context', async () => {
+      const runFn = vi.fn();
+      const taskDef = {
+        __kind: 'task' as const,
+        id: 'dev_reboot',
+        name: 'Reboot',
+        run: runFn,
+      };
+
+      const deviceInit = vi.fn(function(this: { entities: Record<string, { trigger: () => void }> }) {
+        this.entities.reboot.trigger();
+      });
+
+      const deviceDef: DeviceDefinition = {
+        __kind: 'device', id: 'mixed_dev', name: 'Mixed',
+        entities: { reboot: taskDef as any },
+        init: deviceInit,
+      };
+
+      // Task is a device member — registered via initTask separately
+      const entities: ResolvedEntity[] = [];
+      const devices: ResolvedDevice[] = [{
+        definition: deviceDef, sourceFile: 'test.ts',
+        entityIds: ['dev_reboot'],
+      }];
+      const tasks = [{
+        definition: taskDef,
+        sourceFile: 'test.ts',
+      }];
+
+      await manager.deploy(entities, devices, [], tasks);
+
+      expect(deviceInit).toHaveBeenCalledTimes(1);
+      // Task run() should have been triggered from init
+      await Promise.resolve(); // flush microtask
+      expect(runFn).toHaveBeenCalledTimes(1);
+    });
+
+    it('provides mode handle with state/setState() in device context', async () => {
+      const modeDef = {
+        __kind: 'mode' as const,
+        id: 'dev_mode',
+        name: 'House Mode',
+        states: ['home', 'away'] as string[],
+        initial: 'home',
+      };
+
+      let capturedHandle: { state: string; setState: (s: string) => Promise<void> } | undefined;
+      const deviceInit = vi.fn(function(this: { entities: Record<string, { state: string; setState: (s: string) => Promise<void> }> }) {
+        capturedHandle = this.entities.houseMode;
+      });
+
+      const deviceDef: DeviceDefinition = {
+        __kind: 'device', id: 'mode_dev', name: 'Mode Dev',
+        entities: { houseMode: modeDef as any },
+        init: deviceInit,
+      };
+
+      const entities: ResolvedEntity[] = [];
+      const devices: ResolvedDevice[] = [{
+        definition: deviceDef, sourceFile: 'test.ts',
+        entityIds: ['dev_mode'],
+      }];
+      const modes = [{
+        definition: modeDef,
+        sourceFile: 'test.ts',
+      }];
+
+      await manager.deploy(entities, devices, [], [], modes);
+
+      expect(capturedHandle).toBeDefined();
+      expect(capturedHandle!.state).toBe('home');
+
+      await capturedHandle!.setState('away');
+      expect(capturedHandle!.state).toBe('away');
+      expect(transport.publishState).toHaveBeenCalledWith('dev_mode', 'away');
+    });
+
+    it('provides cron handle with isActive in device context', async () => {
+      const cronDef = {
+        __kind: 'cron' as const,
+        id: 'dev_cron',
+        name: 'Work Hours',
+        schedule: '* * * * *', // always matches
+      };
+
+      let capturedHandle: { isActive: boolean } | undefined;
+      const deviceInit = vi.fn(function(this: { entities: Record<string, { isActive: boolean }> }) {
+        capturedHandle = this.entities.workHours;
+      });
+
+      const deviceDef: DeviceDefinition = {
+        __kind: 'device', id: 'cron_dev', name: 'Cron Dev',
+        entities: { workHours: cronDef as any },
+        init: deviceInit,
+      };
+
+      const entities: ResolvedEntity[] = [];
+      const devices: ResolvedDevice[] = [{
+        definition: deviceDef, sourceFile: 'test.ts',
+        entityIds: ['dev_cron'],
+      }];
+      const crons = [{
+        definition: cronDef,
+        sourceFile: 'test.ts',
+      }];
+
+      await manager.deploy(entities, devices, [], [], [], crons);
+
+      expect(capturedHandle).toBeDefined();
+      // '* * * * *' always matches → isActive should be true
+      expect(capturedHandle!.isActive).toBe(true);
+    });
+
     it('clears device timer handles on teardown', async () => {
       const clearTimeoutSpy = vi.spyOn(globalThis, 'clearTimeout');
       const { entities, devices, initFn } = makeDeviceWithEntities();

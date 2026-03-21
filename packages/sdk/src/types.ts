@@ -1882,6 +1882,8 @@ export interface AutomationDefinition {
   id: string;
   /** Optional: surface as a `binary_sensor` in HA (ON = running, OFF = errored). */
   entity?: boolean;
+  /** Optional device to group the binary_sensor entity under. */
+  device?: DeviceInfo;
   /** Called once when the automation is deployed. Set up subscriptions and reactive logic. */
   init(this: AutomationContext): void | Promise<void>;
   /** Called when the automation is torn down. Use for cleanup beyond auto-tracked handles. */
@@ -2020,6 +2022,17 @@ export interface CronDefinition {
 // ---- Device ----
 
 /**
+ * Union of all definition types that can appear inside a device's `entities` map.
+ * Includes standard entity definitions plus task, mode, cron, and automation.
+ */
+export type DeviceMemberDefinition =
+  | EntityDefinition
+  | TaskDefinition
+  | ModeDefinition<string>
+  | CronDefinition
+  | AutomationDefinition;
+
+/**
  * Handle for updating an entity's state from within a device's `init()`.
  * @typeParam TState - The entity's state type.
  */
@@ -2064,14 +2077,50 @@ export type EntityHandleFor<T extends EntityDefinition> =
   T extends ImageDefinition ? DeviceEntityHandle<string> :
   DeviceEntityHandle<unknown>;
 
+/** Handle for triggering a task from within a device's `init()`. */
+export interface DeviceTaskHandle {
+  /** Trigger the task's `run()` function. */
+  trigger(): void;
+}
+
+/** Handle for reading/setting a mode's state from within a device's `init()`. */
+export interface DeviceModeHandle<TStates extends string = string> {
+  /** The current mode state. */
+  readonly state: TStates;
+  /** Transition to a new mode state, respecting guards and enter/exit hooks. */
+  setState(state: TStates): Promise<void>;
+}
+
+/** Handle for reading a cron's active state from within a device's `init()`. */
+export interface DeviceCronHandle {
+  /** Whether the cron schedule is currently active (matching the current time). */
+  readonly isActive: boolean;
+}
+
+/** Handle for an automation within a device. */
+export interface DeviceAutomationHandle {}
+
+/**
+ * Maps a device member definition type to its device handle type.
+ * Discriminated types (task, mode, cron, automation) are checked before
+ * the structural `EntityDefinition` fallback.
+ */
+export type DeviceMemberHandleFor<T extends DeviceMemberDefinition> =
+  T extends TaskDefinition ? DeviceTaskHandle :
+  T extends ModeDefinition<infer TStates> ? DeviceModeHandle<TStates> :
+  T extends CronDefinition ? DeviceCronHandle :
+  T extends AutomationDefinition ? DeviceAutomationHandle :
+  T extends EntityDefinition ? EntityHandleFor<T> :
+  never;
+
 /**
  * Context bound as `this` inside a device's `init()` and `destroy()` callbacks.
  * Provides typed entity handles, managed timers, MQTT access,
  * HA API (`this.ha`), and lifecycle-managed event subscriptions (`this.events`).
  */
-export interface DeviceContext<TEntities extends Record<string, EntityDefinition>> {
-  /** Typed handles for updating each entity in the device. */
-  entities: { [K in keyof TEntities]: EntityHandleFor<TEntities[K]> };
+export interface DeviceContext<TEntities extends Record<string, DeviceMemberDefinition>> {
+  /** Typed handles for each member in the device. */
+  entities: { [K in keyof TEntities]: DeviceMemberHandleFor<TEntities[K]> };
   /**
    * Stateless HA API — safe to pass to utility functions.
    * Provides callService, getState, getEntities, fireEvent, friendlyName.
@@ -2132,7 +2181,7 @@ export interface DeviceContext<TEntities extends Record<string, EntityDefinition
  * Options for defining a device with grouped entities.
  * @typeParam TEntities - Map of entity keys to entity definitions.
  */
-export interface DeviceOptions<TEntities extends Record<string, EntityDefinition>> {
+export interface DeviceOptions<TEntities extends Record<string, DeviceMemberDefinition>> {
   /** Unique device identifier. */
   id: string;
   /** Human-readable device name shown in the HA UI. */
@@ -2157,7 +2206,7 @@ export interface DeviceOptions<TEntities extends Record<string, EntityDefinition
  * A device definition that groups multiple entities with a shared lifecycle.
  * Created by the `device()` factory function.
  */
-export interface DeviceDefinition<TEntities extends Record<string, EntityDefinition> = Record<string, EntityDefinition>> {
+export interface DeviceDefinition<TEntities extends Record<string, DeviceMemberDefinition> = Record<string, DeviceMemberDefinition>> {
   /** Discriminant for loader detection. */
   __kind: 'device';
   /** Unique device identifier. */

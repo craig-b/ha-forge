@@ -5,6 +5,7 @@ import type {
   ComputedDefinition,
   DeviceContext,
   DeviceDefinition,
+  DeviceMemberDefinition,
   EntityContext,
   EntityDefinition,
   EntityLogger,
@@ -22,6 +23,7 @@ import type {
 import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
+import { isTaskDefinition, isModeDefinition, isCronDefinition, isAutomationDefinition } from './loader.js';
 import type { Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 import { CronExpressionParser } from 'cron-parser';
@@ -50,7 +52,7 @@ interface DeviceInstance {
   /** Command handlers registered via entity handles. */
   commandHandlers: Map<string, (command: unknown) => void | Promise<void>>;
   /** Stored context for calling destroy(). */
-  context?: DeviceContext<Record<string, EntityDefinition>>;
+  context?: DeviceContext<Record<string, DeviceMemberDefinition>>;
 }
 
 interface AutomationInstance {
@@ -192,33 +194,9 @@ export class EntityLifecycleManager {
       }
     }
 
-    // Init devices (their entities are already registered above)
-    if (devices) {
-      for (const dev of devices) {
-        try {
-          await this.initDevice(dev);
-        } catch (err) {
-          this.logger.error(`Failed to initialize device ${dev.definition.id}`, {
-            error: err instanceof Error ? err.message : String(err),
-            sourceFile: dev.sourceFile,
-          });
-        }
-      }
-    }
-
-    // Init automations
-    if (automations) {
-      for (const auto of automations) {
-        try {
-          await this.initAutomation(auto);
-        } catch (err) {
-          this.logger.error(`Failed to initialize automation ${auto.definition.id}`, {
-            error: err instanceof Error ? err.message : String(err),
-            sourceFile: auto.sourceFile,
-          });
-        }
-      }
-    }
+    // Init tasks, modes, crons, and automations BEFORE devices.
+    // Devices may contain these as members and need their instances to exist
+    // when building handles in initDevice().
 
     // Init tasks
     if (tasks) {
@@ -257,6 +235,34 @@ export class EntityLifecycleManager {
           this.logger.error(`Failed to initialize cron ${c.definition.id}`, {
             error: err instanceof Error ? err.message : String(err),
             sourceFile: c.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init automations
+    if (automations) {
+      for (const auto of automations) {
+        try {
+          await this.initAutomation(auto);
+        } catch (err) {
+          this.logger.error(`Failed to initialize automation ${auto.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: auto.sourceFile,
+          });
+        }
+      }
+    }
+
+    // Init devices (their entities, tasks, modes, crons are already registered above)
+    if (devices) {
+      for (const dev of devices) {
+        try {
+          await this.initDevice(dev);
+        } catch (err) {
+          this.logger.error(`Failed to initialize device ${dev.definition.id}`, {
+            error: err instanceof Error ? err.message : String(err),
+            sourceFile: dev.sourceFile,
           });
         }
       }
@@ -574,65 +580,104 @@ export class EntityLifecycleManager {
 
     this.deviceInstances.set(dev.id, deviceInstance);
 
-    // Build entity handles for the device context
-    const entityHandles: Record<string, { update: (value: unknown, attributes?: Record<string, unknown>) => void; onCommand?: (handler: (command: unknown) => void | Promise<void>) => void }> = {};
+    // Build member handles for the device context
+    const memberHandles: Record<string, unknown> = {};
 
-    for (const [key, entityDef] of Object.entries(dev.entities)) {
-      const entityId = entityDef.id;
-      const entityInstance = this.instances.get(entityId);
-      if (!entityInstance) {
-        this.logger.warn(`Device ${dev.id}: entity ${entityId} not found in instances`);
-        continue;
-      }
+    for (const [key, memberDef] of Object.entries(dev.entities)) {
+      if (isTaskDefinition(memberDef)) {
+        const taskInstance = this.taskInstances.get(memberDef.id);
+        if (!taskInstance) {
+          this.logger.warn(`Device ${dev.id}: task ${memberDef.id} not found in instances`);
+          continue;
+        }
+        const taskContext = this.createTaskContext(taskInstance);
+        memberHandles[key] = {
+          trigger: () => { this.executeTask(taskInstance, taskContext); },
+        };
+      } else if (isModeDefinition(memberDef)) {
+        const modeInstance = this.modeInstances.get(memberDef.id);
+        if (!modeInstance) {
+          this.logger.warn(`Device ${dev.id}: mode ${memberDef.id} not found in instances`);
+          continue;
+        }
+        memberHandles[key] = {
+          get state() { return modeInstance.currentState; },
+          setState: async (state: string) => {
+            // Simulate a command to go through the full transition logic
+            const handler = this.transport.onCommand as unknown as { __deviceModeHandlers?: Map<string, (command: unknown) => void | Promise<void>> };
+            // Directly trigger transport command for this mode
+            await this.setModeState(modeInstance, state);
+          },
+        };
+      } else if (isCronDefinition(memberDef)) {
+        const cronInstance = this.cronInstances.get(memberDef.id);
+        if (!cronInstance) {
+          this.logger.warn(`Device ${dev.id}: cron ${memberDef.id} not found in instances`);
+          continue;
+        }
+        memberHandles[key] = {
+          get isActive() { return cronInstance.currentState === 'ON'; },
+        };
+      } else if (isAutomationDefinition(memberDef)) {
+        memberHandles[key] = {};
+      } else {
+        // Standard EntityDefinition
+        const entityId = memberDef.id;
+        const entityInstance = this.instances.get(entityId);
+        if (!entityInstance) {
+          this.logger.warn(`Device ${dev.id}: entity ${entityId} not found in instances`);
+          continue;
+        }
 
-      const handle: { update: (value: unknown, attributes?: Record<string, unknown>) => void; onCommand?: (handler: (command: unknown) => void | Promise<void>) => void } = {
-        update: (value: unknown, attributes?: Record<string, unknown>) => {
-          entityInstance.currentState = value;
-          this.transport.publishState(entityId, value, attributes).then(() => {
-            this.transport.clearEntityFailure?.(entityId);
-            this.onStateChange?.(entityId, value);
-          }).catch((err) => {
-            this.transport.recordEntityFailure?.(entityId);
-            this.logger.error(`Failed to publish state for ${entityId}`, {
-              error: err instanceof Error ? err.message : String(err),
+        const handle: { update: (value: unknown, attributes?: Record<string, unknown>) => void; onCommand?: (handler: (command: unknown) => void | Promise<void>) => void } = {
+          update: (value: unknown, attributes?: Record<string, unknown>) => {
+            entityInstance.currentState = value;
+            this.transport.publishState(entityId, value, attributes).then(() => {
+              this.transport.clearEntityFailure?.(entityId);
+              this.onStateChange?.(entityId, value);
+            }).catch((err) => {
+              this.transport.recordEntityFailure?.(entityId);
+              this.logger.error(`Failed to publish state for ${entityId}`, {
+                error: err instanceof Error ? err.message : String(err),
+              });
             });
-          });
-        },
-      };
-
-      // Add onCommand for bidirectional entity types
-      if ('onCommand' in entityDef) {
-        handle.onCommand = (handler: (command: unknown) => void | Promise<void>) => {
-          commandHandlers.set(entityId, handler);
+          },
         };
 
-        // Register transport command listener that delegates to the device's handler
-        this.transport.onCommand(entityId, (command) => {
-          const h = commandHandlers.get(entityId);
-          if (h) {
-            try {
-              const result = h(command);
-              if (result instanceof Promise) {
-                result.catch((err) => {
-                  this.logger.error(`Command handler error for ${entityId}`, {
-                    error: err instanceof Error ? err.message : String(err),
-                    command,
+        // Add onCommand for bidirectional entity types
+        if ('onCommand' in memberDef) {
+          handle.onCommand = (handler: (command: unknown) => void | Promise<void>) => {
+            commandHandlers.set(entityId, handler);
+          };
+
+          // Register transport command listener that delegates to the device's handler
+          this.transport.onCommand(entityId, (command) => {
+            const h = commandHandlers.get(entityId);
+            if (h) {
+              try {
+                const result = h(command);
+                if (result instanceof Promise) {
+                  result.catch((err) => {
+                    this.logger.error(`Command handler error for ${entityId}`, {
+                      error: err instanceof Error ? err.message : String(err),
+                      command,
+                    });
                   });
+                }
+              } catch (err) {
+                this.logger.error(`Command handler error for ${entityId}`, {
+                  error: err instanceof Error ? err.message : String(err),
+                  command,
                 });
               }
-            } catch (err) {
-              this.logger.error(`Command handler error for ${entityId}`, {
-                error: err instanceof Error ? err.message : String(err),
-                command,
-              });
+            } else {
+              this.logger.warn(`No command handler registered for ${entityId} in device ${dev.id}`);
             }
-          } else {
-            this.logger.warn(`No command handler registered for ${entityId} in device ${dev.id}`);
-          }
-        });
-      }
+          });
+        }
 
-      entityHandles[key] = handle;
+        memberHandles[key] = handle;
+      }
     }
 
     // Build the device context
@@ -668,8 +713,8 @@ export class EntityLifecycleManager {
       sequence() { entityLogger.warn('this.events.sequence() unavailable — no WebSocket connection'); return () => {}; },
     };
 
-    const context: DeviceContext<Record<string, EntityDefinition>> = {
-      entities: entityHandles as DeviceContext<Record<string, EntityDefinition>>['entities'],
+    const context: DeviceContext<Record<string, DeviceMemberDefinition>> = {
+      entities: memberHandles as DeviceContext<Record<string, DeviceMemberDefinition>>['entities'],
 
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
@@ -1024,6 +1069,65 @@ export class EntityLifecycleManager {
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       log: entityLogger,
     };
+  }
+
+  private async setModeState(instance: ModeInstance, targetState: string): Promise<void> {
+    const def = instance.mode.definition;
+
+    if (!def.states.includes(targetState as typeof def.states[number])) {
+      this.logger.warn(`Mode ${def.id}: invalid state '${targetState}'`);
+      return;
+    }
+
+    if (targetState === instance.currentState) return;
+
+    const fromState = instance.currentState;
+    const modeContext = this.createModeContext(instance);
+
+    // Check guard on target state
+    const targetTransition = def.transitions?.[targetState as typeof def.states[number]];
+    if (targetTransition?.guard) {
+      try {
+        const allowed = await targetTransition.guard.call(modeContext, fromState as typeof def.states[number]);
+        if (!allowed) {
+          this.logger.info(`Mode ${def.id}: guard blocked transition ${fromState} → ${targetState}`);
+          return;
+        }
+      } catch (err) {
+        this.logger.error(`Mode ${def.id}: guard(${targetState}) failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+    }
+
+    // Run exit hook for current state
+    const currentTransition = def.transitions?.[fromState as typeof def.states[number]];
+    if (currentTransition?.exit) {
+      try {
+        await currentTransition.exit.call(modeContext);
+      } catch (err) {
+        this.logger.error(`Mode ${def.id}: exit(${fromState}) failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // Transition
+    instance.currentState = targetState;
+    await this.transport.publishState(def.id, targetState);
+    this.onStateChange?.(def.id, targetState);
+
+    // Run enter hook for new state
+    if (targetTransition?.enter) {
+      try {
+        await targetTransition.enter.call(modeContext);
+      } catch (err) {
+        this.logger.error(`Mode ${def.id}: enter(${targetState}) failed`, {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   private async initCron(resolved: ResolvedCron): Promise<void> {
