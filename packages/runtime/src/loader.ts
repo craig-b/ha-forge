@@ -87,6 +87,16 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.task = sdk.task;
   g.mode = sdk.mode;
   g.cron = sdk.cron;
+  g.debounced = sdk.debounced;
+  g.filtered = sdk.filtered;
+  g.sampled = sdk.sampled;
+  g.buffered = sdk.buffered;
+  g.average = sdk.average;
+  g.sum = sdk.sum;
+  g.min = sdk.min;
+  g.max = sdk.max;
+  g.last = sdk.last;
+  g.count = sdk.count;
 
   // Always provide ha global — stateless only (no on/reactions).
   // Use this.events for lifecycle-managed subscriptions instead.
