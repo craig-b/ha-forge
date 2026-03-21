@@ -27,6 +27,7 @@ export { device } from './entities/device.js';
 export { automation } from './entities/automation.js';
 export { task } from './entities/task.js';
 export { mode } from './entities/mode.js';
+export { cron } from './entities/cron.js';
 
 export type { SensorOptions } from './entities/sensor.js';
 export type { BinarySensorOptions } from './entities/binary_sensor.js';
@@ -54,6 +55,7 @@ export type { ComputedOptions, ComputedAttributeOptions } from './entities/compu
 export type { AutomationOptions } from './entities/automation.js';
 export type { TaskOptions } from './entities/task.js';
 export type { ModeOptions } from './entities/mode.js';
+export type { CronOptions } from './entities/cron.js';
 
 export type {
   NumberInRange,
@@ -164,6 +166,7 @@ export type {
   ModeContext,
   ModeTransition,
   ModeDefinition,
+  CronDefinition,
   EntityDefinition,
   EntityFactory,
   DeviceEntityHandle,
