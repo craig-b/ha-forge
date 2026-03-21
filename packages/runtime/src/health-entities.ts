@@ -45,7 +45,7 @@ export class HealthEntities {
           device_class: 'problem',
         },
       },
-      sourceFile: '_health',
+
       deviceId: 'ha_forge_system',
     });
 
@@ -61,7 +61,7 @@ export class HealthEntities {
           state_class: 'measurement',
         },
       },
-      sourceFile: '_health',
+
       deviceId: 'ha_forge_system',
     });
 

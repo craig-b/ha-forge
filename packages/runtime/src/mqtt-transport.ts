@@ -24,8 +24,7 @@ import type {
   UpdateDefinition,
   ImageDefinition,
 } from '@ha-forge/sdk';
-import type { ResolvedEntity } from '@ha-forge/sdk/internal';
-import type { Transport } from './transport.js';
+import type { RegistrableEntity, Transport } from './transport.js';
 
 const AVAILABILITY_TOPIC = 'ha-forge/availability';
 const HA_STATUS_TOPIC = 'homeassistant/status';
@@ -51,7 +50,7 @@ export interface MqttTransportOptions {
 
 export class MqttTransport implements Transport {
   private client: mqtt.MqttClient | null = null;
-  private registeredEntities = new Map<string, ResolvedEntity>();
+  private registeredEntities = new Map<string, RegistrableEntity>();
   private commandHandlers = new Map<string, (command: unknown) => void>();
   private deviceConfigs = new Map<string, Record<string, unknown>>();
   private entityFailures = new Map<string, number>();
@@ -130,7 +129,7 @@ export class MqttTransport implements Transport {
     return mqttTypes.includes(type);
   }
 
-  async register(entity: ResolvedEntity): Promise<void> {
+  async register(entity: RegistrableEntity): Promise<void> {
     this.registeredEntities.set(entity.definition.id, entity);
 
     const id = entity.definition.id;
@@ -232,9 +231,8 @@ export class MqttTransport implements Transport {
 
     const id = entity.definition.id;
 
-    // Unsubscribe from all command topics (entityType cast: see subscribeCommandTopics comment)
-    const entityType = entity.definition.type as string;
-    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entityType === 'button' || entityType === 'select';
+    // Unsubscribe from all command topics
+    const isBidirectional = 'onCommand' in entity.definition || 'onPress' in entity.definition || 'onNotify' in entity.definition || 'onInstall' in entity.definition || entity.definition.type === 'button' || entity.definition.type === 'select';
     if (isBidirectional) {
       this.client?.unsubscribe(`ha-forge/${id}/set`);
 
@@ -376,15 +374,12 @@ export class MqttTransport implements Transport {
   // --- Internal methods ---
 
   /** Subscribe to all command topics needed by this entity. */
-  private subscribeCommandTopics(entity: ResolvedEntity): void {
+  private subscribeCommandTopics(entity: RegistrableEntity): void {
     const { definition } = entity;
     const id = definition.id;
 
-    // Check both marker properties (onCommand/onPress) and type (button/select always need commands).
-    // Type assertion needed: synthetic entities (from tasks/modes) are cast to EntityDefinition
-    // but lack marker properties, so TS narrows the type and considers button/select impossible.
-    const entityType = definition.type as string;
-    const isBidirectional = 'onCommand' in definition || 'onPress' in definition || 'onNotify' in definition || 'onInstall' in definition || entityType === 'button' || entityType === 'select';
+    // Check both marker properties (onCommand/onPress) and type (button/select always need commands)
+    const isBidirectional = 'onCommand' in definition || 'onPress' in definition || 'onNotify' in definition || 'onInstall' in definition || definition.type === 'button' || definition.type === 'select';
     if (!isBidirectional) return;
 
     this.client?.subscribe(`ha-forge/${id}/set`);
@@ -474,7 +469,7 @@ export class MqttTransport implements Transport {
     }
   }
 
-  private async publishDeviceDiscovery(entity: ResolvedEntity): Promise<void> {
+  private async publishDeviceDiscovery(entity: RegistrableEntity): Promise<void> {
     const { definition, deviceId } = entity;
 
     // Build or update device config
@@ -502,7 +497,7 @@ export class MqttTransport implements Transport {
     await this.publish(topic, JSON.stringify(config), { retain: true });
   }
 
-  private async removeFromDeviceDiscovery(entity: ResolvedEntity): Promise<void> {
+  private async removeFromDeviceDiscovery(entity: RegistrableEntity): Promise<void> {
     const { definition, deviceId } = entity;
     const config = this.deviceConfigs.get(deviceId);
     if (!config) return;
@@ -522,7 +517,7 @@ export class MqttTransport implements Transport {
     }
   }
 
-  private buildDeviceInfo(entity: ResolvedEntity): Record<string, unknown> {
+  private buildDeviceInfo(entity: RegistrableEntity): Record<string, unknown> {
     const dev = entity.definition.device;
     if (dev) {
       return {
@@ -545,7 +540,7 @@ export class MqttTransport implements Transport {
     };
   }
 
-  private buildComponentConfig(entity: ResolvedEntity): Record<string, unknown> {
+  private buildComponentConfig(entity: RegistrableEntity): Record<string, unknown> {
     const { definition } = entity;
     const stateTopic = `ha-forge/${definition.id}/state`;
 

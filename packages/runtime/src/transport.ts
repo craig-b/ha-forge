@@ -1,9 +1,31 @@
-import type { EntityType } from '@ha-forge/sdk';
-import type { ResolvedEntity } from '@ha-forge/sdk/internal';
+import type { DeviceInfo, EntityType } from '@ha-forge/sdk';
+
+/**
+ * Minimal entity definition for transport registration (MQTT discovery).
+ * Matches the common fields from BaseEntity that the transport needs.
+ * EntityDefinition satisfies this naturally (all definitions extend BaseEntity);
+ * synthetic entities (from tasks, modes, crons) can use it directly without
+ * unsafe casts.
+ */
+export interface TransportEntityDef {
+  id: string;
+  type: EntityType;
+  name: string | null;
+  icon?: string;
+  category?: 'config' | 'diagnostic';
+  device?: DeviceInfo;
+  config?: unknown;
+}
+
+/** A resolved entity for transport registration. */
+export interface RegistrableEntity {
+  definition: TransportEntityDef;
+  deviceId: string;
+}
 
 export interface Transport {
   supports(type: EntityType): boolean;
-  register(entity: ResolvedEntity): Promise<void>;
+  register(entity: RegistrableEntity): Promise<void>;
   publishState(entityId: string, state: unknown, attributes?: Record<string, unknown>): Promise<void>;
   onCommand(entityId: string, handler: (command: unknown) => void): void;
   deregister(entityId: string): Promise<void>;

@@ -24,7 +24,7 @@ import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
 import { isTaskDefinition, isModeDefinition, isCronDefinition, isAutomationDefinition } from './loader.js';
-import type { Transport } from './transport.js';
+import type { RegistrableEntity, Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 import { CronExpressionParser } from 'cron-parser';
 
@@ -831,14 +831,13 @@ export class EntityLifecycleManager {
 
     // If entity: true, register a binary_sensor to track automation state
     if (def.entity) {
-      const syntheticEntity: ResolvedEntity = {
+      const syntheticEntity: RegistrableEntity = {
         definition: {
           id: def.id,
           name: def.id,
           type: 'binary_sensor',
           config: { device_class: 'running' },
-        } as EntityDefinition,
-        sourceFile: resolved.sourceFile,
+        },
         deviceId: def.id,
       };
       await this.transport.register(syntheticEntity);
@@ -885,15 +884,14 @@ export class EntityLifecycleManager {
     this.taskInstances.set(def.id, instance);
 
     // Register a button entity in HA
-    const syntheticEntity: ResolvedEntity = {
+    const syntheticEntity: RegistrableEntity = {
       definition: {
         id: def.id,
         name: def.name,
         type: 'button',
         ...(def.device && { device: def.device }),
         ...(def.icon && { icon: def.icon }),
-      } as unknown as EntityDefinition,
-      sourceFile: resolved.sourceFile,
+      },
       deviceId: def.device?.id ?? def.id,
     };
     await this.transport.register(syntheticEntity);
@@ -951,7 +949,7 @@ export class EntityLifecycleManager {
     this.modeInstances.set(def.id, instance);
 
     // Register a select entity in HA with mode states as options
-    const syntheticEntity: ResolvedEntity = {
+    const syntheticEntity: RegistrableEntity = {
       definition: {
         id: def.id,
         name: def.name,
@@ -959,8 +957,7 @@ export class EntityLifecycleManager {
         config: { options: [...def.states] },
         ...(def.device && { device: def.device }),
         ...(def.icon && { icon: def.icon }),
-      } as unknown as EntityDefinition,
-      sourceFile: resolved.sourceFile,
+      },
       deviceId: def.device?.id ?? def.id,
     };
     await this.transport.register(syntheticEntity);
@@ -1155,7 +1152,7 @@ export class EntityLifecycleManager {
     CronExpressionParser.parse(def.schedule);
 
     // Register a binary_sensor entity in HA
-    const syntheticEntity: ResolvedEntity = {
+    const syntheticEntity: RegistrableEntity = {
       definition: {
         id: def.id,
         name: def.name,
@@ -1163,8 +1160,7 @@ export class EntityLifecycleManager {
         config: { device_class: 'running' },
         ...(def.device && { device: def.device }),
         ...(def.icon && { icon: def.icon }),
-      } as unknown as EntityDefinition,
-      sourceFile: resolved.sourceFile,
+      },
       deviceId: def.device?.id ?? def.id,
     };
     await this.transport.register(syntheticEntity);
