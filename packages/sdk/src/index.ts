@@ -26,6 +26,7 @@ export { entityFactory } from './entities/factory.js';
 export { device } from './entities/device.js';
 export { automation } from './entities/automation.js';
 export { task } from './entities/task.js';
+export { mode } from './entities/mode.js';
 
 export type { SensorOptions } from './entities/sensor.js';
 export type { BinarySensorOptions } from './entities/binary_sensor.js';
@@ -52,6 +53,7 @@ export type { ImageOptions } from './entities/image.js';
 export type { ComputedOptions, ComputedAttributeOptions } from './entities/computed.js';
 export type { AutomationOptions } from './entities/automation.js';
 export type { TaskOptions } from './entities/task.js';
+export type { ModeOptions } from './entities/mode.js';
 
 export type {
   NumberInRange,
@@ -159,6 +161,9 @@ export type {
   AutomationDefinition,
   TaskContext,
   TaskDefinition,
+  ModeContext,
+  ModeTransition,
+  ModeDefinition,
   EntityDefinition,
   EntityFactory,
   DeviceEntityHandle,
