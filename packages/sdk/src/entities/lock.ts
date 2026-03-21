@@ -1,7 +1,7 @@
-import type { LockConfig, LockDefinition, LockCommand, LockState, EntityContext } from '../types.js';
+import type { LockConfig, LockDefinition, LockCommand, LockState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a lock entity. */
-export interface LockOptions {
+export interface LockOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'front_door'` → `lock.front_door`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface LockOptions {
   icon?: string;
   /** Lock-specific MQTT discovery config (code_format). */
   config?: LockConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this lock.
    * @param command - `'LOCK'`, `'UNLOCK'`, or `'OPEN'`.
    */
-  onCommand(this: EntityContext<LockState>, command: LockCommand): void | Promise<void>;
+  onCommand(this: EntityContext<LockState, TAttrs>, command: LockCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial lock state.
    */
-  init?(this: EntityContext<LockState>): LockState | Promise<LockState>;
+  init?(this: EntityContext<LockState, TAttrs>): LockState | Promise<LockState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<LockState>): void | Promise<void>;
+  destroy?(this: EntityContext<LockState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -48,7 +50,7 @@ export interface LockOptions {
  * });
  * ```
  */
-export function lock(options: LockOptions): LockDefinition {
+export function lock<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: LockOptions<TAttrs>): LockDefinition {
   return {
     ...options,
     type: 'lock',

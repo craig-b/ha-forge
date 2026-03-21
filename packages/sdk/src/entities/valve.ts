@@ -1,7 +1,7 @@
-import type { ValveConfig, ValveDefinition, ValveCommand, ValveState, EntityContext } from '../types.js';
+import type { ValveConfig, ValveDefinition, ValveCommand, ValveState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a valve entity. */
-export interface ValveOptions {
+export interface ValveOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'main_water'` → `valve.main_water`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface ValveOptions {
   icon?: string;
   /** Valve-specific MQTT discovery config (device_class, reports_position). */
   config?: ValveConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this valve (open, close, stop, set_position).
    * @param command - Discriminated union on `action` field.
    */
-  onCommand(this: EntityContext<ValveState>, command: ValveCommand): void | Promise<void>;
+  onCommand(this: EntityContext<ValveState, TAttrs>, command: ValveCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial valve state.
    */
-  init?(this: EntityContext<ValveState>): ValveState | Promise<ValveState>;
+  init?(this: EntityContext<ValveState, TAttrs>): ValveState | Promise<ValveState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<ValveState>): void | Promise<void>;
+  destroy?(this: EntityContext<ValveState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -52,7 +54,7 @@ export interface ValveOptions {
  * });
  * ```
  */
-export function valve(options: ValveOptions): ValveDefinition {
+export function valve<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: ValveOptions<TAttrs>): ValveDefinition {
   return {
     ...options,
     type: 'valve',

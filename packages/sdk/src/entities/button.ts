@@ -1,7 +1,7 @@
-import type { ButtonConfig, ButtonDefinition, EntityContext } from '../types.js';
+import type { ButtonConfig, ButtonDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a button entity. */
-export interface ButtonOptions {
+export interface ButtonOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'reboot'` → `button.reboot`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,10 +14,12 @@ export interface ButtonOptions {
   icon?: string;
   /** Button-specific MQTT discovery config (device_class). */
   config?: ButtonConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when the button is pressed in HA.
    */
-  onPress(this: EntityContext<never>): void | Promise<void>;
+  onPress(this: EntityContext<never, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -39,7 +41,7 @@ export interface ButtonOptions {
  * });
  * ```
  */
-export function button(options: ButtonOptions): ButtonDefinition {
+export function button<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: ButtonOptions<TAttrs>): ButtonDefinition {
   return {
     ...options,
     type: 'button',

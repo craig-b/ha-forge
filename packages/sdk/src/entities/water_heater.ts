@@ -1,7 +1,7 @@
-import type { WaterHeaterConfig, WaterHeaterDefinition, WaterHeaterCommand, WaterHeaterState, EntityContext } from '../types.js';
+import type { WaterHeaterConfig, WaterHeaterDefinition, WaterHeaterCommand, WaterHeaterState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a water heater entity. */
-export interface WaterHeaterOptions {
+export interface WaterHeaterOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'boiler'` → `water_heater.boiler`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface WaterHeaterOptions {
   icon?: string;
   /** Water heater-specific MQTT discovery config (modes, temp range, precision). Required. */
   config: WaterHeaterConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this water heater (change mode, temperature).
    * @param command - Only changed fields are present.
    */
-  onCommand(this: EntityContext<WaterHeaterState>, command: WaterHeaterCommand): void | Promise<void>;
+  onCommand(this: EntityContext<WaterHeaterState, TAttrs>, command: WaterHeaterCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial water heater state.
    */
-  init?(this: EntityContext<WaterHeaterState>): WaterHeaterState | Promise<WaterHeaterState>;
+  init?(this: EntityContext<WaterHeaterState, TAttrs>): WaterHeaterState | Promise<WaterHeaterState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<WaterHeaterState>): void | Promise<void>;
+  destroy?(this: EntityContext<WaterHeaterState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -55,7 +57,7 @@ export interface WaterHeaterOptions {
  * });
  * ```
  */
-export function waterHeater(options: WaterHeaterOptions): WaterHeaterDefinition {
+export function waterHeater<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: WaterHeaterOptions<TAttrs>): WaterHeaterDefinition {
   return {
     ...options,
     type: 'water_heater',

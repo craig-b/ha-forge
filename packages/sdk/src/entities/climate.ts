@@ -1,7 +1,7 @@
-import type { ClimateConfig, ClimateDefinition, ClimateCommand, ClimateState, EntityContext } from '../types.js';
+import type { ClimateConfig, ClimateDefinition, ClimateCommand, ClimateState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a climate entity. */
-export interface ClimateOptions {
+export interface ClimateOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'bedroom'` → `climate.bedroom`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface ClimateOptions {
   icon?: string;
   /** Climate-specific MQTT discovery config (HVAC modes, temp range, fan/preset/swing modes). Required. */
   config: ClimateConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this climate device (change mode, temperature, etc.).
    * @param command - Only changed fields are present.
    */
-  onCommand(this: EntityContext<ClimateState>, command: ClimateCommand): void | Promise<void>;
+  onCommand(this: EntityContext<ClimateState, TAttrs>, command: ClimateCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial climate state.
    */
-  init?(this: EntityContext<ClimateState>): ClimateState | Promise<ClimateState>;
+  init?(this: EntityContext<ClimateState, TAttrs>): ClimateState | Promise<ClimateState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<ClimateState>): void | Promise<void>;
+  destroy?(this: EntityContext<ClimateState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -57,7 +59,7 @@ export interface ClimateOptions {
  * });
  * ```
  */
-export function climate(options: ClimateOptions): ClimateDefinition {
+export function climate<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: ClimateOptions<TAttrs>): ClimateDefinition {
   return {
     ...options,
     type: 'climate',

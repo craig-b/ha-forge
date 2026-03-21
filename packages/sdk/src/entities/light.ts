@@ -1,7 +1,7 @@
-import type { LightConfig, LightDefinition, LightCommand, LightState, EntityContext } from '../types.js';
+import type { LightConfig, LightDefinition, LightCommand, LightState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a light entity. */
-export interface LightOptions {
+export interface LightOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'kitchen'` → `light.kitchen`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface LightOptions {
   icon?: string;
   /** Light-specific MQTT discovery config (color modes, effects, color temp range). Required. */
   config: LightConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this light (turn on/off, change brightness/color).
    * @param command - The light command with desired state and parameters.
    */
-  onCommand(this: EntityContext<LightState>, command: LightCommand): void | Promise<void>;
+  onCommand(this: EntityContext<LightState, TAttrs>, command: LightCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial light state.
    */
-  init?(this: EntityContext<LightState>): LightState | Promise<LightState>;
+  init?(this: EntityContext<LightState, TAttrs>): LightState | Promise<LightState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<LightState>): void | Promise<void>;
+  destroy?(this: EntityContext<LightState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -56,7 +58,7 @@ export interface LightOptions {
  * });
  * ```
  */
-export function light(options: LightOptions): LightDefinition {
+export function light<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: LightOptions<TAttrs>): LightDefinition {
   return {
     ...options,
     type: 'light',

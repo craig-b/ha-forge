@@ -1,7 +1,7 @@
-import type { HumidifierConfig, HumidifierDefinition, HumidifierCommand, HumidifierState, EntityContext } from '../types.js';
+import type { HumidifierConfig, HumidifierDefinition, HumidifierCommand, HumidifierState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a humidifier entity. */
-export interface HumidifierOptions {
+export interface HumidifierOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'bedroom'` → `humidifier.bedroom`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface HumidifierOptions {
   icon?: string;
   /** Humidifier-specific MQTT discovery config (device_class, humidity range, modes). */
   config?: HumidifierConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this humidifier.
    * @param command - The humidifier command with desired state and parameters.
    */
-  onCommand(this: EntityContext<HumidifierState>, command: HumidifierCommand): void | Promise<void>;
+  onCommand(this: EntityContext<HumidifierState, TAttrs>, command: HumidifierCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial humidifier state.
    */
-  init?(this: EntityContext<HumidifierState>): HumidifierState | Promise<HumidifierState>;
+  init?(this: EntityContext<HumidifierState, TAttrs>): HumidifierState | Promise<HumidifierState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<HumidifierState>): void | Promise<void>;
+  destroy?(this: EntityContext<HumidifierState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -51,7 +53,7 @@ export interface HumidifierOptions {
  * });
  * ```
  */
-export function humidifier(options: HumidifierOptions): HumidifierDefinition {
+export function humidifier<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: HumidifierOptions<TAttrs>): HumidifierDefinition {
   return {
     ...options,
     type: 'humidifier',

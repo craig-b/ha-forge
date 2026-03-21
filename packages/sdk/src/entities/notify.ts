@@ -1,7 +1,7 @@
-import type { NotifyDefinition, EntityContext } from '../types.js';
+import type { NotifyDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a notify entity. */
-export interface NotifyOptions {
+export interface NotifyOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'kitchen_display'` → `notify.kitchen_display`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -12,11 +12,13 @@ export interface NotifyOptions {
   category?: NotifyDefinition['category'];
   /** MDI icon override (e.g. `'mdi:message'`). */
   icon?: string;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when a notification is sent to this entity.
    * @param message - The notification message text.
    */
-  onNotify(this: EntityContext<never>, message: string): void | Promise<void>;
+  onNotify(this: EntityContext<never, TAttrs>, message: string): void | Promise<void>;
 }
 
 /**
@@ -37,7 +39,7 @@ export interface NotifyOptions {
  * });
  * ```
  */
-export function notify(options: NotifyOptions): NotifyDefinition {
+export function notify<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: NotifyOptions<TAttrs>): NotifyDefinition {
   return {
     ...options,
     type: 'notify',

@@ -1,7 +1,7 @@
-import type { NumberConfig, NumberDefinition, EntityContext } from '../types.js';
+import type { NumberConfig, NumberDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a number entity. */
-export interface NumberOptions {
+export interface NumberOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'target_temp'` → `number.target_temp`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface NumberOptions {
   icon?: string;
   /** Number-specific MQTT discovery config (min, max, step, device_class). */
   config?: NumberConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a new value to this number entity.
    * @param command - The new numeric value.
    */
-  onCommand(this: EntityContext<number>, command: number): void | Promise<void>;
+  onCommand(this: EntityContext<number, TAttrs>, command: number): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial value.
    */
-  init?(this: EntityContext<number>): number | Promise<number>;
+  init?(this: EntityContext<number, TAttrs>): number | Promise<number>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<number>): void | Promise<void>;
+  destroy?(this: EntityContext<number, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -49,7 +51,7 @@ export interface NumberOptions {
  * });
  * ```
  */
-export function number(options: NumberOptions): NumberDefinition {
+export function number<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: NumberOptions<TAttrs>): NumberDefinition {
   return {
     ...options,
     type: 'number',

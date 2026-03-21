@@ -1,7 +1,7 @@
-import type { SelectConfig, SelectDefinition, EntityContext } from '../types.js';
+import type { SelectConfig, SelectDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a select entity. */
-export interface SelectOptions {
+export interface SelectOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'wash_mode'` → `select.wash_mode`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface SelectOptions {
   icon?: string;
   /** Select-specific MQTT discovery config (options list). Required. */
   config: SelectConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a new selection to this select entity.
    * @param command - The selected option string.
    */
-  onCommand(this: EntityContext<string>, command: string): void | Promise<void>;
+  onCommand(this: EntityContext<string, TAttrs>, command: string): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial selected option.
    */
-  init?(this: EntityContext<string>): string | Promise<string>;
+  init?(this: EntityContext<string, TAttrs>): string | Promise<string>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<string>): void | Promise<void>;
+  destroy?(this: EntityContext<string, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -49,7 +51,7 @@ export interface SelectOptions {
  * });
  * ```
  */
-export function select(options: SelectOptions): SelectDefinition {
+export function select<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: SelectOptions<TAttrs>): SelectDefinition {
   return {
     ...options,
     type: 'select',

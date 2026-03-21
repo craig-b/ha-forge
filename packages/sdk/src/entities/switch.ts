@@ -1,7 +1,7 @@
-import type { SwitchConfig, SwitchDefinition, EntityContext } from '../types.js';
+import type { SwitchConfig, SwitchDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a switch entity. */
-export interface SwitchOptions {
+export interface SwitchOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'pump'` → `switch.pump`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface SwitchOptions {
   icon?: string;
   /** Switch-specific MQTT discovery config (device_class). */
   config?: SwitchConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this switch (user toggles it in the UI).
    * @param command - `'ON'` or `'OFF'`.
    */
-  onCommand(this: EntityContext<'on' | 'off'>, command: 'ON' | 'OFF'): void | Promise<void>;
+  onCommand(this: EntityContext<'on' | 'off', TAttrs>, command: 'ON' | 'OFF'): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
    */
-  init?(this: EntityContext<'on' | 'off'>): 'on' | 'off' | Promise<'on' | 'off'>;
+  init?(this: EntityContext<'on' | 'off', TAttrs>): 'on' | 'off' | Promise<'on' | 'off'>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<'on' | 'off'>): void | Promise<void>;
+  destroy?(this: EntityContext<'on' | 'off', TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -53,7 +55,7 @@ export interface SwitchOptions {
  * });
  * ```
  */
-export function defineSwitch(options: SwitchOptions): SwitchDefinition {
+export function defineSwitch<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: SwitchOptions<TAttrs>): SwitchDefinition {
   return {
     ...options,
     type: 'switch',

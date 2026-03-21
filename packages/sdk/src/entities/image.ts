@@ -1,7 +1,7 @@
-import type { ImageConfig, ImageDefinition, EntityContext } from '../types.js';
+import type { ImageConfig, ImageDefinition, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining an image entity. */
-export interface ImageOptions {
+export interface ImageOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'snapshot'` → `image.snapshot`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,12 +14,14 @@ export interface ImageOptions {
   icon?: string;
   /** Image-specific MQTT discovery config (content_type). */
   config?: ImageConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called once when the entity is deployed. Return the initial image URL.
    */
-  init?(this: EntityContext<string>): string | Promise<string>;
+  init?(this: EntityContext<string, TAttrs>): string | Promise<string>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<string>): void | Promise<void>;
+  destroy?(this: EntityContext<string, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -42,7 +44,7 @@ export interface ImageOptions {
  * });
  * ```
  */
-export function image(options: ImageOptions): ImageDefinition {
+export function image<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: ImageOptions<TAttrs>): ImageDefinition {
   return {
     ...options,
     type: 'image',

@@ -1,7 +1,7 @@
-import type { FanConfig, FanDefinition, FanCommand, FanState, EntityContext } from '../types.js';
+import type { FanConfig, FanDefinition, FanCommand, FanState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a fan entity. */
-export interface FanOptions {
+export interface FanOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'ceiling'` → `fan.ceiling`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface FanOptions {
   icon?: string;
   /** Fan-specific MQTT discovery config (preset_modes, speed range). */
   config?: FanConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this fan (turn on/off, change speed, etc.).
    * @param command - The fan command with desired state and parameters.
    */
-  onCommand(this: EntityContext<FanState>, command: FanCommand): void | Promise<void>;
+  onCommand(this: EntityContext<FanState, TAttrs>, command: FanCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial fan state.
    */
-  init?(this: EntityContext<FanState>): FanState | Promise<FanState>;
+  init?(this: EntityContext<FanState, TAttrs>): FanState | Promise<FanState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<FanState>): void | Promise<void>;
+  destroy?(this: EntityContext<FanState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -51,7 +53,7 @@ export interface FanOptions {
  * });
  * ```
  */
-export function fan(options: FanOptions): FanDefinition {
+export function fan<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: FanOptions<TAttrs>): FanDefinition {
   return {
     ...options,
     type: 'fan',

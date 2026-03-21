@@ -1,7 +1,7 @@
-import type { LawnMowerDefinition, LawnMowerCommand, LawnMowerActivity, EntityContext } from '../types.js';
+import type { LawnMowerDefinition, LawnMowerCommand, LawnMowerActivity, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a lawn mower entity. */
-export interface LawnMowerOptions {
+export interface LawnMowerOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'garden_mower'` → `lawn_mower.garden_mower`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -12,17 +12,19 @@ export interface LawnMowerOptions {
   category?: LawnMowerDefinition['category'];
   /** MDI icon override (e.g. `'mdi:robot-mower'`). */
   icon?: string;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this lawn mower.
    * @param command - `'start_mowing'`, `'pause'`, or `'dock'`.
    */
-  onCommand(this: EntityContext<LawnMowerActivity>, command: LawnMowerCommand): void | Promise<void>;
+  onCommand(this: EntityContext<LawnMowerActivity, TAttrs>, command: LawnMowerCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial activity state.
    */
-  init?(this: EntityContext<LawnMowerActivity>): LawnMowerActivity | Promise<LawnMowerActivity>;
+  init?(this: EntityContext<LawnMowerActivity, TAttrs>): LawnMowerActivity | Promise<LawnMowerActivity>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<LawnMowerActivity>): void | Promise<void>;
+  destroy?(this: EntityContext<LawnMowerActivity, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -49,7 +51,7 @@ export interface LawnMowerOptions {
  * });
  * ```
  */
-export function lawnMower(options: LawnMowerOptions): LawnMowerDefinition {
+export function lawnMower<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: LawnMowerOptions<TAttrs>): LawnMowerDefinition {
   return {
     ...options,
     type: 'lawn_mower',

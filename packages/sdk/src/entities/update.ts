@@ -1,7 +1,7 @@
-import type { UpdateConfig, UpdateDefinition, UpdateState, EntityContext } from '../types.js';
+import type { UpdateConfig, UpdateDefinition, UpdateState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining an update entity. */
-export interface UpdateOptions {
+export interface UpdateOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'firmware'` → `update.firmware`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,16 +14,18 @@ export interface UpdateOptions {
   icon?: string;
   /** Update-specific MQTT discovery config (device_class). */
   config?: UpdateConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called once when the entity is deployed. Return the initial update state.
    */
-  init?(this: EntityContext<UpdateState>): UpdateState | Promise<UpdateState>;
+  init?(this: EntityContext<UpdateState, TAttrs>): UpdateState | Promise<UpdateState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<UpdateState>): void | Promise<void>;
+  destroy?(this: EntityContext<UpdateState, TAttrs>): void | Promise<void>;
   /**
    * Called when HA requests installation of the update.
    */
-  onInstall?(this: EntityContext<UpdateState>): void | Promise<void>;
+  onInstall?(this: EntityContext<UpdateState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -55,7 +57,7 @@ export interface UpdateOptions {
  * });
  * ```
  */
-export function update(options: UpdateOptions): UpdateDefinition {
+export function update<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: UpdateOptions<TAttrs>): UpdateDefinition {
   return {
     ...options,
     type: 'update',

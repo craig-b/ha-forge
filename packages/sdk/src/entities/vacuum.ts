@@ -1,7 +1,7 @@
-import type { VacuumConfig, VacuumDefinition, VacuumCommand, VacuumState, EntityContext } from '../types.js';
+import type { VacuumConfig, VacuumDefinition, VacuumCommand, VacuumState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a vacuum entity. */
-export interface VacuumOptions {
+export interface VacuumOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'robo_vac'` → `vacuum.robo_vac`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface VacuumOptions {
   icon?: string;
   /** Vacuum-specific MQTT discovery config (fan_speed_list). */
   config?: VacuumConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this vacuum.
    * @param command - The vacuum command (start, pause, stop, return_to_base, etc.).
    */
-  onCommand(this: EntityContext<VacuumState>, command: VacuumCommand): void | Promise<void>;
+  onCommand(this: EntityContext<VacuumState, TAttrs>, command: VacuumCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial vacuum state.
    */
-  init?(this: EntityContext<VacuumState>): VacuumState | Promise<VacuumState>;
+  init?(this: EntityContext<VacuumState, TAttrs>): VacuumState | Promise<VacuumState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<VacuumState>): void | Promise<void>;
+  destroy?(this: EntityContext<VacuumState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -52,7 +54,7 @@ export interface VacuumOptions {
  * });
  * ```
  */
-export function vacuum(options: VacuumOptions): VacuumDefinition {
+export function vacuum<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: VacuumOptions<TAttrs>): VacuumDefinition {
   return {
     ...options,
     type: 'vacuum',

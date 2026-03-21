@@ -1,7 +1,7 @@
-import type { CoverConfig, CoverDefinition, CoverCommand, CoverState, EntityContext } from '../types.js';
+import type { CoverConfig, CoverDefinition, CoverCommand, CoverState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a cover entity. */
-export interface CoverOptions {
+export interface CoverOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
   /** Unique entity identifier. Becomes the object_id in MQTT topics (e.g. `'garage'` → `cover.garage`). */
   id: string;
   /** Human-readable name shown in the HA UI. */
@@ -14,17 +14,19 @@ export interface CoverOptions {
   icon?: string;
   /** Cover-specific MQTT discovery config (device_class, position, tilt). */
   config?: CoverConfig;
+  /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
+  attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called when HA sends a command to this cover (open, close, stop, set position/tilt).
    * @param command - Discriminated union on `action` field.
    */
-  onCommand(this: EntityContext<CoverState>, command: CoverCommand): void | Promise<void>;
+  onCommand(this: EntityContext<CoverState, TAttrs>, command: CoverCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return the initial cover state.
    */
-  init?(this: EntityContext<CoverState>): CoverState | Promise<CoverState>;
+  init?(this: EntityContext<CoverState, TAttrs>): CoverState | Promise<CoverState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<CoverState>): void | Promise<void>;
+  destroy?(this: EntityContext<CoverState, TAttrs>): void | Promise<void>;
 }
 
 /**
@@ -52,7 +54,7 @@ export interface CoverOptions {
  * });
  * ```
  */
-export function cover(options: CoverOptions): CoverDefinition {
+export function cover<TAttrs extends Record<string, unknown> = Record<string, unknown>>(options: CoverOptions<TAttrs>): CoverDefinition {
   return {
     ...options,
     type: 'cover',
