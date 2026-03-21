@@ -434,6 +434,22 @@ declare function task(options: TaskOptions): TaskDefinition;
  */
 declare function mode<TStates extends string>(options: ModeOptions<TStates>): ModeDefinition<TStates>;
 /**
+ * Define a schedule entity surfaced as a \`binary_sensor\` in HA.
+ * ON during matching cron windows, OFF otherwise.
+ * Usable as a dependency in \`computed()\`, \`this.events.on()\`, etc.
+ * @param options - Cron schedule configuration including id, name, and schedule expression.
+ * @returns A cron definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const schedule = cron({
+ *   id: 'work_hours',
+ *   name: 'Work Hours',
+ *   schedule: '0 9-17 * * 1-5',  // weekdays 9-5
+ * });
+ * \`\`\`
+ */
+declare function cron(options: CronOptions): CronDefinition;
+/**
  * Global stateless Home Assistant client API.
  * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
