@@ -17,7 +17,7 @@ export function debounced<T extends StatefulEntityDefinition>(
       const originalUpdate = this.update;
       let timer: unknown;
       this.update = (value: unknown, attributes?: Record<string, unknown>) => {
-        if (timer) clearTimeout(timer as any);
+        if (timer) this.clearTimeout(timer);
         timer = this.setTimeout(
           () => originalUpdate.call(this, value, attributes),
           opts.wait,

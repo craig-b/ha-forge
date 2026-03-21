@@ -699,16 +699,28 @@ export interface EntityContext<TState = unknown, TAttrs extends Record<string, u
   log: EntityLogger;
   /**
    * Schedule a one-shot callback. Automatically cleared on entity teardown.
+   * Returns an opaque handle that can be passed to `clearTimeout()`.
    * @param fn - Callback to execute.
    * @param ms - Delay in milliseconds.
    */
-  setTimeout(fn: () => void, ms: number): void;
+  setTimeout(fn: () => void, ms: number): unknown;
+  /**
+   * Cancel a timeout previously created with `this.setTimeout()`.
+   * @param handle - The handle returned by `setTimeout()`.
+   */
+  clearTimeout(handle: unknown): void;
   /**
    * Schedule a repeating callback. Automatically cleared on entity teardown.
+   * Returns an opaque handle that can be passed to `clearInterval()`.
    * @param fn - Callback to execute.
    * @param ms - Interval in milliseconds.
    */
-  setInterval(fn: () => void, ms: number): void;
+  setInterval(fn: () => void, ms: number): unknown;
+  /**
+   * Cancel an interval previously created with `this.setInterval()`.
+   * @param handle - The handle returned by `setInterval()`.
+   */
+  clearInterval(handle: unknown): void;
   /**
    * Direct MQTT publish/subscribe access for custom topics.
    * Subscriptions are automatically cleaned up on entity teardown.
@@ -2149,16 +2161,28 @@ export interface DeviceContext<TEntities extends Record<string, DeviceMemberDefi
   log: EntityLogger;
   /**
    * Schedule a one-shot callback. Automatically cleared on device teardown.
+   * Returns an opaque handle that can be passed to `clearTimeout()`.
    * @param fn - Callback to execute.
    * @param ms - Delay in milliseconds.
    */
-  setTimeout(fn: () => void, ms: number): void;
+  setTimeout(fn: () => void, ms: number): unknown;
+  /**
+   * Cancel a timeout previously created with `this.setTimeout()`.
+   * @param handle - The handle returned by `setTimeout()`.
+   */
+  clearTimeout(handle: unknown): void;
   /**
    * Schedule a repeating callback. Automatically cleared on device teardown.
+   * Returns an opaque handle that can be passed to `clearInterval()`.
    * @param fn - Callback to execute.
    * @param ms - Interval in milliseconds.
    */
-  setInterval(fn: () => void, ms: number): void;
+  setInterval(fn: () => void, ms: number): unknown;
+  /**
+   * Cancel an interval previously created with `this.setInterval()`.
+   * @param handle - The handle returned by `setInterval()`.
+   */
+  clearInterval(handle: unknown): void;
   /**
    * Direct MQTT publish/subscribe access for custom topics.
    * Subscriptions are automatically cleaned up on device teardown.

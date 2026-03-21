@@ -772,11 +772,21 @@ export class EntityLifecycleManager {
       setTimeout(fn: () => void, ms: number) {
         const t = globalThis.setTimeout(fn, ms);
         handles.timeouts.push(t);
+        return t;
+      },
+
+      clearTimeout(handle: unknown) {
+        globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>);
       },
 
       setInterval(fn: () => void, ms: number) {
         const i = globalThis.setInterval(fn, ms);
         handles.intervals.push(i);
+        return i;
+      },
+
+      clearInterval(handle: unknown) {
+        globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>);
       },
 
       mqtt: {
@@ -1592,11 +1602,21 @@ export class EntityLifecycleManager {
       setTimeout(fn: () => void, ms: number) {
         const t = globalThis.setTimeout(fn, ms);
         handles.timeouts.push(t);
+        return t;
+      },
+
+      clearTimeout(handle: unknown) {
+        globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>);
       },
 
       setInterval(fn: () => void, ms: number) {
         const i = globalThis.setInterval(fn, ms);
         handles.intervals.push(i);
+        return i;
+      },
+
+      clearInterval(handle: unknown) {
+        globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>);
       },
 
       mqtt: {
@@ -1663,11 +1683,21 @@ export class EntityLifecycleManager {
       setTimeout(fn: () => void, ms: number) {
         const t = globalThis.setTimeout(fn, ms);
         handles.timeouts.push(t);
+        return t;
+      },
+
+      clearTimeout(handle: unknown) {
+        globalThis.clearTimeout(handle as ReturnType<typeof globalThis.setTimeout>);
       },
 
       setInterval(fn: () => void, ms: number) {
         const i = globalThis.setInterval(fn, ms);
         handles.intervals.push(i);
+        return i;
+      },
+
+      clearInterval(handle: unknown) {
+        globalThis.clearInterval(handle as ReturnType<typeof globalThis.setInterval>);
       },
 
       mqtt: {
