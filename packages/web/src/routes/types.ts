@@ -487,11 +487,17 @@ interface Console {
   // them via addExtraLib so users get Object.hasOwn, Array.at, Object.groupBy, etc.
   app.get('/es-libs', (c) => {
     try {
-      // Locate TypeScript's lib directory — try common locations
+      // Locate TypeScript's lib directory — try common locations.
+      // tsup bundles everything into dist/index.js, so import.meta.dirname
+      // is packages/web/dist/. We check multiple traversal depths to handle
+      // both monorepo dev and add-on container layouts.
+      const baseDir = import.meta.dirname ?? __dirname;
       const candidates = [
         path.resolve('/app/node_modules/typescript/lib'),
-        path.resolve('node_modules/typescript/lib'),
-        path.resolve(import.meta.dirname ?? __dirname, '../../../node_modules/typescript/lib'),
+        path.resolve(process.cwd(), 'node_modules/typescript/lib'),
+        path.resolve(baseDir, '../node_modules/typescript/lib'),
+        path.resolve(baseDir, '../../node_modules/typescript/lib'),
+        path.resolve(baseDir, '../../../node_modules/typescript/lib'),
       ];
       const tsLibDir = candidates.find(p => fs.existsSync(path.join(p, 'lib.es2022.object.d.ts')));
       if (!tsLibDir) {
