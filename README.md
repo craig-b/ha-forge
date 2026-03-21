@@ -50,7 +50,7 @@ export default sensor({
   init() {
     // Poll an external API every 30 seconds
     this.poll(async () => {
-      const resp = await this.fetch('http://192.168.1.50/api/temp');
+      const resp = await fetch('http://192.168.1.50/api/temp');
       return (await resp.json()).celsius;
     }, { interval: 30_000 });
     return 0;
@@ -141,7 +141,7 @@ export const temp = sensor({
   config: { device_class: 'temperature', unit_of_measurement: '°C' },
   init() {
     this.poll(async () => {
-      const data = await this.fetch('http://192.168.1.80/api').then(r => r.json());
+      const data = await fetch('http://192.168.1.80/api').then(r => r.json());
       return data.temperature;
     }, { interval: 60_000 });
     return 0;
@@ -156,7 +156,7 @@ export const humidity = sensor({
   config: { device_class: 'humidity', unit_of_measurement: '%' },
   init() {
     this.poll(async () => {
-      const data = await this.fetch('http://192.168.1.80/api').then(r => r.json());
+      const data = await fetch('http://192.168.1.80/api').then(r => r.json());
       return data.humidity;
     }, { interval: 60_000 });
     return 0;
@@ -175,7 +175,7 @@ export default sensor({
   config: { device_class: 'temperature', unit_of_measurement: '°C' },
   init() {
     this.poll(async () => {
-      const resp = await this.fetch('http://192.168.1.90/temp');
+      const resp = await fetch('http://192.168.1.90/temp');
       return (await resp.json()).celsius;
     }, { interval: 30_000 });
     return 0;
@@ -196,7 +196,7 @@ export const temp = sensor({
   config: { device_class: 'temperature', unit_of_measurement: '°C' },
   init() {
     this.poll(async () => {
-      const resp = await this.fetch('http://192.168.1.42/api/sensors');
+      const resp = await fetch('http://192.168.1.42/api/sensors');
       return (await resp.json()).water_temp;
     }, { interval: 10_000 });
     return 0;
@@ -209,7 +209,7 @@ export const heater = defineSwitch({
   name: 'Heater',
   device,
   onCommand(command) {
-    this.fetch('http://192.168.1.42/api/heater', {
+    fetch('http://192.168.1.42/api/heater', {
       method: 'POST',
       body: JSON.stringify({ state: command }),
     });
@@ -227,7 +227,7 @@ export const lamp = light({
   device,
   config: { supported_color_modes: ['brightness'] },
   onCommand(command) {
-    this.fetch('http://192.168.1.42/api/light', {
+    fetch('http://192.168.1.42/api/light', {
       method: 'POST',
       body: JSON.stringify(command),
     });
@@ -244,10 +244,10 @@ export const lamp = light({
 
 ### Device
 
-Groups multiple entities under a shared lifecycle with one `init()`, coordinated polling, and shared data. Entity handles provide typed `update()`. This avoids the problem of independent sensors each fetching the same API or racing against shared state.
+Groups multiple entities under a shared lifecycle with one `init()`, coordinated polling, and shared data. Devices can contain sensors, tasks, modes, computed entities, and crons — each gets a typed handle in the device context.
 
 ```typescript
-// weather.ts — 12 sensors from one API, one fetch every 10 minutes
+// weather.ts — sensors, computed entities, a mode, and a task under one device
 
 const API_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=YOUR_LAT&longitude=YOUR_LON' +
@@ -270,6 +270,7 @@ export default device({
   id: 'open_meteo',
   name: 'Open-Meteo',
   entities: {
+    // Sensors — updated from API data
     condition:  sensor({ id: 'weather_condition',   name: 'Condition',   config: {} }),
     temp:       sensor({ id: 'weather_temperature', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C', state_class: 'measurement' } }),
     feelsLike:  sensor({ id: 'weather_feels_like',  name: 'Feels Like',  config: { device_class: 'temperature', unit_of_measurement: '°C', state_class: 'measurement' } }),
@@ -282,10 +283,56 @@ export default device({
     todayLow:   sensor({ id: 'weather_today_low',    name: 'Today Low',   config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
     uvIndex:    sensor({ id: 'weather_uv_index',     name: 'UV Index',    config: { state_class: 'measurement' } }),
     rainChance: sensor({ id: 'weather_rain_chance',  name: 'Rain Chance', config: { unit_of_measurement: '%' } }),
+
+    // Computed — derived from sensors above, auto-updates reactively
+    severe: computed({
+      id: 'weather_severe',
+      name: 'Severe Weather',
+      icon: 'mdi:weather-hurricane',
+      watch: ['sensor.weather_wind_speed', 'sensor.weather_pressure'],
+      compute: (states) => {
+        const wind = Number(states['sensor.weather_wind_speed']?.state);
+        const pressure = Number(states['sensor.weather_pressure']?.state);
+        return wind > 60 || pressure < 1000 ? 'Severe' : 'Normal';
+      },
+    }),
+    clothing: computed({
+      id: 'weather_clothing',
+      name: 'Clothing',
+      icon: 'mdi:tshirt-crew',
+      watch: ['sensor.weather_feels_like', 'sensor.weather_rain_chance'],
+      compute: (states) => {
+        const temp = Number(states['sensor.weather_feels_like']?.state);
+        const rain = Number(states['sensor.weather_rain_chance']?.state);
+        if (temp < 5) return 'Heavy coat';
+        if (temp < 15 || rain > 60) return 'Jacket';
+        if (temp < 22) return 'Light layers';
+        return 'T-shirt';
+      },
+    }),
+
+    // Mode — severity level set programmatically from poll data
+    severity: mode({
+      id: 'weather_severity',
+      name: 'Severity',
+      icon: 'mdi:alert-outline',
+      states: ['clear', 'advisory', 'warning'],
+      initial: 'clear',
+    }),
+
+    // Task — manual refresh button in HA UI
+    refresh: task({
+      id: 'weather_refresh',
+      name: 'Refresh Now',
+      icon: 'mdi:refresh',
+      run() {
+        this.log.info('Manual weather refresh requested');
+      },
+    }),
   },
   init() {
     this.poll(async () => {
-      const data = await this.fetch(API_URL).then(r => r.json());
+      const data = await fetch(API_URL).then(r => r.json());
       const c = data.current;
       const d = data.daily;
 
@@ -301,12 +348,21 @@ export default device({
       this.entities.todayLow.update(d.temperature_2m_min[0]);
       this.entities.uvIndex.update(d.uv_index_max[0]);
       this.entities.rainChance.update(d.precipitation_probability_max[0]);
+
+      // Update severity mode based on conditions
+      if (c.wind_speed_10m > 60 || c.pressure_msl < 1000) {
+        this.entities.severity.setState('warning');
+      } else if (c.wind_speed_10m > 40 || c.pressure_msl < 1010) {
+        this.entities.severity.setState('advisory');
+      } else {
+        this.entities.severity.setState('clear');
+      }
     }, { interval: 600_000 });
   },
 });
 ```
 
-Compare this with the [manual device grouping](#device-grouping) approach — each sensor there has its own `init()` and `poll()`, so either every sensor fetches the API independently, or they share a module-level cache variable that races against poll timing. `device()` solves both problems: one fetch, one poll, all updates in one place.
+The device groups 16 entities under one HA device: 12 sensors from API data, 2 computed sensors that auto-update when inputs change, a severity mode (select entity) set programmatically, and a refresh button. Compare this with the [manual device grouping](#device-grouping) approach — each sensor there has its own `init()` and `poll()`, so either every sensor fetches the API independently, or they share a module-level cache variable that races against poll timing. `device()` solves both problems: one fetch, one poll, all updates in one place.
 
 ### Computed
 
@@ -667,7 +723,7 @@ Inside `init()`, `destroy()`, and `onCommand()`, `this` provides:
 | `this.log` | Scoped logger — `debug`, `info`, `warn`, `error` |
 | `this.ha` | Stateless HA client — `callService()`, `getState()`, `getEntities()`, `fireEvent()`, `friendlyName()` |
 | `this.events` | Scoped reactive subscriptions — `on()`, `reactions()`, `combine()`, `withState()`, `watchdog()`, `invariant()`, `sequence()` |
-| `this.fetch` | Standard `fetch()` for HTTP requests |
+| `fetch()` | Standard global `fetch()` for HTTP requests (not on `this`) |
 | `this.setTimeout(fn, ms)` | One-shot timer (auto-cleaned on teardown) |
 | `this.setInterval(fn, ms)` | Repeating timer (auto-cleaned on teardown) |
 | `this.mqtt.publish(topic, payload)` | Publish to an arbitrary MQTT topic |
