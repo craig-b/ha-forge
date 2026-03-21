@@ -36,7 +36,7 @@ export function generateUIHtml(ingressPath: string): string {
   <script>
     window.__INGRESS_PATH__ = ${JSON.stringify(ingressPath)};
   </script>
-  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.52.2/min/vs/loader.js"><\/script>
+  <script src="https://cdn.jsdelivr.net/npm/monaco-editor@0.55.1/min/vs/loader.js"><\/script>
   <script>${clientJS}<\/script>
 </body>
 </html>`;
