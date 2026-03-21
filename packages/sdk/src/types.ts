@@ -270,6 +270,48 @@ export interface InvariantOptions {
   violated: () => void | Promise<void>;
 }
 
+/**
+ * A single step in a sequence pattern.
+ *
+ * @example
+ * ```ts
+ * { entity: 'binary_sensor.front_door', to: 'on', within: 5000 }
+ * ```
+ */
+export interface SequenceStep {
+  /** Entity to watch for this step. */
+  entity: string;
+  /** State the entity must transition to (or `'*'` for any change). */
+  to: string | '*';
+  /** Maximum time in ms to wait for this step before the sequence resets. First step has no timeout. */
+  within?: number;
+  /** If true, this step is *negated*: it matches when the entity does NOT reach the state within the window. */
+  not?: boolean;
+}
+
+/**
+ * Configuration for a sequence pattern detector.
+ * Steps must occur in order, each within their time window.
+ *
+ * @example
+ * ```ts
+ * this.events.sequence({
+ *   steps: [
+ *     { entity: 'binary_sensor.front_door', to: 'on' },
+ *     { entity: 'binary_sensor.hallway_motion', to: 'on', within: 10_000 },
+ *     { entity: 'binary_sensor.living_room_motion', to: 'on', within: 15_000 },
+ *   ],
+ *   then: () => this.ha.callService('light.welcome', 'turn_on'),
+ * });
+ * ```
+ */
+export interface SequenceOptions {
+  /** Ordered steps that must all match. */
+  steps: SequenceStep[];
+  /** Action to execute when all steps complete in order. */
+  then: () => void | Promise<void>;
+}
+
 /** Map of entity IDs to their current state string, or `null` if the state is unknown. */
 export type CombinedState = Record<string, string | null>;
 
@@ -444,6 +486,29 @@ export interface EventsContext {
    * ```
    */
   invariant(options: InvariantOptions): () => void;
+
+  /**
+   * Detect a sequence of state changes across entities.
+   * Steps must fire in order, each within their optional time window.
+   * When all steps complete, `then()` fires and the sequence resets.
+   * If a step times out, the sequence resets to step 0.
+   *
+   * @param options - Sequence configuration with steps and completion handler.
+   * @returns Cleanup function that cancels all sequence tracking.
+   *
+   * @example
+   * ```ts
+   * // Detect "arrive home" pattern: door opens, then motion within 10s
+   * this.events.sequence({
+   *   steps: [
+   *     { entity: 'binary_sensor.front_door', to: 'on' },
+   *     { entity: 'binary_sensor.hallway_motion', to: 'on', within: 10_000 },
+   *   ],
+   *   then: () => this.ha.callService('scene.welcome_home', 'turn_on'),
+   * });
+   * ```
+   */
+  sequence(options: SequenceOptions): () => void;
 }
 
 /**

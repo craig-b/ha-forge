@@ -99,6 +99,8 @@ interface HAEventsContext extends EventsContext {
   watchdog(rules: Record<string, WatchdogRule>): () => void;
   /** Set up a periodic invariant check. Fires violated() when check() returns false. */
   invariant(options: InvariantOptions): () => void;
+  /** Detect an ordered sequence of state changes across entities. Fires then() when all steps complete in order. */
+  sequence(options: SequenceOptions): () => void;
 }
 `;
 

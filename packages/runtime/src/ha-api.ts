@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule, InvariantOptions } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback, WatchdogRule, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -423,6 +423,79 @@ export class HAApiImpl implements HAApi {
           for (const unsub of unsubscribers) unsub();
           for (const [, t] of timers) clearTimeout(t);
           timers.clear();
+        };
+        handles.eventSubscriptions.push(cleanup);
+        return cleanup;
+      },
+      sequence: (options: SequenceOptions) => {
+        let currentStep = 0;
+        let stepTimer: ReturnType<typeof setTimeout> | null = null;
+        const unsubscribers: Array<() => void> = [];
+
+        const reset = () => {
+          currentStep = 0;
+          if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
+        };
+
+        // Collect unique entity IDs from steps
+        const entityIds = [...new Set(options.steps.map(s => s.entity))];
+
+        const unsub = self.on(entityIds, (event) => {
+          const step = options.steps[currentStep];
+          if (!step) return;
+
+          if (step.not) {
+            // Negated step: if entity matches and reaches the state, reset
+            if (event.entity_id === step.entity && (step.to === '*' || event.new_state === step.to)) {
+              reset();
+            }
+            return;
+          }
+
+          // Normal step: check if event matches
+          if (event.entity_id !== step.entity) return;
+          if (step.to !== '*' && event.new_state !== step.to) return;
+
+          // Step matched — advance
+          if (stepTimer) { clearTimeout(stepTimer); stepTimer = null; }
+          currentStep++;
+
+          if (currentStep >= options.steps.length) {
+            // Sequence complete
+            reset();
+            try { options.then(); } catch { /* swallow */ }
+            return;
+          }
+
+          // Start timeout for next step if it has a `within` window
+          const nextStep = options.steps[currentStep];
+          if (nextStep && nextStep.within) {
+            if (nextStep.not) {
+              // Negated step with timeout: if entity does NOT reach state within window, advance
+              stepTimer = setTimeout(() => {
+                stepTimer = null;
+                currentStep++;
+                if (currentStep >= options.steps.length) {
+                  reset();
+                  try { options.then(); } catch { /* swallow */ }
+                } else {
+                  // Set up timeout for the following step if needed
+                  const following = options.steps[currentStep];
+                  if (following?.within && !following.not) {
+                    stepTimer = setTimeout(reset, following.within);
+                  }
+                }
+              }, nextStep.within);
+            } else {
+              stepTimer = setTimeout(reset, nextStep.within);
+            }
+          }
+        });
+        unsubscribers.push(unsub);
+
+        const cleanup = () => {
+          reset();
+          for (const u of unsubscribers) u();
         };
         handles.eventSubscriptions.push(cleanup);
         return cleanup;

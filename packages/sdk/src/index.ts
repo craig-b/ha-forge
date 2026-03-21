@@ -65,6 +65,8 @@ export type {
   CombinedCallback,
   WatchdogRule,
   InvariantOptions,
+  SequenceStep,
+  SequenceOptions,
   HAClientBase,
   EventsContext,
   StatelessHAApi,
