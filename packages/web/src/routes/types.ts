@@ -131,6 +131,29 @@ ${untypedFallback}
  */
 declare function sensor(options: SensorOptions): SensorDefinition;
 /**
+ * Define a computed (derived) sensor entity.
+ * State is a pure function of other entities — no \`init()\`, no polling.
+ * The runtime auto-subscribes to watched entities and re-evaluates on change.
+ * Only publishes when the computed value actually differs.
+ * @param options - Computed entity configuration including watch list and compute function.
+ * @returns A computed entity definition to export from your script.
+ * @example
+ * \`\`\`ts
+ * export const comfort = computed({
+ *   id: 'comfort_index',
+ *   name: 'Comfort Index',
+ *   watch: ['sensor.temperature', 'sensor.humidity'],
+ *   compute: (states) => {
+ *     const temp = Number(states['sensor.temperature']?.state);
+ *     const humidity = Number(states['sensor.humidity']?.state);
+ *     return Math.round(temp + 0.05 * humidity);
+ *   },
+ *   config: { unit_of_measurement: '°C', device_class: 'temperature' },
+ * });
+ * \`\`\`
+ */
+declare function computed(options: ComputedOptions): ComputedDefinition;
+/**
  * Define a controllable on/off switch entity.
  * @param options - Switch configuration including id, name, and onCommand handler.
  * @returns A switch entity definition to export from your script.
