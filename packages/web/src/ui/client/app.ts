@@ -74,7 +74,7 @@ declare const monaco: {
         setDiagnosticsOptions(opts: Record<string, unknown>): void;
         addExtraLib(content: string, uri: string): void;
       };
-      ScriptTarget: { ES2022: number };
+      ScriptTarget: { ES2024: number };
       ModuleResolutionKind: { NodeJs: number };
       ModuleKind: { ESNext: number };
     };
@@ -211,7 +211,8 @@ export class TseApp extends LitElement {
 
     require(['vs/editor/editor.main'], () => {
       monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
-        target: monaco.languages.typescript.ScriptTarget.ES2022,
+        target: monaco.languages.typescript.ScriptTarget.ES2024,
+        lib: ['es2024'],
         moduleResolution: monaco.languages.typescript.ModuleResolutionKind.NodeJs,
         module: monaco.languages.typescript.ModuleKind.ESNext,
         strict: true,
