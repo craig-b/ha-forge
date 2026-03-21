@@ -278,7 +278,7 @@ tse-bottom-panel {
   padding: 4px 0 8px;
   position: sticky;
   top: 0;
-  z-index: 1;
+  z-index: 100;
   background: var(--bg-primary);
 }
 .log-filters select, .log-filters input {
@@ -308,7 +308,7 @@ tse-bottom-panel {
 }
 .filter-clear:hover { color: var(--text-primary); }
 
-.entity-multiselect { position: relative; min-width: 180px; flex: 1; }
+.entity-multiselect { position: relative; min-width: 180px; max-width: 300px; flex: 1; }
 .multiselect-toggle {
   padding: 3px 8px;
   background: var(--bg-tertiary);
@@ -340,14 +340,17 @@ tse-bottom-panel {
   position: absolute;
   top: 100%;
   left: 0;
-  right: 0;
+  min-width: 100%;
+  width: max-content;
+  max-width: 350px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: 3px;
   max-height: 200px;
   overflow-y: auto;
-  z-index: 10;
+  z-index: 100;
   margin-top: 2px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 .multiselect-option {
   display: flex;
@@ -357,6 +360,7 @@ tse-bottom-panel {
   font-size: 12px;
   cursor: pointer;
   color: var(--text-primary);
+  white-space: nowrap;
 }
 .multiselect-option:hover { background: var(--bg-hover); }
 .multiselect-option.disabled { color: var(--text-secondary); cursor: default; }
