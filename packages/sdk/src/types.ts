@@ -218,6 +218,12 @@ export interface ReactionRule {
   after?: number;
 }
 
+/** Map of entity IDs to their current state string, or `null` if the state is unknown. */
+export type CombinedState = Record<string, string | null>;
+
+/** Callback for `this.events.combine()` — receives a snapshot of all watched entity states. */
+export type CombinedCallback = (states: CombinedState) => void;
+
 /**
  * Base HA client interface with methods that don't need generated registry types.
  * Extended by `HAClient` which adds `on()`, `callService()`, `getState()`, `getEntities()`, and `reactions()`.
@@ -281,6 +287,61 @@ export interface EventsContext {
    * @returns Cleanup function.
    */
   reactions(rules: Record<string, ReactionRule>): () => void;
+
+  /**
+   * Subscribe to multiple entities and receive a combined state snapshot on every change.
+   * The callback fires whenever *any* of the watched entities changes state,
+   * with the current state of *all* watched entities.
+   *
+   * @param entities - Array of entity IDs to watch.
+   * @param callback - Called with a map of entity IDs to their current state (or `null` if unknown).
+   * @returns Cleanup function.
+   *
+   * @example
+   * ```ts
+   * this.events.combine(
+   *   ['sensor.temperature', 'sensor.humidity'],
+   *   (states) => {
+   *     const temp = states['sensor.temperature'];
+   *     const humidity = states['sensor.humidity'];
+   *     if (temp && humidity) {
+   *       this.update(Number(temp) > 30 && Number(humidity) > 70 ? 'on' : 'off');
+   *     }
+   *   },
+   * );
+   * ```
+   */
+  combine(entities: string[], callback: CombinedCallback): () => void;
+
+  /**
+   * Subscribe to an entity's state changes with access to the current state of other entities.
+   * Like `on()`, but the callback receives a second argument with a snapshot
+   * of specified context entities' states.
+   *
+   * @param entityOrDomain - Entity ID, domain, or array to watch for changes.
+   * @param context - Array of entity IDs whose current state should be provided.
+   * @param callback - Called with the event and a state snapshot of the context entities.
+   * @returns An `EventStream`.
+   *
+   * @example
+   * ```ts
+   * this.events.withState(
+   *   'binary_sensor.motion',
+   *   ['sensor.lux', 'input_boolean.night_mode'],
+   *   (event, states) => {
+   *     const lux = states['sensor.lux'];
+   *     if (event.new_state === 'on' && Number(lux) < 50) {
+   *       this.ha.callService('light.hallway', 'turn_on');
+   *     }
+   *   },
+   * );
+   * ```
+   */
+  withState(
+    entityOrDomain: string | string[],
+    context: string[],
+    callback: (event: StateChangedEvent, states: CombinedState) => void,
+  ): EventStream;
 }
 
 /**

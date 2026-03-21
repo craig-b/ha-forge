@@ -91,6 +91,10 @@ interface HAEventsContext extends EventsContext {
   on(entityOrDomain: string | string[], callback?: (event: StateChangedEvent) => void): EventStream;
   /** Set up declarative reaction rules. Returns a cleanup function. */
   reactions(rules: Record<string, ReactionRule>): () => void;
+  /** Subscribe to multiple entities and receive a combined state snapshot on every change. */
+  combine(entities: string[], callback: (states: Record<string, string | null>) => void): () => void;
+  /** Subscribe to state changes with a snapshot of context entities' current states. */
+  withState(entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: Record<string, string | null>) => void): EventStream;
 }
 `;
 

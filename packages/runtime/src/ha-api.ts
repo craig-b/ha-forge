@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, CombinedState, CombinedCallback } from '@ha-forge/sdk';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
 
@@ -330,6 +330,12 @@ export class HAApiImpl implements HAApi {
     };
   }
 
+  /** Synchronous state lookup from cache. Returns null if not cached. */
+  getCachedStateSync(entityId: string): string | null {
+    const cached = this.stateCache.get(entityId);
+    return cached ? cached.state : null;
+  }
+
   /** Returns a stateless view — no subscriptions or logging, safe to pass around. */
   asStateless(): StatelessHAApi {
     return {
@@ -343,19 +349,48 @@ export class HAApiImpl implements HAApi {
 
   /** Creates an EventsContext that tracks subscriptions for lifecycle cleanup. */
   createScopedEvents(handles: EventHandleTracker): EventsContext {
+    const self = this;
     return {
       on: (entityOrDomain: string | string[], callback?: SDKStateChangedCallback) => {
         const stream = createEventStream(
-          (cb) => this.on(entityOrDomain, cb as StateChangedCallback),
+          (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
           callback as StateChangedCallback | undefined,
         );
         handles.eventSubscriptions.push(() => stream.unsubscribe());
         return stream;
       },
       reactions: (rules: Record<string, ReactionRule>) => {
-        const unsub = this.reactions(rules);
+        const unsub = self.reactions(rules);
         handles.eventSubscriptions.push(unsub);
         return unsub;
+      },
+      combine: (entities: string[], callback: CombinedCallback) => {
+        const buildSnapshot = (): CombinedState => {
+          const states: CombinedState = {};
+          for (const eid of entities) {
+            states[eid] = self.getCachedStateSync(eid);
+          }
+          return states;
+        };
+        const unsub = self.on(entities, () => {
+          callback(buildSnapshot());
+        });
+        handles.eventSubscriptions.push(unsub);
+        return unsub;
+      },
+      withState: (entityOrDomain: string | string[], context: string[], callback: (event: StateChangedEvent, states: CombinedState) => void) => {
+        const stream = createEventStream(
+          (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
+          ((event: StateChangedEvent) => {
+            const states: CombinedState = {};
+            for (const eid of context) {
+              states[eid] = self.getCachedStateSync(eid);
+            }
+            callback(event, states);
+          }) as StateChangedCallback,
+        );
+        handles.eventSubscriptions.push(() => stream.unsubscribe());
+        return stream;
       },
     };
   }

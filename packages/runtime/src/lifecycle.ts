@@ -409,6 +409,8 @@ export class EntityLifecycleManager {
     const stubEvents: EventsContext = {
       on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+      combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
     };
 
     const context: DeviceContext<Record<string, EntityDefinition>> = {
@@ -845,6 +847,8 @@ export class EntityLifecycleManager {
     const stubEvents: EventsContext = {
       on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+      combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
     };
 
     const context: EntityContext = {
@@ -969,6 +973,8 @@ export class EntityLifecycleManager {
     const stubEvents: EventsContext = {
       on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
+      combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
     };
 
     return {

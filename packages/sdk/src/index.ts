@@ -61,6 +61,8 @@ export type {
   StateChangedCallback,
   EventStream,
   ReactionRule,
+  CombinedState,
+  CombinedCallback,
   HAClientBase,
   EventsContext,
   StatelessHAApi,
