@@ -1,11 +1,13 @@
 import type {
   AutomationContext,
   AutomationDefinition,
+  ComputedDefinition,
   DeviceContext,
   DeviceDefinition,
   EntityContext,
   EntityDefinition,
   EntityLogger,
+  EntitySnapshot,
   EventsContext,
   EventStream,
   StatelessHAApi,
@@ -208,6 +210,12 @@ export class EntityLifecycleManager {
       return;
     }
 
+    // Computed entities: auto-subscribe to watched entities, no user init
+    if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
+      await this.initComputed(instance, entity.definition as ComputedDefinition);
+      return;
+    }
+
     // Set up command handler for bidirectional entities
     if ('onCommand' in entity.definition && typeof entity.definition.onCommand === 'function') {
       const def = entity.definition as EntityDefinition & {
@@ -278,7 +286,7 @@ export class EntityLifecycleManager {
     }
 
     // Call init()
-    if (entity.definition.init) {
+    if ('init' in entity.definition && entity.definition.init) {
       const context = this.createContext(instance);
       try {
         const initFn = entity.definition.init as (this: EntityContext) => unknown | Promise<unknown>;
@@ -306,6 +314,79 @@ export class EntityLifecycleManager {
         sourceFile: entity.sourceFile,
       });
     }
+  }
+
+  private async initComputed(instance: EntityInstance, def: ComputedDefinition): Promise<void> {
+    const { handles, entity } = instance;
+    const haApi = this.haApi;
+    const transport = this.transport;
+    const logger = this.logger;
+    const onStateChange = this.onStateChange;
+
+    if (!haApi) {
+      logger.warn(`Computed entity ${def.id}: no WebSocket connection, cannot subscribe to watched entities`);
+      instance.initialized = true;
+      return;
+    }
+
+    const entityId = def.id;
+    const debounceMs = def.debounce ?? 100;
+
+    const buildSnapshot = (): Record<string, EntitySnapshot | null> => {
+      const states: Record<string, EntitySnapshot | null> = {};
+      for (const eid of def.watch) {
+        states[eid] = haApi.getCachedSnapshot(eid);
+      }
+      return states;
+    };
+
+    const evaluate = async () => {
+      try {
+        const states = buildSnapshot();
+        const newValue = def.compute(states);
+        // Deduplicate — only publish when value actually differs
+        if (String(newValue) !== String(instance.currentState)) {
+          instance.currentState = newValue;
+          await transport.publishState(entityId, newValue);
+          transport.clearEntityFailure?.(entityId);
+          onStateChange?.(entityId, newValue);
+        }
+      } catch (err) {
+        transport.recordEntityFailure?.(entityId);
+        logger.error(`Computed entity ${entityId}: compute() failed`, {
+          error: err instanceof Error ? err.message : String(err),
+          sourceFile: entity.sourceFile,
+        });
+      }
+    };
+
+    // Set up debounced subscription to watched entities
+    let pending: ReturnType<typeof globalThis.setTimeout> | null = null;
+    const debouncedEvaluate = () => {
+      if (pending !== null) clearTimeout(pending);
+      if (debounceMs <= 0) {
+        evaluate();
+      } else {
+        pending = globalThis.setTimeout(() => {
+          pending = null;
+          evaluate();
+        }, debounceMs);
+      }
+    };
+
+    const unsub = haApi.on(def.watch, debouncedEvaluate);
+    handles.eventSubscriptions.push(() => {
+      unsub();
+      if (pending !== null) clearTimeout(pending);
+    });
+
+    // Run initial evaluation
+    await evaluate();
+
+    instance.initialized = true;
+    logger.info(`Computed entity initialized: ${entityId} (watching ${def.watch.length} entities)`, {
+      sourceFile: entity.sourceFile,
+    });
   }
 
   private async initDevice(resolvedDevice: ResolvedDevice): Promise<void> {
@@ -727,7 +808,7 @@ export class EntityLifecycleManager {
     if (!instance) return;
 
     // Call destroy() if present (skip for device-owned entities — device handles its own teardown)
-    if (instance.entity.definition.destroy && instance.initialized && !instance.ownedByDevice) {
+    if ('destroy' in instance.entity.definition && instance.entity.definition.destroy && instance.initialized && !instance.ownedByDevice) {
       try {
         const context = this.createContext(instance);
         const destroyFn = instance.entity.definition.destroy as (this: EntityContext) => void | Promise<void>;
