@@ -238,7 +238,6 @@ import { automation } from 'ha-forge';
 
 export const washerDone = automation({
   id: 'washer_done_notify',
-  name: 'Washer Finished',
   init() {
     this.events.on('sensor.washer_power_smoothed', () => {
         this.ha.callService('notify.mobile', 'send_message', {
@@ -376,7 +375,6 @@ export const serverTemp = debounced(
 
 export const serverTempWatch = automation({
   id: 'server_temp_watch',
-  name: 'Server Room Thermal Alert',
   init() {
     // Watchdog: alert if no update arrives for 2 minutes (sensor offline)
     this.events.watchdog({
