@@ -10,15 +10,15 @@ The SDK generates types from your live HA installation — every entity ID, stat
 
 ```typescript
 // Every entity ID autocompletes. State values are literal unions.
-ha.on('input_select.house_mode', (e) => {
+this.events.on('input_select.house_mode', (e) => {
   // e.new_state: 'home' | 'away' | 'sleeping' | 'vacation'
   if (e.new_state === 'away') {
-    ha.callService('light.living_room', 'turn_off');
+    this.ha.callService('light.living_room', 'turn_off');
   }
 });
 
 // Service parameters are typed with constraints from your HA instance.
-ha.callService('light.living_room', 'turn_on', {
+this.ha.callService('light.living_room', 'turn_on', {
   brightness: 200,   // typed as number (0–255)
   transition: 2,
 });
@@ -32,7 +32,7 @@ ha.callService('light.living_room', 'turn_on', {
 
 ## Defining Entities
 
-Entities are defined using factory functions (`sensor()`, `defineSwitch()`, `light()`, `cover()`, `climate()`) and must be **exported** to be deployed.
+Entities are defined using factory functions and must be **exported** to be deployed. The SDK covers all common HA entity platforms plus higher-level constructs like computed entities, state machines, and scheduled sensors.
 
 ### Sensor
 
@@ -308,54 +308,191 @@ export default device({
 
 Compare this with the [manual device grouping](#device-grouping) approach — each sensor there has its own `init()` and `poll()`, so either every sensor fetches the API independently, or they share a module-level cache variable that races against poll timing. `device()` solves both problems: one fetch, one poll, all updates in one place.
 
+### Computed
+
+Derived sensor whose state is a pure function of other entities. No `init()`, no polling — re-evaluates reactively when inputs change.
+
+```typescript
+export const comfort = computed({
+  id: 'comfort_index',
+  name: 'Comfort Index',
+  watch: ['sensor.temperature', 'sensor.humidity'],
+  compute: (states) => {
+    const temp = Number(states['sensor.temperature']?.state);
+    const humidity = Number(states['sensor.humidity']?.state);
+    return Math.round(temp + 0.05 * humidity);
+  },
+  config: { unit_of_measurement: '°C', device_class: 'temperature' },
+});
+```
+
+Computed entities can watch other computed entities (DAG). Rapid input changes are debounced (default 100ms) and state is only published when the computed value actually differs.
+
+#### Computed Attributes
+
+Any entity can have reactive attributes alongside static ones:
+
+```typescript
+export const temp = sensor({
+  id: 'cpu_temp',
+  name: 'CPU Temperature',
+  config: { device_class: 'temperature', unit_of_measurement: '°C' },
+  attributes: {
+    location: 'server-room',  // static
+    severity: computed(       // reactive
+      (states) => {
+        const t = Number(states['sensor.cpu_temp']?.state);
+        return t > 80 ? 'critical' : t > 60 ? 'warning' : 'normal';
+      },
+      { watch: ['sensor.cpu_temp'] },
+    ),
+  },
+  init() {
+    this.poll(() => readCpuTemp(), { interval: 10_000 });
+    return 0;
+  },
+});
+```
+
+### Mode
+
+State machines surfaced as `select` entities in HA. Define named states with enter/exit transition hooks and optional guards.
+
+```typescript
+export const houseMode = mode({
+  id: 'house_mode',
+  name: 'House Mode',
+  states: ['home', 'away', 'sleep', 'movie'],
+  initial: 'home',
+  transitions: {
+    away: {
+      enter() {
+        this.ha.callService('climate.main', 'set_hvac_mode', { hvac_mode: 'eco' });
+        this.ha.callService('light', 'turn_off');
+      },
+      exit() {
+        this.ha.callService('climate.main', 'set_hvac_mode', { hvac_mode: 'auto' });
+      },
+      // Block transition to 'away' from 'sleep'
+      guard(from) { return from !== 'sleep'; },
+    },
+    movie: {
+      enter() {
+        this.ha.callService('light.living_room', 'turn_on', { brightness: 30 });
+      },
+    },
+  },
+});
+```
+
+The mode appears as a dropdown in the HA UI. Other scripts can react to mode changes via `this.events.on('select.house_mode', ...)`. Guards return `false` to block a transition — the UI reverts automatically.
+
+### Cron
+
+Schedule entities surfaced as `binary_sensor` — ON during matching cron windows, OFF otherwise.
+
+```typescript
+export const workHours = cron({
+  id: 'work_hours',
+  name: 'Work Hours',
+  schedule: '0 9-17 * * 1-5',  // weekdays 9am–5pm
+});
+
+export const overnight = cron({
+  id: 'overnight',
+  name: 'Overnight',
+  schedule: '0 23-6 * * *',  // 11pm–6am daily
+});
+```
+
+Usable as a dependency in `computed()`, `this.events.on()`, or as a condition in automations — any pattern that reacts to `binary_sensor` state changes.
+
+### Automation
+
+Pure reactive scripts with managed lifecycle. No HA entity created by default — automations just react to things.
+
+```typescript
+export const motionLights = automation({
+  id: 'motion_lights',
+  init() {
+    this.events.on('binary_sensor.hallway_motion', async (event) => {
+      if (event.new_state === 'on') {
+        await this.ha.callService('light.hallway', 'turn_on');
+      }
+    });
+  },
+});
+```
+
+Set `entity: true` to surface as a `binary_sensor` in HA (ON = running, OFF = errored). Automations get `this.ha`, `this.events`, and `this.log` but don't publish state themselves.
+
+### Task
+
+One-shot scripts surfaced as button entities in HA. Press the button to trigger `run()`.
+
+```typescript
+export const notifyAll = task({
+  id: 'notify_all',
+  name: 'Notify All Devices',
+  icon: 'mdi:bullhorn',
+  run() {
+    this.ha.callService('notify.all_devices', 'send_message', {
+      message: 'Hello from HA Forge!',
+    });
+  },
+});
+```
+
+Use `runOnDeploy: true` to also execute on deploy. Tasks get `this.ha`, `this.log`, and `this.mqtt` but no event subscriptions.
+
 ## Reactive Patterns
+
+Inside `init()`, use `this.events` for lifecycle-managed subscriptions that auto-cleanup on teardown. The global `ha` object provides stateless access for simple cases.
 
 ### Subscribing to State Changes
 
-`ha.on()` subscribes to state changes with fully typed events. Entity IDs autocomplete, and the callback receives typed `new_state` and `new_attributes`.
-
 ```typescript
-// Subscribe to a specific entity
-ha.on('sensor.outdoor_temperature', (e) => {
-  ha.log.info(`Temperature: ${e.new_state}°C`);
+// Inside init() — lifecycle-managed, auto-cleaned on teardown
+this.events.on('sensor.outdoor_temperature', (e) => {
+  this.log.info(`Temperature: ${e.new_state}°C`);
 });
 
 // Subscribe to a whole domain
-ha.on('light', (e) => {
-  ha.log.info(`${e.entity_id} is now ${e.new_state}`);
+this.events.on('light', (e) => {
+  this.log.info(`${e.entity_id} is now ${e.new_state}`);
 });
 
 // Subscribe to multiple entities
-ha.on(['sensor.temp_indoor', 'sensor.temp_outdoor'], (e) => {
-  ha.log.info(`${e.entity_id}: ${e.new_state}`);
+this.events.on(['sensor.temp_indoor', 'sensor.temp_outdoor'], (e) => {
+  this.log.info(`${e.entity_id}: ${e.new_state}`);
 });
 ```
 
 ### Calling Services
 
 ```typescript
-ha.callService('light.kitchen', 'turn_on', { brightness: 255 });
-ha.callService('notify.mobile_app_phone', 'send_message', {
+this.ha.callService('light.kitchen', 'turn_on', { brightness: 255 });
+this.ha.callService('notify.mobile_app_phone', 'send_message', {
   message: 'Motion detected!',
 });
 ```
 
 ### Declarative Reactions
 
-Set up reaction rules with typed entity IDs. The `to` field is typed per entity (e.g. `'on' | 'off'` for lights). Delayed reactions auto-cancel if state changes again.
+Set up reaction rules with typed entity IDs. Delayed reactions auto-cancel if state changes again.
 
 ```typescript
-ha.reactions({
+this.events.reactions({
   'binary_sensor.front_door': {
     to: 'on',
-    do: () => ha.callService('light.porch', 'turn_on', { brightness: 255 }),
+    do: () => this.ha.callService('light.porch', 'turn_on', { brightness: 255 }),
   },
   'binary_sensor.garage_door': {
     to: 'on',
     after: 600_000, // 10 minutes
     do: () => {
-      ha.callService('cover.garage', 'close_cover');
-      ha.callService('notify.mobile_app_phone', 'send_message', {
+      this.ha.callService('cover.garage', 'close_cover');
+      this.ha.callService('notify.mobile_app_phone', 'send_message', {
         message: 'Garage was open for 10 minutes — closing.',
       });
     },
@@ -366,22 +503,156 @@ ha.reactions({
 ### Querying State
 
 ```typescript
-const state = await ha.getState('sensor.outdoor_temperature');
+const state = await this.ha.getState('sensor.outdoor_temperature');
 if (state && Number(state.state) < 5) {
-  ha.callService('climate.living_room', 'set_temperature', {
+  this.ha.callService('climate.living_room', 'set_temperature', {
     temperature: 22,
   });
 }
 ```
 
+### Stream Operators
+
+`this.events.on()` returns a composable `EventStream` with chainable operators:
+
+```typescript
+// Debounce — only react after state stabilizes for 5 seconds
+this.events.on('binary_sensor.motion')
+  .debounce(5000)
+  .filter((e) => e.new_state === 'off')
+  .do((e) => {
+    this.ha.callService('light.hallway', 'turn_off');
+  });
+
+// Throttle — limit to one notification per minute
+this.events.on('sensor.cpu_temp')
+  .throttle(60_000)
+  .filter((e) => Number(e.new_state) > 80)
+  .do((e) => {
+    this.ha.callService('notify.phone', 'send_message', {
+      message: `CPU at ${e.new_state}°C`,
+    });
+  });
+
+// Transition — react only to specific state changes
+this.events.on('alarm_control_panel.home')
+  .transition('armed_away', 'triggered')
+  .do(() => {
+    this.ha.callService('notify.all', 'send_message', {
+      message: 'Alarm triggered!',
+    });
+  });
+```
+
+Available operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.transition(from, to)`.
+
+### Combine / With State
+
+Subscribe to multiple entities or enrich events with context:
+
+```typescript
+// Combine — fire when any input changes, receive all snapshots
+this.events.combine(
+  ['sensor.temperature', 'sensor.humidity'],
+  (states) => {
+    const temp = Number(states['sensor.temperature']?.state);
+    const humidity = Number(states['sensor.humidity']?.state);
+    this.log.info(`Temp: ${temp}, Humidity: ${humidity}`);
+  },
+);
+
+// WithState — enrich a trigger event with context entity snapshots
+// Silently skips when any context entity is unavailable/unknown
+this.events.withState(
+  'binary_sensor.motion',
+  ['sensor.light_level', 'input_boolean.away_mode'],
+  (event, states) => {
+    const lightLevel = Number(states['sensor.light_level'].state);
+    const awayMode = states['input_boolean.away_mode'].state;
+    if (event.new_state === 'on' && lightLevel < 50 && awayMode === 'off') {
+      this.ha.callService('light.hallway', 'turn_on');
+    }
+  },
+);
+```
+
+### Watchdog
+
+React to things that *should* happen but don't. Fires when an expected event doesn't arrive within a time window.
+
+```typescript
+this.events.watchdog({
+  'sensor.weather_station': {
+    expect: 'change',        // any state change
+    within: 3_600_000,       // 1 hour
+    else: () => {
+      this.ha.callService('notify.phone', 'send_message', {
+        message: 'Weather station has gone silent for 1 hour',
+      });
+    },
+  },
+  'binary_sensor.garage': {
+    expect: { to: 'off' },   // expect it to close
+    within: 600_000,          // 10 minutes
+    else: () => {
+      this.ha.callService('cover.garage', 'close_cover');
+    },
+  },
+});
+```
+
+`expect` accepts `'change'` (any), `{ to: 'state' }` (specific), or a predicate function. The timer resets on matching activity and restarts after firing.
+
+### Invariant
+
+Declare constraints that must always hold. Continuously monitored, acted on when violated.
+
+```typescript
+this.events.invariant({
+  name: 'safe_temperature',
+  condition: async () => {
+    const state = await this.ha.getState('sensor.server_room_temp');
+    return state !== null && Number(state.state) < 35;
+  },
+  check: { interval: 60_000 },  // check every minute
+  violated: () => {
+    this.ha.callService('notify.ops', 'send_message', {
+      message: 'Server room temperature exceeded 35°C!',
+    });
+    this.ha.callService('switch.server_room_fan', 'turn_on');
+  },
+});
+```
+
+### Sequence
+
+Detect ordered events across multiple entities within time windows.
+
+```typescript
+this.events.sequence({
+  name: 'arrival_pattern',
+  steps: [
+    { entity: 'binary_sensor.driveway_motion', to: 'on', within: 0 },
+    { entity: 'binary_sensor.front_door', to: 'on', within: 120_000 },
+    { entity: 'lock.front_door', to: 'unlocked', within: 30_000 },
+  ],
+  do: () => {
+    this.ha.callService('light.entryway', 'turn_on', { brightness: 255 });
+    this.ha.callService('climate.main', 'set_hvac_mode', { hvac_mode: 'auto' });
+  },
+});
+```
+
+Steps must complete in order. Each step's `within` is the max time after the previous step. The sequence auto-resets on timeout. Use `negate: true` on a step to match when an event does *not* happen within the window.
+
 ### Utility
 
 ```typescript
 // Get friendly name from HA state cache
-const name = ha.friendlyName('light.kitchen'); // 'Kitchen Light'
+const name = this.ha.friendlyName('light.kitchen'); // 'Kitchen Light'
 
 // List all entities in a domain
-const lights = await ha.getEntities('light');
+const lights = await this.ha.getEntities('light');
 ```
 
 ## Entity Context (`this`)
@@ -390,10 +661,12 @@ Inside `init()`, `destroy()`, and `onCommand()`, `this` provides:
 
 | Property | Description |
 |---|---|
-| `this.update(value, attrs?)` | Publish new state to HA |
+| `this.update(value, attrs?)` | Publish new state (and optional attributes) to HA |
+| `this.attr(attributes)` | Update attributes without changing state |
 | `this.poll(fn, { interval })` | Start a polling loop (auto-cleaned on teardown) |
 | `this.log` | Scoped logger — `debug`, `info`, `warn`, `error` |
-| `this.ha` | Full HA client — `on()`, `callService()`, `getState()`, etc. |
+| `this.ha` | Stateless HA client — `callService()`, `getState()`, `getEntities()`, `fireEvent()`, `friendlyName()` |
+| `this.events` | Scoped reactive subscriptions — `on()`, `reactions()`, `combine()`, `withState()`, `watchdog()`, `invariant()`, `sequence()` |
 | `this.fetch` | Standard `fetch()` for HTTP requests |
 | `this.setTimeout(fn, ms)` | One-shot timer (auto-cleaned on teardown) |
 | `this.setInterval(fn, ms)` | Repeating timer (auto-cleaned on teardown) |
@@ -402,26 +675,51 @@ Inside `init()`, `destroy()`, and `onCommand()`, `this` provides:
 
 ## Supported Entity Types
 
-The SDK provides factory functions for the most common types:
+The SDK provides factory functions for all common HA entity platforms:
 
 | Function | Entity type |
 |---|---|
 | `sensor()` | Read-only sensor |
+| `binarySensor()` | Two-state sensor (on/off) |
 | `defineSwitch()` | On/off switch |
 | `light()` | Light with brightness/color |
 | `cover()` | Cover (blind, garage door, curtain) |
 | `climate()` | Climate (thermostat, AC, heater) |
+| `fan()` | Fan with speed/direction |
+| `lock()` | Lock/unlock/open |
+| `number()` | Numeric input with min/max |
+| `select()` | Dropdown selection |
+| `text()` | Text input |
+| `button()` | Momentary button (command only) |
+| `siren()` | Siren/alarm control |
+| `humidifier()` | Humidity control |
+| `valve()` | Water/gas valve |
+| `waterHeater()` | Water heater with temperature |
+| `vacuum()` | Robot vacuum |
+| `lawnMower()` | Robotic mower |
+| `alarmControlPanel()` | Security system arm/disarm |
+| `notify()` | Notification target |
+| `update()` | Update availability indicator |
+| `image()` | Static image entity |
 
-The MQTT transport supports all 25 HA entity platforms: sensor, binary_sensor, switch, light, cover, climate, fan, lock, humidifier, valve, water_heater, vacuum, lawn_mower, siren, number, select, text, button, scene, event, device_tracker, camera, alarm_control_panel, notify, update, and image.
+Higher-level constructs:
 
-Factory functions for additional entity types are coming — see [TODO.md](TODO.md).
+| Function | Description |
+|---|---|
+| `computed()` | Derived sensor — state is a pure function of other entities |
+| `mode()` | State machine — select entity with enter/exit/guard transitions |
+| `cron()` | Schedule — binary_sensor ON/OFF based on cron expression |
+| `automation()` | Pure reactive script with managed lifecycle |
+| `task()` | One-shot script surfaced as a button entity |
+| `device()` | Groups entities under a shared lifecycle |
+| `entityFactory()` | Dynamic entity generation at runtime |
 
 ## Web Editor
 
 The add-on includes a browser-based Monaco editor accessible via the HA ingress panel:
 
 - Full TypeScript IntelliSense with types generated from your HA instance
-- File tree with create and edit (rename/delete coming — see [TODO.md](TODO.md))
+- File tree with create, edit, rename, and delete
 - Build button with output console
 - Entity dashboard showing deployed entities and their state
 - Log viewer with level, entity, and search filters
