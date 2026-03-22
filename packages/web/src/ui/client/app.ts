@@ -169,6 +169,7 @@ export class TseApp extends LitElement {
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
 
   private _editor: MonacoEditorInstance | null = null;
+  private _completionRegistry: { domains: Record<string, unknown>; entities: Record<string, unknown> } | null = null;
   private _base = (window as Record<string, unknown>).__INGRESS_PATH__ as string || '';
 
   createRenderRoot() { return this; }
@@ -287,6 +288,7 @@ export class TseApp extends LitElement {
       this._setupCodeLensProvider();
       this._setupDocumentHighlightProvider();
       this._setupEntityCompletionProvider();
+      this._setupCallServiceCompletionProvider();
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
@@ -319,6 +321,12 @@ export class TseApp extends LitElement {
         this._createReadOnlyModel(content, uri);
       }
     }).catch(e => console.warn('[ha-forge] Failed to load HA registry types', e));
+
+    this._api('GET', '/api/types/completion-registry').then((data) => {
+      if (data && data.domains) {
+        this._completionRegistry = data;
+      }
+    }).catch(e => console.warn('[ha-forge] Failed to load completion registry', e));
   }
 
   private _createReadOnlyModel(content: string, uri: string) {
@@ -684,6 +692,175 @@ export class TseApp extends LitElement {
       if (num === 0) return _match;
       return `\${${num - 1}${rest || ''}}`;
     });
+  }
+
+  // ---- callService() completion provider ----
+
+  private _setupCallServiceCompletionProvider() {
+    monaco.languages.registerCompletionItemProvider('typescript', {
+      triggerCharacters: ["'", '"', ',', '{', ' '],
+      provideCompletionItems: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
+        if (!this._completionRegistry) return { suggestions: [] };
+
+        const allLines = model.getValue().split('\n');
+        const lineContent = allLines[position.lineNumber - 1] ?? '';
+        const beforeCursor = lineContent.slice(0, position.column - 1);
+
+        // Scan backwards to find callService( — gather text from prior lines if needed
+        const searchLines: string[] = [beforeCursor];
+        for (let i = position.lineNumber - 2; i >= Math.max(0, position.lineNumber - 10); i--) {
+          searchLines.unshift(allLines[i]);
+          if (allLines[i].includes('callService')) break;
+        }
+        const searchText = searchLines.join('\n');
+
+        const ctx = TseApp._parseCallServiceContext(searchText);
+        if (!ctx) return { suggestions: [] };
+
+        const registry = this._completionRegistry as {
+          domains: Record<string, { services: Record<string, { description?: string; fields: Record<string, { type: string; description?: string; required: boolean }> }> }>;
+          entities: Record<string, { domain: string; services?: string[] }>;
+        };
+
+        if (ctx.argIndex === 1) {
+          // 2nd argument — service name completions
+          return { suggestions: this._getServiceSuggestions(ctx.entityId, registry) };
+        }
+
+        if (ctx.argIndex === 2 && ctx.insideObject) {
+          // 3rd argument inside {} — data field key completions
+          return { suggestions: this._getFieldSuggestions(ctx.entityId, ctx.serviceName, registry) };
+        }
+
+        return { suggestions: [] };
+      },
+    });
+  }
+
+  /**
+   * Parse callService context from text ending at cursor.
+   * Returns the argument index (0=entity, 1=service, 2=data) and parsed arg values.
+   */
+  private static _parseCallServiceContext(text: string): {
+    argIndex: number;
+    entityId: string;
+    serviceName: string;
+    insideObject: boolean;
+  } | null {
+    // Find the last callService( occurrence
+    const csIdx = text.lastIndexOf('callService(');
+    if (csIdx === -1) return null;
+
+    const afterCs = text.slice(csIdx + 'callService('.length);
+
+    // Walk the text counting commas at depth 0 (parentheses) to find arg index
+    // Also track string literals and brace depth
+    let parenDepth = 0;
+    let braceDepth = 0;
+    let inString: string | null = null;
+    let argIndex = 0;
+    let entityId = '';
+    let serviceName = '';
+    let currentStringStart = -1;
+    let currentStringValue = '';
+
+    for (let i = 0; i < afterCs.length; i++) {
+      const ch = afterCs[i];
+
+      // String handling
+      if (inString) {
+        if (ch === '\\') { i++; continue; }
+        if (ch === inString) {
+          // Closing quote — capture the string value
+          const val = afterCs.slice(currentStringStart, i);
+          if (argIndex === 0 && parenDepth === 0) entityId = val;
+          if (argIndex === 1 && parenDepth === 0) serviceName = val;
+          inString = null;
+        }
+        continue;
+      }
+
+      if (ch === "'" || ch === '"') {
+        inString = ch;
+        currentStringStart = i + 1;
+        currentStringValue = '';
+        continue;
+      }
+
+      if (ch === '(') { parenDepth++; continue; }
+      if (ch === ')') {
+        if (parenDepth > 0) { parenDepth--; continue; }
+        // Closed the callService parens — cursor is outside
+        return null;
+      }
+      if (ch === '{') { braceDepth++; continue; }
+      if (ch === '}') { braceDepth--; continue; }
+
+      if (ch === ',' && parenDepth === 0 && braceDepth === 0) {
+        argIndex++;
+      }
+    }
+
+    return {
+      argIndex,
+      entityId,
+      serviceName,
+      insideObject: braceDepth > 0,
+    };
+  }
+
+  private _getServiceSuggestions(
+    entityId: string,
+    registry: {
+      domains: Record<string, { services: Record<string, { description?: string; fields: Record<string, unknown> }> }>;
+      entities: Record<string, { domain: string; services?: string[] }>;
+    },
+  ) {
+    const entity = registry.entities[entityId];
+    // Also support domain-level calls (e.g., callService('light', ...))
+    const domain = entity?.domain ?? entityId;
+    const domainData = registry.domains[domain];
+    if (!domainData) return [];
+
+    // Filter to entity-specific services if available (e.g., script)
+    const serviceNames = entity?.services ?? Object.keys(domainData.services);
+
+    return serviceNames.map((svcName, i) => {
+      const svc = domainData.services[svcName];
+      return {
+        label: svcName,
+        kind: monaco.languages.CompletionItemKind.Function,
+        insertText: `'${svcName}'`,
+        detail: svc?.description ?? `${domain}.${svcName}`,
+        sortText: String(i).padStart(3, '0'),
+      };
+    });
+  }
+
+  private _getFieldSuggestions(
+    entityId: string,
+    serviceName: string,
+    registry: {
+      domains: Record<string, { services: Record<string, { description?: string; fields: Record<string, { type: string; description?: string; required: boolean }> }> }>;
+      entities: Record<string, { domain: string; services?: string[] }>;
+    },
+  ) {
+    const entity = registry.entities[entityId];
+    const domain = entity?.domain ?? entityId;
+    const domainData = registry.domains[domain];
+    if (!domainData) return [];
+
+    const svc = domainData.services[serviceName];
+    if (!svc) return [];
+
+    return Object.entries(svc.fields).map(([fieldName, field], i) => ({
+      label: fieldName,
+      kind: monaco.languages.CompletionItemKind.Property,
+      insertText: `${fieldName}: `,
+      detail: field.type + (field.required ? ' (required)' : ''),
+      documentation: field.description ? { value: field.description } : undefined,
+      sortText: (field.required ? '0_' : '1_') + String(i).padStart(3, '0'),
+    }));
   }
 
   private static _entityTemplates() {

@@ -27,6 +27,19 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
     }
   });
 
+  // Serve the completion registry for Monaco editor custom completions
+  app.get('/completion-registry', (c) => {
+    const registryPath = path.join(opts.generatedDir, 'ha-completion-registry.json');
+    if (!fs.existsSync(registryPath)) {
+      return c.json(null, 404);
+    }
+    try {
+      return c.json(JSON.parse(fs.readFileSync(registryPath, 'utf-8')));
+    } catch {
+      return c.json(null, 500);
+    }
+  });
+
   // Serve a self-contained declaration for Monaco editor.
   // Includes all SDK types + global function declarations so users
   // get full autocomplete without needing any imports.

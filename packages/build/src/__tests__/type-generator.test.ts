@@ -271,6 +271,7 @@ describe('generateTypes()', () => {
     expect(fs.existsSync(path.join(outputDir, 'ha-registry.d.ts'))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, 'ha-validators.ts'))).toBe(true);
     expect(fs.existsSync(path.join(outputDir, 'ha-registry-meta.json'))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, 'ha-completion-registry.json'))).toBe(true);
     cleanup();
   });
 
@@ -881,6 +882,101 @@ describe('generateTypes()', () => {
       const matches = content.match(/'notify\.phone':/g);
       expect(matches).toHaveLength(1);
 
+      cleanup();
+    });
+  });
+
+  describe('ha-completion-registry.json', () => {
+    it('contains domain service definitions', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      expect(registry.domains.light).toBeDefined();
+      expect(registry.domains.light.services.turn_on).toBeDefined();
+      expect(registry.domains.light.services.turn_off).toBeDefined();
+      expect(registry.domains.light.services.toggle).toBeDefined();
+      cleanup();
+    });
+
+    it('includes field types and required flags', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      const brightness = registry.domains.light.services.turn_on.fields.brightness;
+      expect(brightness.type).toBe('number');
+      expect(brightness.required).toBe(false);
+
+      const option = registry.domains.input_select.services.select_option.fields.option;
+      expect(option.type).toBe('string');
+      expect(option.required).toBe(true);
+      cleanup();
+    });
+
+    it('includes domain states', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      expect(registry.domains.light.states).toEqual(['on', 'off']);
+      cleanup();
+    });
+
+    it('includes per-entity entries with domain reference', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      expect(registry.entities['light.living_room'].domain).toBe('light');
+      expect(registry.entities['light.living_room'].states).toEqual(['on', 'off']);
+      expect(registry.entities['sensor.temperature'].domain).toBe('sensor');
+      expect(registry.entities['sensor.temperature'].states).toEqual([]);
+      cleanup();
+    });
+
+    it('includes per-entity states for input_select', () => {
+      setup();
+      generateTypes(makeRegistryData(), outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      expect(registry.entities['input_select.house_mode'].states).toEqual(['home', 'away', 'sleeping']);
+      cleanup();
+    });
+
+    it('filters script services per entity', () => {
+      setup();
+      const data = makeRegistryData({
+        services: {
+          ...makeRegistryData().services,
+          script: {
+            reload: { fields: {} },
+            turn_on: { fields: {} },
+            turn_off: { fields: {} },
+            toggle: { fields: {} },
+            announce: { fields: { message: { required: true, selector: { text: {} } } } },
+            reboot: { fields: {} },
+          },
+        },
+        states: [
+          ...makeRegistryData().states,
+          {
+            entity_id: 'script.announce',
+            state: 'off',
+            attributes: { friendly_name: 'Announce' },
+            last_changed: '2024-01-15T10:00:00.000Z',
+            last_updated: '2024-01-15T10:00:00.000Z',
+          },
+        ],
+      });
+      generateTypes(data, outputDir);
+      const registry = JSON.parse(fs.readFileSync(path.join(outputDir, 'ha-completion-registry.json'), 'utf-8'));
+
+      const scriptEntity = registry.entities['script.announce'];
+      expect(scriptEntity.services).toContain('announce');
+      expect(scriptEntity.services).toContain('reload');
+      expect(scriptEntity.services).toContain('turn_on');
+      expect(scriptEntity.services).not.toContain('reboot');
       cleanup();
     });
   });

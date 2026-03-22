@@ -599,6 +599,11 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     ``,
   ].join('\n');
 
+  // ---- Generate ha-completion-registry.json ----
+  const completionRegistry = buildCompletionRegistry(
+    entityIds, stateMap, servicesByDomain,
+  );
+
   // ---- Generate ha-registry-meta.json ----
   const meta = {
     generatedAt: new Date().toISOString(),
@@ -616,6 +621,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     fs.writeFileSync(path.join(outputDir, 'ha-registry.d.ts'), dtsContent, 'utf-8');
     fs.writeFileSync(path.join(outputDir, 'ha-validators.ts'), validatorsContent, 'utf-8');
     fs.writeFileSync(path.join(outputDir, 'ha-registry-meta.json'), JSON.stringify(meta, null, 2), 'utf-8');
+    fs.writeFileSync(path.join(outputDir, 'ha-completion-registry.json'), JSON.stringify(completionRegistry, null, 2), 'utf-8');
   } catch (err) {
     errors.push(`Failed to write output files: ${err instanceof Error ? err.message : String(err)}`);
   }
@@ -701,6 +707,118 @@ function inferValueType(value: unknown): string {
 
 /** Generic script services that apply to all script entities. */
 const GENERIC_SCRIPT_SERVICES = new Set(['reload', 'turn_on', 'turn_off', 'toggle']);
+
+// ---- Completion registry generation ----
+
+interface CompletionField {
+  type: string;
+  description?: string;
+  required: boolean;
+}
+
+interface CompletionService {
+  description?: string;
+  fields: Record<string, CompletionField>;
+}
+
+interface CompletionDomain {
+  states: string[];
+  services: Record<string, CompletionService>;
+}
+
+interface CompletionEntity {
+  domain: string;
+  states: string[];
+  services?: string[];
+}
+
+export interface CompletionRegistry {
+  domains: Record<string, CompletionDomain>;
+  entities: Record<string, CompletionEntity>;
+}
+
+/** Parse a TS type union string like `'on' | 'off'` into `['on', 'off']`. */
+function parseStateUnion(tsType: string): string[] {
+  if (tsType === 'string') return [];
+  const matches = tsType.match(/'([^']*)'/g);
+  if (!matches) return [];
+  return matches.map((m) => m.slice(1, -1));
+}
+
+/** Simplify a TS type string for display in completion docs. */
+function simplifyType(tsType: string): string {
+  if (tsType.includes('|')) return tsType;
+  if (tsType.startsWith('{')) return 'object';
+  if (tsType.startsWith('[')) return 'tuple';
+  if (tsType.startsWith('Record<')) return 'object';
+  return tsType;
+}
+
+function buildCompletionRegistry(
+  entityIds: string[],
+  stateMap: Map<string, HAStateObject>,
+  servicesByDomain: Map<string, Map<string, HAService>>,
+): CompletionRegistry {
+  const domains: Record<string, CompletionDomain> = {};
+  const entities: Record<string, CompletionEntity> = {};
+
+  // Build domain entries
+  for (const [domain, services] of servicesByDomain) {
+    // Derive states from a representative entity
+    const repEntityId = entityIds.find((id) => id.startsWith(`${domain}.`));
+    const repState = repEntityId ? stateMap.get(repEntityId) : undefined;
+    const stateType = repState ? inferStateType(domain, repState) : 'string';
+    const states = parseStateUnion(stateType);
+
+    const svcEntries: Record<string, CompletionService> = {};
+    for (const [svcName, svc] of services) {
+      const fields: Record<string, CompletionField> = {};
+      for (const [fieldName, field] of Object.entries(svc.fields)) {
+        const tsType = field.selector
+          ? selectorToType(field.selector, entityIds).tsType
+          : 'unknown';
+        fields[fieldName] = {
+          type: simplifyType(tsType),
+          ...(field.description && { description: field.description }),
+          required: !!field.required,
+        };
+      }
+      svcEntries[svcName] = {
+        ...(svc.description && { description: svc.description }),
+        fields,
+      };
+    }
+
+    domains[domain] = { states, services: svcEntries };
+  }
+
+  // Build entity entries
+  for (const entityId of entityIds) {
+    const domain = entityId.split('.')[0];
+    const state = stateMap.get(entityId);
+
+    // Per-entity states (differs for input_select)
+    const stateType = state ? inferStateType(domain, state) : 'string';
+    const states = parseStateUnion(stateType);
+
+    const entry: CompletionEntity = { domain, states };
+
+    // Script entities get per-entity service filtering
+    if (domain === 'script') {
+      const objectId = entityId.split('.')[1];
+      const domainServices = servicesByDomain.get('script');
+      if (domainServices) {
+        entry.services = [...domainServices.keys()].filter(
+          (svc) => GENERIC_SCRIPT_SERVICES.has(svc) || svc === objectId,
+        );
+      }
+    }
+
+    entities[entityId] = entry;
+  }
+
+  return { domains, entities };
+}
 
 function generateServicesType(
   domain: string,
