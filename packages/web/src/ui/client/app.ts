@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -447,6 +447,21 @@ export class TseApp extends LitElement {
               new monaco.Range(marker.startLineNumber, marker.startColumn, marker.startLineNumber, marker.startColumn),
               `export const ${varName} = `,
             ));
+          }
+
+          // Device refactor: wrap standalone entities into device()
+          if (marker.message.includes('[ha-forge:device-refactor]')) {
+            const source = model.getValue();
+            const filePath = model.uri.path || 'file.ts';
+            const refactored = generateDeviceRefactor(source, filePath);
+            if (refactored) {
+              const lineCount = source.split('\n').length;
+              actions.push(this._quickFix(model, marker,
+                'Wrap entities in device()',
+                new monaco.Range(1, 1, lineCount, source.split('\n')[lineCount - 1].length + 1),
+                refactored,
+              ));
+            }
           }
         }
         return { actions, dispose() {} };

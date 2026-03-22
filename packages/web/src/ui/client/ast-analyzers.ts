@@ -55,6 +55,7 @@ export function analyzeWithAst(sourceText: string, fileName = 'file.ts'): AstAna
 
   visit(sf);
   checkUnexportedEntities(sf, diagnostics);
+  checkDeviceRefactor(sf, diagnostics, fileName);
   return { diagnostics, entities };
 
   function visit(node: import('typescript').Node) {
@@ -357,6 +358,325 @@ function checkUnexportedEntities(
 function hasExportModifier(node: import('typescript').VariableStatement): boolean {
   if (!ts) return false;
   return node.modifiers?.some(m => m.kind === ts!.SyntaxKind.ExportKeyword) ?? false;
+}
+
+// ---- Device refactor suggestion ----
+
+interface StandaloneEntity {
+  varName: string;
+  memberKey: string;
+  factoryName: string;
+  /** Full source text of the initializer expression (e.g. `sensor({ ... })`) */
+  exprText: string;
+  /** Source text of the init() body if present, null otherwise */
+  initText: string | null;
+  /** Source text of the destroy() body if present, null otherwise */
+  destroyText: string | null;
+  /** Whether init uses only simple this.update/this.attr (safe to auto-rewrite) */
+  simpleInit: boolean;
+  /** The statement node for range info */
+  startLine: number;
+  endLine: number;
+}
+
+/** Names of entity factories that produce stateful entities (not devices, automations, tasks, etc.) */
+const ENTITY_FACTORY_NAMES = new Set([
+  'sensor', 'binarySensor', 'light', 'defineSwitch', 'cover', 'climate',
+  'fan', 'lock', 'number', 'select', 'text', 'button', 'siren',
+  'humidifier', 'valve', 'waterHeater', 'vacuum', 'lawnMower',
+  'alarmControlPanel', 'computed',
+]);
+
+function collectStandaloneEntities(
+  sf: import('typescript').SourceFile,
+  sourceText: string,
+): StandaloneEntity[] {
+  if (!ts) return [];
+  const results: StandaloneEntity[] = [];
+
+  for (const stmt of sf.statements) {
+    if (!ts.isVariableStatement(stmt)) continue;
+    // Only exported declarations count — unexported ones get a different warning
+    if (!hasExportModifier(stmt)) continue;
+
+    for (const decl of stmt.declarationList.declarations) {
+      if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue;
+      const factory = findFactoryCall(decl.initializer);
+      if (!factory) continue;
+      const factoryName = getCalledName(factory);
+      if (!factoryName || !ENTITY_FACTORY_NAMES.has(factoryName)) continue;
+
+      const varName = ts.isIdentifier(decl.name) ? decl.name.text : null;
+      if (!varName) continue;
+
+      // Extract init/destroy from the factory call's object literal
+      const arg = factory.arguments[0];
+      let initText: string | null = null;
+      let destroyText: string | null = null;
+      let simpleInit = true;
+
+      if (arg && ts.isObjectLiteralExpression(arg)) {
+        for (const prop of arg.properties) {
+          const propName = getPropName(prop);
+          if (propName === 'init') {
+            initText = extractFunctionBodyText(prop, sourceText);
+            simpleInit = checkSimpleInit(prop);
+          }
+          if (propName === 'destroy') {
+            destroyText = extractFunctionBodyText(prop, sourceText);
+          }
+        }
+      }
+
+      // Build expression text without init/destroy (they move to device level)
+      const exprText = initText || destroyText
+        ? removeInitDestroy(decl.initializer, sourceText, sf)
+        : sourceText.slice(decl.initializer.getStart(sf), decl.initializer.getEnd());
+
+      const { line: sl } = sf.getLineAndCharacterOfPosition(stmt.getStart(sf));
+      const { line: el } = sf.getLineAndCharacterOfPosition(stmt.getEnd());
+
+      results.push({
+        varName,
+        memberKey: varName,
+        factoryName,
+        exprText,
+        initText,
+        destroyText,
+        simpleInit,
+        startLine: sl + 1,
+        endLine: el + 1,
+      });
+    }
+  }
+
+  return results;
+}
+
+function getPropName(prop: import('typescript').ObjectLiteralElementLike): string | null {
+  if (!ts) return null;
+  if ((ts.isPropertyAssignment(prop) || ts.isMethodDeclaration(prop)) &&
+      prop.name && ts.isIdentifier(prop.name)) {
+    return prop.name.text;
+  }
+  return null;
+}
+
+function extractFunctionBodyText(
+  prop: import('typescript').ObjectLiteralElementLike,
+  sourceText: string,
+): string | null {
+  if (!ts) return null;
+  // Get the full text of the property (e.g. `init() { ... }` or `init: () => { ... }`)
+  return sourceText.slice(prop.getStart(), prop.getEnd());
+}
+
+/**
+ * Check if an init function only uses this.update() and this.attr()
+ * (i.e. no this.poll, this.setTimeout, this.setInterval, this.events, etc.)
+ */
+function checkSimpleInit(prop: import('typescript').ObjectLiteralElementLike): boolean {
+  if (!ts) return false;
+
+  let simple = true;
+  const REWRITABLE = new Set(['update', 'attr']);
+
+  function walk(node: import('typescript').Node) {
+    if (!ts || !simple) return;
+    // Look for this.xxx property access
+    if (ts.isPropertyAccessExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      const name = node.name.text;
+      if (!REWRITABLE.has(name)) {
+        // this.ha, this.events, this.log, this.mqtt etc. are same on device context — fine
+        // this.poll, this.setTimeout, this.setInterval are also on device context — fine
+        // But this.poll() has different return semantics — mark as not simple
+        if (name === 'poll') {
+          simple = false;
+        }
+      }
+    }
+    ts.forEachChild(node, walk);
+  }
+
+  walk(prop);
+  return simple;
+}
+
+/**
+ * Return the expression text with init() and destroy() properties removed.
+ */
+function removeInitDestroy(
+  expr: import('typescript').CallExpression,
+  sourceText: string,
+  sf: import('typescript').SourceFile,
+): string {
+  if (!ts) return sourceText.slice(expr.getStart(sf), expr.getEnd());
+
+  const factory = findFactoryCall(expr) ?? expr;
+  const arg = factory.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) {
+    return sourceText.slice(expr.getStart(sf), expr.getEnd());
+  }
+
+  // Find init/destroy properties and remove them
+  const removals: Array<{ start: number; end: number }> = [];
+  const props = arg.properties;
+  for (let i = 0; i < props.length; i++) {
+    const propName = getPropName(props[i]);
+    if (propName === 'init' || propName === 'destroy') {
+      let start = props[i].getStart(sf);
+      let end = props[i].getEnd();
+      // Remove trailing comma if present
+      const afterEnd = sourceText.slice(end).match(/^\s*,/);
+      if (afterEnd) {
+        end += afterEnd[0].length;
+      } else if (i > 0) {
+        // Remove leading comma instead
+        const beforeStart = sourceText.slice(0, start);
+        const leadingComma = beforeStart.match(/,\s*$/);
+        if (leadingComma) {
+          start -= leadingComma[0].length;
+        }
+      }
+      removals.push({ start, end });
+    }
+  }
+
+  if (removals.length === 0) {
+    return sourceText.slice(expr.getStart(sf), expr.getEnd());
+  }
+
+  // Build result by splicing out removals
+  let result = '';
+  let pos = expr.getStart(sf);
+  for (const { start, end } of removals.sort((a, b) => a.start - b.start)) {
+    result += sourceText.slice(pos, start);
+    pos = end;
+  }
+  result += sourceText.slice(pos, expr.getEnd());
+  return result;
+}
+
+function checkDeviceRefactor(
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+  fileName: string,
+) {
+  if (!ts) return;
+
+  // Skip if file already has a device() call
+  for (const stmt of sf.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (decl.initializer && ts.isCallExpression(decl.initializer)) {
+          const name = getCalledName(decl.initializer);
+          if (name === 'device') return;
+        }
+      }
+    }
+  }
+
+  const entities = collectStandaloneEntities(sf, sf.getFullText());
+  if (entities.length < 2) return;
+
+  // Place diagnostic on the first entity
+  diagnostics.push({
+    startLine: entities[0].startLine,
+    startCol: 1,
+    endLine: entities[0].endLine,
+    endCol: 1,
+    message: `${entities.length} standalone entities could be grouped into a device() [ha-forge:device-refactor]`,
+    severity: 'info',
+  });
+}
+
+/**
+ * Generate the refactored source text that wraps standalone entities in a device().
+ * Called from the code action provider.
+ */
+export function generateDeviceRefactor(sourceText: string, fileName: string): string | null {
+  if (!ts) return null;
+
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const entities = collectStandaloneEntities(sf, sourceText);
+  if (entities.length < 2) return null;
+
+  // Derive device ID and name from filename
+  const baseName = fileName.replace(/^.*\//, '').replace(/\.\w+$/, '');
+  const deviceId = toSnakeCase(baseName) ?? baseName;
+  const deviceVarName = toCamelCase(baseName) ?? 'myDevice';
+  const deviceDisplayName = deviceId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // Collect init/destroy from entities
+  const inits: Array<{ memberKey: string; text: string; simple: boolean }> = [];
+  const destroys: Array<{ memberKey: string; text: string }> = [];
+  for (const ent of entities) {
+    if (ent.initText) inits.push({ memberKey: ent.memberKey, text: ent.initText, simple: ent.simpleInit });
+    if (ent.destroyText) destroys.push({ memberKey: ent.memberKey, text: ent.destroyText });
+  }
+
+  // Build the members block
+  const membersLines = entities.map(ent =>
+    `    ${ent.memberKey}: ${ent.exprText},`
+  ).join('\n');
+
+  // Build init block
+  let initBlock = '';
+  if (inits.length > 0) {
+    if (inits.length === 1 && inits[0].simple) {
+      // Single simple init — rewrite this.update → this.entities.<key>.update
+      const rewritten = rewriteInitForDevice(inits[0].text, inits[0].memberKey);
+      initBlock = `\n  ${rewritten},`;
+    } else {
+      // Multiple inits or complex init — comment out with TODO
+      const commentedInits = inits.map(i => {
+        const lines = i.text.split('\n').map(l => `  // ${l}`).join('\n');
+        return `  // --- from ${i.memberKey} ---\n${lines}`;
+      }).join('\n');
+      initBlock = `\n  // TODO: Migrate init() — replace this.update() with this.entities.<key>.update()\n${commentedInits}\n  // init() {\n  // },`;
+    }
+  }
+
+  // Build destroy block
+  let destroyBlock = '';
+  if (destroys.length > 0) {
+    const commentedDestroys = destroys.map(d => {
+      const lines = d.text.split('\n').map(l => `  // ${l}`).join('\n');
+      return `  // --- from ${d.memberKey} ---\n${lines}`;
+    }).join('\n');
+    destroyBlock = `\n  // TODO: Migrate destroy()\n${commentedDestroys}\n  // destroy() {\n  // },`;
+  }
+
+  const deviceDecl = `export const ${deviceVarName} = device({
+  id: '${deviceId}',
+  name: '${deviceDisplayName}',
+  entities: {
+${membersLines}
+  },${initBlock}${destroyBlock}
+});`;
+
+  // Replace the entity declarations in the source with the device declaration
+  // Find the range from first entity to last entity
+  const lines = sourceText.split('\n');
+  const firstLine = entities[0].startLine - 1; // 0-based
+  const lastLine = entities[entities.length - 1].endLine; // exclusive
+
+  const before = lines.slice(0, firstLine).join('\n');
+  const after = lines.slice(lastLine).join('\n');
+
+  const parts = [before, deviceDecl, after].filter(p => p.length > 0);
+  return parts.join('\n\n');
+}
+
+/**
+ * Rewrite an init property text, replacing this.update/this.attr
+ * with this.entities.<key>.update/this.entities.<key>.attr.
+ */
+function rewriteInitForDevice(initText: string, memberKey: string): string {
+  return initText
+    .replace(/this\.update\b/g, `this.entities.${memberKey}.update`)
+    .replace(/this\.attr\b/g, `this.entities.${memberKey}.attr`);
 }
 
 // ---- Snake case conversion ----
