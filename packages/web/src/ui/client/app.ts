@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, toSnakeCase } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -423,6 +423,18 @@ export class TseApp extends LitElement {
               `Replace with ${timerMatch[1]}()`,
               new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn),
               timerMatch[1],
+            ));
+          }
+
+          // "Entity ID should be snake_case (suggested: 'x')" → replace the ID string
+          const snakeMatch = marker.message.match(/^Entity ID '(.+?)' should be snake_case \(suggested: '(.+?)'\)$/);
+          if (snakeMatch) {
+            const suggested = snakeMatch[2];
+            // Replace the string content between quotes (marker covers the full string literal including quotes)
+            actions.push(this._quickFix(model, marker,
+              `Change ID to '${suggested}'`,
+              new monaco.Range(marker.startLineNumber, marker.startColumn + 1, marker.endLineNumber, marker.endColumn - 1),
+              suggested,
             ));
           }
         }

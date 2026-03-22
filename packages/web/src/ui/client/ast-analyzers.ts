@@ -157,8 +157,10 @@ function checkFactoryCall(
 
     // snake_case validation: lowercase letters, digits, underscores
     if (!/^[a-z][a-z0-9_]*$/.test(id)) {
+      const suggested = toSnakeCase(id);
+      const hint = suggested && suggested !== id ? ` (suggested: '${suggested}')` : '';
       diagnostics.push(markerAt(idNode, sf,
-        `Entity ID '${id}' should be snake_case (lowercase letters, digits, underscores)`,
+        `Entity ID '${id}' should be snake_case${hint}`,
         'warning',
       ));
     }
@@ -343,6 +345,29 @@ function checkUnexportedEntities(
 function hasExportModifier(node: import('typescript').VariableStatement): boolean {
   if (!ts) return false;
   return node.modifiers?.some(m => m.kind === ts!.SyntaxKind.ExportKeyword) ?? false;
+}
+
+// ---- Snake case conversion ----
+
+/**
+ * Convert an arbitrary string to snake_case.
+ * Returns null if the result would be empty or invalid.
+ */
+export function toSnakeCase(input: string): string | null {
+  const result = input
+    // Insert underscore before uppercase runs: "camelCase" → "camel_Case", "XMLParser" → "XML_Parser"
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    // Replace non-alphanumeric with underscore
+    .replace(/[^a-zA-Z0-9]/g, '_')
+    .toLowerCase()
+    // Collapse multiple underscores
+    .replace(/_+/g, '_')
+    // Trim leading/trailing underscores
+    .replace(/^_|_$/g, '');
+
+  if (!result || !/^[a-z][a-z0-9_]*$/.test(result)) return null;
+  return result;
 }
 
 // ---- Helpers ----
