@@ -558,29 +558,131 @@ export class TseApp extends LitElement {
     const templates = TseApp._entityTemplates();
 
     monaco.languages.registerCompletionItemProvider('typescript', {
-      triggerCharacters: ['\n'],
+      triggerCharacters: ['\n', ' '],
       provideCompletionItems: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
-        const lineContent = model.getValue().split('\n')[position.lineNumber - 1] ?? '';
-        const trimmed = lineContent.slice(0, position.column - 1).trim();
+        const allLines = model.getValue().split('\n');
+        const lineContent = allLines[position.lineNumber - 1] ?? '';
+        const beforeCursor = lineContent.slice(0, position.column - 1);
+        const trimmed = beforeCursor.trim();
 
-        // Only offer at empty lines or after 'export'
-        if (trimmed !== '' && !trimmed.startsWith('export') && trimmed.length > 0) {
-          return { suggestions: [] };
+        // Analyze brace depth and entities context using text up to cursor
+        const priorLines = allLines.slice(0, position.lineNumber - 1).join('\n');
+        const textToCursor = (position.lineNumber > 1 ? priorLines + '\n' : '') + beforeCursor;
+        const { depth, insideEntities } = TseApp._analyzeCompletionContext(textToCursor);
+
+        type InsertMode = 'top-level' | 'expression' | 'member' | 'member-value';
+        let mode: InsertMode | null = null;
+
+        if (depth === 0) {
+          if (trimmed === '') {
+            mode = 'top-level';
+          } else if (
+            /^export\s+default\s*;?\s*$/.test(trimmed) ||
+            /^(?:export\s+)?(?:const|let)\s+\w+\s*=\s*$/.test(trimmed)
+          ) {
+            mode = 'expression';
+          }
+        } else if (insideEntities) {
+          if (trimmed === '') {
+            mode = 'member';
+          } else if (/^\w+\s*:\s*$/.test(trimmed)) {
+            mode = 'member-value';
+          }
         }
 
-        const isTopLevel = trimmed === '' || trimmed.startsWith('export');
-        const suggestions = templates.map(t => ({
-          label: t.label,
-          kind: monaco.languages.CompletionItemKind.Snippet,
-          insertText: isTopLevel ? t.topLevelText : t.memberText,
-          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
-          detail: t.detail,
-          documentation: { value: t.documentation },
-          sortText: t.sortText,
-        }));
+        if (!mode) return { suggestions: [] };
 
-        return { suggestions };
+        return {
+          suggestions: templates.map(t => ({
+            label: t.label,
+            kind: monaco.languages.CompletionItemKind.Snippet,
+            insertText: mode === 'top-level' ? t.topLevelText
+              : mode === 'expression' ? TseApp._stripVarDecl(t.topLevelText)
+              : mode === 'member' ? t.memberText
+              : TseApp._stripMemberKey(t.memberText),
+            insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+            detail: t.detail,
+            documentation: { value: t.documentation },
+            sortText: t.sortText,
+          })),
+        };
       },
+    });
+  }
+
+  /** Scan text for brace depth and whether cursor is directly inside an `entities: { }` block. */
+  private static _analyzeCompletionContext(text: string): { depth: number; insideEntities: boolean } {
+    let depth = 0;
+    const stack: boolean[] = [];
+    let i = 0;
+    const len = text.length;
+
+    while (i < len) {
+      const ch = text[i];
+
+      // Skip string literals
+      if (ch === '"' || ch === "'" || ch === '`') {
+        i++;
+        while (i < len) {
+          if (text[i] === '\\') { i += 2; continue; }
+          if (text[i] === ch) { i++; break; }
+          i++;
+        }
+        continue;
+      }
+
+      // Skip line comments
+      if (ch === '/' && i + 1 < len && text[i + 1] === '/') {
+        while (i < len && text[i] !== '\n') i++;
+        continue;
+      }
+
+      // Skip block comments
+      if (ch === '/' && i + 1 < len && text[i + 1] === '*') {
+        i += 2;
+        while (i < len - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+        i += 2;
+        continue;
+      }
+
+      if (ch === '{') {
+        const before = text.slice(Math.max(0, i - 50), i);
+        stack.push(/entities\s*:\s*$/.test(before));
+        depth++;
+      } else if (ch === '}') {
+        depth = Math.max(0, depth - 1);
+        if (stack.length > 0) stack.pop();
+      }
+
+      i++;
+    }
+
+    return {
+      depth,
+      insideEntities: stack.length > 0 && stack[stack.length - 1] === true,
+    };
+  }
+
+  /** Strip `export const ${1:name} = ` prefix and renumber placeholders. */
+  private static _stripVarDecl(text: string): string {
+    const m = text.match(/^export\s+const\s+\$\{1:[^}]+\}\s*=\s*/);
+    if (!m) return text;
+    return TseApp._renumberPlaceholders(text.slice(m[0].length));
+  }
+
+  /** Strip `${1:name}: ` prefix and renumber placeholders. */
+  private static _stripMemberKey(text: string): string {
+    const m = text.match(/^\$\{1:[^}]+\}:\s*/);
+    if (!m) return text;
+    return TseApp._renumberPlaceholders(text.slice(m[0].length));
+  }
+
+  /** Subtract 1 from all non-zero snippet placeholder numbers. */
+  private static _renumberPlaceholders(text: string): string {
+    return text.replace(/\$\{(\d+)(:[^}]*)?\}/g, (_match, numStr: string, rest?: string) => {
+      const num = parseInt(numStr);
+      if (num === 0) return _match;
+      return `\${${num - 1}${rest || ''}}`;
     });
   }
 
