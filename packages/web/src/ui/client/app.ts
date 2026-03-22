@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion, findCronStrings } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -89,6 +89,20 @@ declare const monaco: {
     registerHoverProvider(languageId: string, provider: {
       provideHover(model: MonacoModelInstance, position: { lineNumber: number; column: number }): { range: MonacoRange; contents: Array<{ value: string }> } | null;
     }): { dispose(): void };
+    registerCodeLensProvider(languageId: string, provider: {
+      onDidChangeCodeLenses?: { (listener: () => void): { dispose(): void } };
+      provideCodeLenses(model: MonacoModelInstance): { lenses: Array<{ range: MonacoRange; command?: { id: string; title: string } }>; dispose(): void };
+    }): { dispose(): void };
+    registerDocumentHighlightProvider(languageId: string, provider: {
+      provideDocumentHighlights(model: MonacoModelInstance, position: { lineNumber: number; column: number }): Array<{ range: MonacoRange; kind?: number }>;
+    }): { dispose(): void };
+    registerCompletionItemProvider(languageId: string, provider: {
+      triggerCharacters?: string[];
+      provideCompletionItems(model: MonacoModelInstance, position: { lineNumber: number; column: number }): { suggestions: Array<{ label: string; kind: number; insertText: string; insertTextRules?: number; detail?: string; documentation?: string | { value: string }; range?: MonacoRange; sortText?: string }> };
+    }): { dispose(): void };
+    CompletionItemKind: { Snippet: number; Function: number; Text: number };
+    CompletionItemInsertTextRule: { InsertAsSnippet: number };
+    DocumentHighlightKind: { Text: number; Read: number; Write: number };
     SymbolKind: { Variable: number; Function: number; Module: number };
   };
   MarkerSeverity: { Error: number; Warning: number; Info: number; Hint: number };
@@ -109,12 +123,27 @@ interface MonacoModelInstance {
   updateOptions(opts: { readOnly?: boolean }): void;
 }
 
+interface MonacoDecorationOptions {
+  range: MonacoRange;
+  options: {
+    isWholeLine?: boolean;
+    minimap?: { color: string; position: number };
+    overviewRuler?: { color: string; position: number };
+  };
+}
+
+interface MonacoDecorationsCollection {
+  set(decorations: MonacoDecorationOptions[]): void;
+  clear(): void;
+}
+
 interface MonacoEditorInstance {
   setModel(model: MonacoModelInstance | null): void;
   getModel(): MonacoModelInstance | null;
   onDidChangeModelContent(listener: () => void): { dispose(): void };
   setPosition(pos: { lineNumber: number; column: number }): void;
   revealPositionInCenterIfOutsideViewport(pos: { lineNumber: number; column: number }): void;
+  createDecorationsCollection(decorations?: MonacoDecorationOptions[]): MonacoDecorationsCollection;
 }
 
 interface OpenFileInternal {
@@ -252,6 +281,9 @@ export class TseApp extends LitElement {
       this._setupCustomDiagnostics();
       this._setupEditorOpener();
       this._setupEntitySymbolProvider();
+      this._setupCodeLensProvider();
+      this._setupDocumentHighlightProvider();
+      this._setupEntityCompletionProvider();
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
@@ -404,6 +436,220 @@ export class TseApp extends LitElement {
         });
       },
     });
+  }
+
+  // ---- CodeLens — live entity state ----
+
+  private _codeLensChangeListeners: Array<() => void> = [];
+
+  private _setupCodeLensProvider() {
+    monaco.languages.registerCodeLensProvider('typescript', {
+      onDidChangeCodeLenses: (listener: () => void) => {
+        this._codeLensChangeListeners.push(listener);
+        return { dispose: () => { this._codeLensChangeListeners = this._codeLensChangeListeners.filter(l => l !== listener); } };
+      },
+      provideCodeLenses: (model: MonacoModelInstance) => {
+        if (!isAstReady()) return { lenses: [], dispose() {} };
+
+        const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
+        const stateMap = new Map(this._entities.map(e => [e.id, e]));
+
+        const lenses = defs.map(def => {
+          const entity = stateMap.get(def.fullEntityId);
+          let title: string;
+          if (!entity) {
+            title = def.isExported ? `${def.fullEntityId} \u2014 not deployed` : `${def.fullEntityId} \u2014 not exported`;
+          } else {
+            const stateStr = entity.state != null ? String(entity.state) : '\u2014';
+            const icon = entity.status === 'healthy' ? '\u25CF' : entity.status === 'error' ? '\u25CB' : '\u25CB';
+            title = `${icon} ${def.fullEntityId}: ${stateStr}`;
+          }
+          return {
+            range: new monaco.Range(def.line, 1, def.line, 1),
+            command: { id: '', title },
+          };
+        });
+
+        return { lenses, dispose() {} };
+      },
+    });
+  }
+
+  private _refreshCodeLenses() {
+    for (const listener of this._codeLensChangeListeners) listener();
+  }
+
+  // ---- Document highlights — entity ID references ----
+
+  private _setupDocumentHighlightProvider() {
+    monaco.languages.registerDocumentHighlightProvider('typescript', {
+      provideDocumentHighlights: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
+        if (!isAstReady()) return [];
+        const source = model.getValue();
+        const lines = source.split('\n');
+        const line = lines[position.lineNumber - 1];
+        if (!line) return [];
+
+        // Find the string literal under the cursor
+        const stringAt = this._findStringAtPosition(line, position.column);
+        if (!stringAt) return [];
+
+        // Check if this is an entity ID (bare or domain-qualified)
+        const defs = findEntityDefinitions(source, model.uri.path || 'file.ts');
+        const bareId = stringAt.includes('.') ? stringAt.split('.').slice(1).join('.') : stringAt;
+        const matchingDef = defs.find(d => d.entityId === bareId || d.fullEntityId === stringAt);
+        if (!matchingDef) return [];
+
+        // Find all string literals in the file that reference this entity
+        const highlights: Array<{ range: MonacoRange; kind?: number }> = [];
+        const patterns = [matchingDef.entityId, matchingDef.fullEntityId];
+
+        for (let i = 0; i < lines.length; i++) {
+          for (const pattern of patterns) {
+            let col = lines[i].indexOf("'" + pattern + "'");
+            if (col === -1) col = lines[i].indexOf('"' + pattern + '"');
+            if (col === -1) continue;
+            const startCol = col + 2; // 1-based, skip the quote
+            const endCol = startCol + pattern.length;
+            const isDefinition = i === matchingDef.line - 1 && pattern === matchingDef.entityId;
+            highlights.push({
+              range: new monaco.Range(i + 1, startCol, i + 1, endCol),
+              kind: isDefinition ? monaco.languages.DocumentHighlightKind.Write : monaco.languages.DocumentHighlightKind.Read,
+            });
+          }
+        }
+
+        return highlights;
+      },
+    });
+  }
+
+  private _findStringAtPosition(line: string, column: number): string | null {
+    const regex = /(['"])([^'"]*)\1/g;
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(line)) !== null) {
+      const start = match.index + 2; // 1-based column of string content start
+      const end = start + match[2].length;
+      if (column >= start && column <= end) return match[2];
+    }
+    return null;
+  }
+
+  // ---- Entity template scaffolding ----
+
+  private _setupEntityCompletionProvider() {
+    const templates = TseApp._entityTemplates();
+
+    monaco.languages.registerCompletionItemProvider('typescript', {
+      triggerCharacters: ['\n'],
+      provideCompletionItems: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
+        const lineContent = model.getValue().split('\n')[position.lineNumber - 1] ?? '';
+        const trimmed = lineContent.slice(0, position.column - 1).trim();
+
+        // Only offer at empty lines or after 'export'
+        if (trimmed !== '' && !trimmed.startsWith('export') && trimmed.length > 0) {
+          return { suggestions: [] };
+        }
+
+        const isTopLevel = trimmed === '' || trimmed.startsWith('export');
+        const suggestions = templates.map(t => ({
+          label: t.label,
+          kind: monaco.languages.CompletionItemKind.Snippet,
+          insertText: isTopLevel ? t.topLevelText : t.memberText,
+          insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+          detail: t.detail,
+          documentation: { value: t.documentation },
+          sortText: t.sortText,
+        }));
+
+        return { suggestions };
+      },
+    });
+  }
+
+  private static _entityTemplates() {
+    return [
+      {
+        label: 'New sensor',
+        detail: 'sensor({ ... })',
+        documentation: 'Create a sensor entity with polling',
+        sortText: '0_sensor',
+        topLevelText: "export const ${1:mySensor} = sensor({\n  id: '${2:my_sensor}',\n  name: '${3:My Sensor}',\n  init() {\n    this.poll(async () => {\n      $0\n      return 0;\n    }, { interval: ${4:30_000} });\n  },\n});",
+        memberText: "${1:mySensor}: sensor({\n  id: '${2:my_sensor}',\n  name: '${3:My Sensor}',\n}),",
+      },
+      {
+        label: 'New binary sensor',
+        detail: 'binarySensor({ ... })',
+        documentation: 'Create a binary sensor (on/off)',
+        sortText: '0_binary_sensor',
+        topLevelText: "export const ${1:myBinarySensor} = binarySensor({\n  id: '${2:my_binary_sensor}',\n  name: '${3:My Binary Sensor}',\n  init() {\n    $0\n    return 'off';\n  },\n});",
+        memberText: "${1:myBinarySensor}: binarySensor({\n  id: '${2:my_binary_sensor}',\n  name: '${3:My Binary Sensor}',\n}),",
+      },
+      {
+        label: 'New switch',
+        detail: 'defineSwitch({ ... })',
+        documentation: 'Create a controllable switch entity',
+        sortText: '0_switch',
+        topLevelText: "export const ${1:mySwitch} = defineSwitch({\n  id: '${2:my_switch}',\n  name: '${3:My Switch}',\n  onCommand(command) {\n    $0\n  },\n});",
+        memberText: "${1:mySwitch}: defineSwitch({\n  id: '${2:my_switch}',\n  name: '${3:My Switch}',\n  onCommand(command) {\n    $0\n  },\n}),",
+      },
+      {
+        label: 'New light',
+        detail: 'light({ ... })',
+        documentation: 'Create a light entity with brightness/color control',
+        sortText: '0_light',
+        topLevelText: "export const ${1:myLight} = light({\n  id: '${2:my_light}',\n  name: '${3:My Light}',\n  config: { supported_color_modes: ['brightness'] },\n  onCommand(command) {\n    $0\n  },\n});",
+        memberText: "${1:myLight}: light({\n  id: '${2:my_light}',\n  name: '${3:My Light}',\n  config: { supported_color_modes: ['brightness'] },\n  onCommand(command) {\n    $0\n  },\n}),",
+      },
+      {
+        label: 'New device',
+        detail: 'device({ ... })',
+        documentation: 'Create a device grouping multiple entities',
+        sortText: '0_device',
+        topLevelText: "export const ${1:myDevice} = device({\n  id: '${2:my_device}',\n  name: '${3:My Device}',\n  entities: {\n    $0\n  },\n  init() {\n  },\n});",
+        memberText: "device({\n  id: '${2:my_device}',\n  name: '${3:My Device}',\n  entities: {\n    $0\n  },\n  init() {\n  },\n})",
+      },
+      {
+        label: 'New automation',
+        detail: 'automation({ ... })',
+        documentation: 'Create an automation with event subscriptions',
+        sortText: '0_automation',
+        topLevelText: "export const ${1:myAutomation} = automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.on('${3:sensor.entity_id}', (event) => {\n      $0\n    });\n  },\n});",
+        memberText: "${1:myAutomation}: automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.on('${3:sensor.entity_id}', (event) => {\n      $0\n    });\n  },\n}),",
+      },
+      {
+        label: 'New computed sensor',
+        detail: 'computed({ ... })',
+        documentation: 'Create a reactive sensor derived from other entity states',
+        sortText: '0_computed',
+        topLevelText: "export const ${1:myComputed} = computed({\n  id: '${2:my_computed}',\n  name: '${3:My Computed Value}',\n  watch: ['${4:sensor.source_entity}'],\n  compute(states) {\n    $0\n    return 0;\n  },\n});",
+        memberText: "${1:myComputed}: computed({\n  id: '${2:my_computed}',\n  name: '${3:My Computed Value}',\n  watch: ['${4:sensor.source_entity}'],\n  compute(states) {\n    $0\n    return 0;\n  },\n}),",
+      },
+      {
+        label: 'New cron schedule',
+        detail: 'cron({ ... })',
+        documentation: 'Create a cron-based binary sensor',
+        sortText: '0_cron',
+        topLevelText: "export const ${1:myCron} = cron({\n  id: '${2:my_schedule}',\n  name: '${3:My Schedule}',\n  schedule: '${4:*/5 * * * *}',\n});",
+        memberText: "${1:myCron}: cron({\n  id: '${2:my_schedule}',\n  name: '${3:My Schedule}',\n  schedule: '${4:*/5 * * * *}',\n}),",
+      },
+      {
+        label: 'New task',
+        detail: 'task({ ... })',
+        documentation: 'Create a one-shot task',
+        sortText: '0_task',
+        topLevelText: "export const ${1:myTask} = task({\n  id: '${2:my_task}',\n  name: '${3:My Task}',\n  async run() {\n    $0\n  },\n});",
+        memberText: "${1:myTask}: task({\n  id: '${2:my_task}',\n  name: '${3:My Task}',\n  async run() {\n    $0\n  },\n}),",
+      },
+      {
+        label: 'New mode selector',
+        detail: 'mode({ ... })',
+        documentation: 'Create a mode with named states and transitions',
+        sortText: '0_mode',
+        topLevelText: "export const ${1:myMode} = mode({\n  id: '${2:my_mode}',\n  name: '${3:My Mode}',\n  states: ['${4:home}', '${5:away}', '${6:sleep}'],\n  initial: '${4:home}',\n});",
+        memberText: "${1:myMode}: mode({\n  id: '${2:my_mode}',\n  name: '${3:My Mode}',\n  states: ['${4:home}', '${5:away}', '${6:sleep}'],\n  initial: '${4:home}',\n}),",
+      },
+    ];
   }
 
   // ---- Custom diagnostics ----
@@ -585,7 +831,53 @@ export class TseApp extends LitElement {
       const result = analyzeWithAst(sourceText, model.uri.path || 'file.ts');
       const astMarkers: MonacoMarkerData[] = result.diagnostics.map((d) => this._toMarker(d, TseApp.AST_DIAG_OWNER));
       monaco.editor.setModelMarkers(model, TseApp.AST_DIAG_OWNER, astMarkers);
+
+      // Update minimap entity markers
+      this._updateMinimapDecorations(sourceText, model.uri.path || 'file.ts');
     }
+  }
+
+  // ---- Minimap entity markers ----
+
+  private static readonly MINIMAP_COLORS: Record<string, string> = {
+    sensor: '#4FC3F7',         // light blue
+    binary_sensor: '#4FC3F7',
+    light: '#FFD54F',          // amber
+    switch: '#81C784',         // green
+    cover: '#A1887F',          // brown
+    climate: '#FF8A65',        // deep orange
+    fan: '#80CBC4',            // teal
+    lock: '#E57373',           // red
+    number: '#9575CD',         // purple
+    select: '#9575CD',
+    text: '#9575CD',
+    button: '#F06292',         // pink
+    computed: '#4DB6AC',       // teal
+  };
+  private static readonly MINIMAP_DEFAULT_COLOR = '#90A4AE'; // blue grey
+
+  private _minimapDecorations: MonacoDecorationsCollection | null = null;
+
+  private _updateMinimapDecorations(sourceText: string, fileName: string) {
+    if (!this._editor) return;
+    if (!this._minimapDecorations) {
+      this._minimapDecorations = this._editor.createDecorationsCollection();
+    }
+
+    const defs = findEntityDefinitions(sourceText, fileName);
+    const decorations: MonacoDecorationOptions[] = defs.map(def => {
+      const color = TseApp.MINIMAP_COLORS[def.domain] ?? TseApp.MINIMAP_DEFAULT_COLOR;
+      return {
+        range: new monaco.Range(def.line, 1, def.endLine, 1),
+        options: {
+          isWholeLine: true,
+          minimap: { color, position: 1 },      // MinimapPosition.Inline
+          overviewRuler: { color, position: 4 }, // OverviewRulerLane.Full
+        },
+      };
+    });
+
+    this._minimapDecorations.set(decorations);
   }
 
   private _toMarker(d: AnalyzerDiagnostic, source: string): MonacoMarkerData {
@@ -793,6 +1085,7 @@ export class TseApp extends LitElement {
   private async _loadEntities() {
     const data = await this._api('GET', '/api/entities');
     this._entities = (data.entities as EntityInfo[]) ?? [];
+    this._refreshCodeLenses();
   }
 
   // ---- Logs ----
