@@ -168,8 +168,8 @@ Scaffolded on first run if absent:
     "strict": true,
     "noEmit": true,
     "paths": {
-      "@ha-forge/sdk": ["./.generated/@ha-forge/sdk.d.ts"],
-      "@ha-forge/sdk/*": ["./.generated/@ha-forge/sdk/*.d.ts"]
+      "ha-forge": ["./.generated/ha-forge.d.ts"],
+      "ha-forge/*": ["./.generated/ha-forge/*.d.ts"]
     }
   },
   "include": ["*.ts", ".generated/**/*.d.ts"]
