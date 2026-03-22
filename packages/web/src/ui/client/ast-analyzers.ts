@@ -1303,6 +1303,45 @@ function reindent(text: string, targetIndent: number): string {
   return result.join('\n');
 }
 
+// ---- Cron string finder (for hover tooltips) ----
+
+export interface CronStringLocation {
+  value: string;
+  startLine: number;  // 1-based
+  startCol: number;   // 1-based
+  endLine: number;
+  endCol: number;
+}
+
+/** Find all cron expression string literals in the source (schedule: and cron: properties). */
+export function findCronStrings(sourceText: string, fileName = 'file.ts'): CronStringLocation[] {
+  if (!ts) return [];
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const results: CronStringLocation[] = [];
+
+  function visit(node: import('typescript').Node) {
+    if (ts!.isStringLiteral(node) && ts!.isPropertyAssignment(node.parent)) {
+      const propName = ts!.isIdentifier(node.parent.name) ? node.parent.name.text : null;
+      if (propName === 'schedule' || propName === 'cron') {
+        const start = node.getStart(sf);
+        const end = node.getEnd();
+        const { line: sl, character: sc } = sf.getLineAndCharacterOfPosition(start);
+        const { line: el, character: ec } = sf.getLineAndCharacterOfPosition(end);
+        results.push({
+          value: node.text,
+          startLine: sl + 1,
+          startCol: sc + 1,
+          endLine: el + 1,
+          endCol: ec + 1,
+        });
+      }
+    }
+    ts!.forEachChild(node, visit);
+  }
+  visit(sf);
+  return results;
+}
+
 function markerAt(
   node: import('typescript').Node,
   sf: import('typescript').SourceFile,

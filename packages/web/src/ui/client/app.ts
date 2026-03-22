@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion, findCronStrings } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -85,6 +85,9 @@ declare const monaco: {
     registerDocumentSymbolProvider(languageId: string, provider: {
       displayName?: string;
       provideDocumentSymbols(model: MonacoModelInstance): MonacoDocumentSymbol[];
+    }): { dispose(): void };
+    registerHoverProvider(languageId: string, provider: {
+      provideHover(model: MonacoModelInstance, position: { lineNumber: number; column: number }): { range: MonacoRange; contents: Array<{ value: string }> } | null;
     }): { dispose(): void };
     SymbolKind: { Variable: number; Function: number; Module: number };
   };
@@ -305,6 +308,40 @@ export class TseApp extends LitElement {
       }
     };
     document.head.appendChild(script);
+
+    // Load cronstrue for human-readable cron descriptions in hover tooltips
+    const cronstrueScript = document.createElement('script');
+    cronstrueScript.src = 'https://cdn.jsdelivr.net/npm/cronstrue@2.52.0/dist/cronstrue.min.js';
+    cronstrueScript.onload = () => { this._setupCronHoverProvider(); };
+    document.head.appendChild(cronstrueScript);
+  }
+
+  private _setupCronHoverProvider() {
+    const cronstrue = (globalThis as Record<string, unknown>).cronstrue as
+      { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string } | undefined;
+    if (!cronstrue) return;
+
+    monaco.languages.registerHoverProvider('typescript', {
+      provideHover: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
+        if (!isAstReady()) return null;
+        const cronStrings = findCronStrings(model.getValue(), model.uri.path || 'file.ts');
+        for (const cron of cronStrings) {
+          if (position.lineNumber >= cron.startLine && position.lineNumber <= cron.endLine &&
+              position.column >= cron.startCol && position.column <= cron.endCol) {
+            try {
+              const description = cronstrue.toString(cron.value, { throwExceptionOnParseError: true });
+              return {
+                range: new monaco.Range(cron.startLine, cron.startCol, cron.endLine, cron.endCol),
+                contents: [{ value: `**Cron:** ${description}` }],
+              };
+            } catch {
+              return null;
+            }
+          }
+        }
+        return null;
+      },
+    });
   }
 
   // ---- Cross-file navigation ----
