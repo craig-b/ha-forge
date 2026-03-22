@@ -1,7 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
-import { runAllAnalyzers, findEntitySymbols, type AnalyzerDiagnostic } from './analyzers.js';
+import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady } from './ast-analyzers.js';
 
 import './components/tse-header.js';
@@ -300,6 +300,7 @@ export class TseApp extends LitElement {
       const tsGlobal = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
       if (tsGlobal?.createSourceFile) {
         setTypeScriptApi(tsGlobal);
+        setAstAnalyzerActive();
         this._runDiagnostics();
       }
     };

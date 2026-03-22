@@ -54,6 +54,7 @@ export function analyzeWithAst(sourceText: string, fileName = 'file.ts'): AstAna
   const entities: EntityInfo[] = [];
 
   visit(sf);
+  checkUnexportedEntities(sf, diagnostics);
   return { diagnostics, entities };
 
   function visit(node: import('typescript').Node) {
@@ -285,6 +286,63 @@ function checkBareTimer(
       'warning',
     ));
   }
+}
+
+// ---- Unexported entity definitions ----
+
+function checkUnexportedEntities(
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts) return;
+
+  // Collect names that are re-exported via `export { name }` statements
+  const reExported = new Set<string>();
+  for (const stmt of sf.statements) {
+    if (ts.isExportDeclaration(stmt) && stmt.exportClause && ts.isNamedExports(stmt.exportClause)) {
+      for (const spec of stmt.exportClause.elements) {
+        reExported.add((spec.propertyName ?? spec.name).text);
+      }
+    }
+  }
+
+  for (const stmt of sf.statements) {
+    // Bare factory/wrapper call as expression statement: sensor({...}) or debounced(sensor({...}))
+    if (ts.isExpressionStatement(stmt) && ts.isCallExpression(stmt.expression)) {
+      const factory = findFactoryCall(stmt.expression);
+      if (factory) {
+        const factoryName = getCalledName(factory);
+        diagnostics.push(markerAt(stmt.expression, sf,
+          `${factoryName}() result is not assigned or exported — it will not be deployed`,
+          'warning',
+        ));
+      }
+    }
+
+    // Variable declaration without export: const x = sensor({...}) or const x = debounced(sensor({...}))
+    if (ts.isVariableStatement(stmt) && !hasExportModifier(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (!decl.initializer || !ts.isCallExpression(decl.initializer)) continue;
+        const factory = findFactoryCall(decl.initializer);
+        if (!factory) continue;
+        const factoryName = getCalledName(factory);
+        const varName = ts.isIdentifier(decl.name) ? decl.name.text : '?';
+
+        // Skip if re-exported
+        if (reExported.has(varName)) continue;
+
+        diagnostics.push(markerAt(decl.name, sf,
+          `'${varName}' is created by ${factoryName}() but is not exported — it will not be deployed`,
+          'warning',
+        ));
+      }
+    }
+  }
+}
+
+function hasExportModifier(node: import('typescript').VariableStatement): boolean {
+  if (!ts) return false;
+  return node.modifiers?.some(m => m.kind === ts!.SyntaxKind.ExportKeyword) ?? false;
 }
 
 // ---- Helpers ----

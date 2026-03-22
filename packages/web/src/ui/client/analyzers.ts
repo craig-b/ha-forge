@@ -79,7 +79,14 @@ const BARE_CALL_PATTERN = new RegExp(
   'gm'
 );
 
+let _astAnalyzerActive = false;
+
+/** Call to disable regex-based unexported check once AST analyzer takes over. */
+export function setAstAnalyzerActive() { _astAnalyzerActive = true; }
+
 export function analyzeUnexportedEntities(sourceText: string): AnalyzerDiagnostic[] {
+  // AST analyzer handles this more accurately (including wrappers like debounced/filtered)
+  if (_astAnalyzerActive) return [];
   const diagnostics: AnalyzerDiagnostic[] = [];
   const lines = sourceText.split('\n');
 
