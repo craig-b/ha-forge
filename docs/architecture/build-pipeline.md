@@ -102,7 +102,7 @@ export type EntitiesInDomain<D extends HADomain> = {
 Written to `/config/.generated/ha-validators.ts`:
 
 ```typescript
-import { rangeValidator, oneOfValidator, rgbValidator } from 'ha-forge/validate';
+import { rangeValidator, oneOfValidator, rgbValidator } from '@ha-forge/sdk/validate';
 
 export const validators = {
   'light.turn_on': {
@@ -128,9 +128,10 @@ All generated files go to `/config/.generated/`:
 
 ```
 /config/.generated/
-├── ha-registry.d.ts      # Type declarations
-├── ha-validators.ts       # Runtime validator module
-└── ha-registry-meta.json  # Metadata: generation timestamp, entity count, HA version
+├── ha-registry.d.ts           # Type declarations
+├── ha-validators.ts            # Runtime validator module
+├── ha-completion-registry.json # Completion data for Monaco custom completions
+└── ha-registry-meta.json       # Metadata: generation timestamp, entity count, HA version
 ```
 
 The `.generated/` directory is excluded from user editing in the Monaco file tree and from version control.
@@ -167,8 +168,8 @@ Scaffolded on first run if absent:
     "strict": true,
     "noEmit": true,
     "paths": {
-      "ha-forge": ["./.generated/ha-forge.d.ts"],
-      "ha-forge/*": ["./.generated/ha-forge/*.d.ts"]
+      "@ha-forge/sdk": ["./.generated/@ha-forge/sdk.d.ts"],
+      "@ha-forge/sdk/*": ["./.generated/@ha-forge/sdk/*.d.ts"]
     }
   },
   "include": ["*.ts", ".generated/**/*.d.ts"]
@@ -193,12 +194,12 @@ Each user file is an independent entry point. A file that fails to compile doesn
   target: 'node20',
   format: 'esm',
   outdir: stagingDir,
-  external: ['ha-forge'],  // provided by runtime
+  external: ['@ha-forge/sdk'],  // provided by runtime
   sourcemap: true,
 }
 ```
 
-The `ha-forge` module is external — it's provided by the runtime, not bundled into user code. Everything else (user imports, npm dependencies) is bundled.
+The `@ha-forge/sdk` module is external — it's provided by the runtime, not bundled into user code. Everything else (user imports, npm dependencies) is bundled.
 
 ### Performance
 

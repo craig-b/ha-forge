@@ -38,8 +38,8 @@ Each entity instance transitions through:
 
 Each entity's lifecycle is independent. Errors are contained:
 
-- **init() throws**: Entity not registered. Error logged. Other entities in the same file still load.
-- **onCommand() throws**: Error logged. Entity stays registered. Command dropped. Consecutive failure count tracked; after N failures (configurable), entity marked unavailable via availability topic.
+- **init() throws**: Entity is registered first (MQTT discovery published), then `init()` is called. On failure the entity is deregistered (torn down), error logged. Other entities in the same file still load.
+- **onCommand() throws**: Error logged. Entity stays registered. Command dropped. No failure tracking — consecutive failure counting only applies to publish errors, not command handler errors.
 - **Poll callback throws**: Error logged. Poll continues on next interval. After N consecutive failures, entity marked unavailable.
 - **destroy() throws**: Error logged. Runtime proceeds with force-dispose of handles.
 
@@ -50,10 +50,12 @@ Each entity's lifecycle is independent. Errors are contained:
 ```typescript
 interface Transport {
   supports(type: EntityType): boolean;
-  register(entity: ResolvedEntity): Promise<void>;
+  register(entity: RegistrableEntity): Promise<void>;
   publishState(entityId: string, state: unknown, attributes?: Record<string, unknown>): Promise<void>;
   onCommand(entityId: string, handler: (command: unknown) => void): void;
   deregister(entityId: string): Promise<void>;
+  recordEntityFailure?(entityId: string): void;
+  clearEntityFailure?(entityId: string): void;
 }
 ```
 
@@ -77,7 +79,7 @@ User-facing API is transport-agnostic. Adding support for new entity types means
 
 ### MQTT Transport (v1)
 
-Covers MQTT discovery-supported entity types. 24 have SDK factory functions:
+Covers MQTT discovery-supported entity types. 22 have SDK factory functions:
 
 ```
 sensor, binary_sensor, image, switch, light, cover, fan, lock,
@@ -265,7 +267,7 @@ Every entity callback (`init`, `destroy`, `onCommand`, poll functions) runs with
 interface EntityContext<TState> {
   update: (value: TState, attributes?: Record<string, unknown>) => void;
   attr: (attributes: Record<string, unknown>) => void;
-  poll: (fn: () => TState | Promise<TState>, opts: { interval: number } | { cron: string }) => void;
+  poll: (fn: () => TState | Promise<TState>, opts: { interval: number; fireImmediately?: boolean } | { cron: string; fireImmediately?: boolean }) => void;
   ha: StatelessHAApi;  // callService, getState, getEntities, fireEvent, friendlyName
   events: EventsContext;  // on, reactions, combine, withState, watchdog, invariant, sequence
   log: {
@@ -308,13 +310,12 @@ Returns a chainable `EventStream`:
 this.events.on('light.living_room', (e) => { /* typed callback */ });
 
 // With stream operators
-this.events.on('sensor.temperature')
+this.events.on('sensor.temperature', (e) => { /* handler */ })
   .filter((e) => Number(e.new_state) > 30)
-  .debounce(5000)
-  .do((e) => { /* handler */ });
+  .debounce(5000);
 ```
 
-EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.transition(from, to)`, `.do(callback)`, `.unsubscribe()`.
+EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.transition(from, to)`, `.unsubscribe()`.
 
 #### events.reactions()
 

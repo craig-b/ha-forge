@@ -75,7 +75,7 @@ See [runtime.md](runtime.md).
 
 The TypeScript API that user scripts import. Provides typed entity definition functions, the `ha.*` API for interacting with Home Assistant, and the generated type registry that makes everything type-safe.
 
-**Modules:** Type system (NumberInRange, HAEntityMap, etc.), entity definition API (24 platform factories + automation, computed, cron, mode, task, device, entityFactory), ha.* API, this.events reactive API, runtime validators, composable behaviors (debounced, filtered, sampled, buffered).
+**Modules:** Type system (NumberInRange, HAEntityMap, etc.), entity definition API (22 platform factories + automation, computed, cron, mode, task, device, entityFactory), ha.* API, this.events reactive API, runtime validators, composable behaviors (debounced, filtered, sampled, buffered).
 
 **Inputs:** Generated type registry from build pipeline.
 

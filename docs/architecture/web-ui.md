@@ -31,12 +31,27 @@ WebSocket connections for live updates (log tailing, entity state) also go throu
 
 The editor loads with the full TypeScript language service configured for the user's environment:
 
-1. **SDK types**: The `ha-forge` module type declarations injected via `addExtraLib()`.
+1. **SDK types**: The `@ha-forge/sdk` module type declarations injected via `addExtraLib()`.
 2. **Generated HA types**: `ha-registry.d.ts` injected via `addExtraLib()` — provides autocomplete for every entity ID, state value, attribute, and service parameter.
 3. **Generated validators**: Type declarations for the validator module.
 4. **npm package types**: After dependency install, `.d.ts` files from `node_modules/` injected via `addExtraLib()`.
 
 This gives full IntelliSense (autocomplete, hover docs, error squiggles) without any manual setup by the user.
+
+### Language Providers
+
+Beyond the built-in TypeScript language service, the editor registers custom Monaco providers:
+
+- **Custom diagnostics** — AST-based analyzers for HA-specific warnings (missing device info, unused entities, etc.).
+- **Entity symbol provider** — Document symbols for entity definitions, enabling outline navigation.
+- **CodeLens** — Live entity state shown inline above each entity definition, plus dependency CodeLens showing which HA entities a script depends on.
+- **Document highlight** — Highlights related entity references in the current file.
+- **Inlay hints** — Type annotations shown inline for entity definitions.
+- **Color provider** — Color swatches for RGB color literals in entity configs.
+- **Rename provider** — Rename entity IDs across the file.
+- **Entity completion provider** — Custom completions for HA entity IDs from the completion registry.
+- **Service completion provider** — Custom completions for `ha.callService()` parameters.
+- **Code action provider** — Quick fixes for HA-specific diagnostics (e.g., wrapping entities in a device, converting sensor to computed).
 
 ### Type Re-injection
 
@@ -61,9 +76,12 @@ Monaco's built-in TypeScript checking (via the language service) also runs live 
 - `node_modules/` is hidden.
 - `package.json` is visible and editable (but dependency changes should go through the dependency UI).
 
-## File Tree
+## Sidebar
 
-Left sidebar showing the contents of the scripts directory (`/config/`). Sorted alphabetically, `.ts` files only by default with toggle to show all files. Context menu for create/rename/delete. Clicking a file opens it in the editor.
+The left sidebar contains two sections separated by a resizable split handle:
+
+1. **File Tree** — Contents of the scripts directory (`/config/`). Sorted alphabetically, `.ts` files only by default with toggle to show all files. Context menu for create/rename/delete. Clicking a file opens it in the editor.
+2. **Entity List** — Live list of entities defined in the currently open file, showing entity type, name, and current state. When no file is open, shows an empty state message.
 
 ## Build Controls
 
@@ -71,13 +89,13 @@ Left sidebar showing the contents of the scripts directory (`/config/`). Sorted 
 
 Triggers the full build pipeline: type generation → npm install → tsc check → esbuild bundle → deploy.
 
-### Build Output Console
+### Bottom Panel
 
-Bottom panel showing:
-- Each pipeline step with status (running/success/failure).
-- Type errors from tsc with file:line:column links (clicking navigates the editor).
-- esbuild output (bundle sizes, warnings).
-- Deploy result: entities registered, entities removed, errors.
+The bottom panel has 3 tabs:
+
+1. **Build Output** — Each pipeline step with status (running/success/failure). Type errors from tsc with file:line:column links (clicking navigates the editor). esbuild output (bundle sizes, warnings). Deploy result: entities registered, entities removed, errors.
+2. **Exports** — Live list of all registered entities across all files.
+3. **Logs** — Real-time log stream with filtering (see Log Viewer below).
 
 ### Auto-Build Toggle
 
@@ -98,7 +116,6 @@ Live-updating table of all registered entities:
 | Type | Entity platform (sensor, switch, light, etc.) |
 | State | Current published state |
 | Source File | User `.ts` file that defines this entity |
-| Transport | MQTT (v1) or Native Bridge (future) |
 | Status | Healthy / Error count / Unavailable |
 
 Data comes from the runtime's internal entity registry. Updated in real-time via WebSocket push from the add-on's API server to the UI.
@@ -175,16 +192,20 @@ The add-on runs an HTTP + WebSocket server on the ingress port serving both the 
 | `GET /api/files` | List files in scripts directory |
 | `GET /api/files/:path` | Read file contents |
 | `PUT /api/files/:path` | Write file contents |
+| `PATCH /api/files/:path` | Rename/move file |
 | `DELETE /api/files/:path` | Delete file |
 | `POST /api/build` | Trigger build |
 | `GET /api/build/status` | Current build status |
 | `GET /api/entities` | List registered entities with state |
 | `GET /api/logs` | Query log entries (with filters) |
+| `GET /api/logs/entities` | List entity IDs that have log entries |
 | `GET /api/packages` | List installed npm packages |
 | `POST /api/packages` | Add npm package |
 | `DELETE /api/packages/:name` | Remove npm package |
 | `POST /api/types/regenerate` | Trigger type regeneration |
 | `GET /api/types/status` | Type generation status |
+| `GET /api/types/completion-registry` | Completion data for Monaco custom completions |
+| `GET /api/types/sdk` | Self-contained SDK type declarations for Monaco |
 
 ### WebSocket Channels
 
@@ -196,4 +217,4 @@ The add-on runs an HTTP + WebSocket server on the ingress port serving both the 
 
 ## VS Code Compatibility
 
-The same generated types exist on disk at `/config/.generated/` and the SDK types at `/config/node_modules/ha-forge/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking without the Monaco UI.
+The same generated types exist on disk at `/config/.generated/` and the SDK types at `/config/node_modules/@ha-forge/sdk/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking without the Monaco UI.

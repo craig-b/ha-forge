@@ -240,7 +240,7 @@ State type: `'on' | 'off'`.
 #### Switch (Bidirectional)
 
 ```typescript
-const pump = switch({
+const pump = defineSwitch({
   id: 'irrigation_pump',
   name: 'Pump',
   config: { device_class: 'switch' },  // 'outlet' | 'switch'
@@ -400,10 +400,10 @@ const smoothedTemp = debounced(
 
 ## Higher-Level Entity Types
 
-Beyond the 24 MQTT platform factories, the SDK provides higher-level constructs:
+Beyond the 22 MQTT platform factories, the SDK provides higher-level constructs:
 
 - **`automation()`** — Pure reactive script with managed lifecycle. Gets `this.ha`, `this.events`, `this.log`. Optional `entity: true` surfaces as binary_sensor.
-- **`task()`** — One-shot script surfaced as a button entity. `run()` triggered on press or deploy. Gets `this.ha`, `this.log`, `this.mqtt` but no `this.events`.
+- **`task()`** — One-shot script surfaced as a button entity. `run()` triggered on press or deploy. Gets `this.ha`, `this.log`, `this.mqtt` (raw MQTT publish/subscribe) but no `this.events` or timers.
 - **`computed()`** — Derived sensor. State is a pure function of watched entities. Re-evaluates reactively, debounced (100ms default), only publishes on change.
 - **`cron()`** — Schedule entity surfaced as binary_sensor. ON during matching cron minutes, OFF otherwise.
 - **`mode()`** — State machine surfaced as select entity. Named states with `enter`/`exit`/`guard` transition hooks.
