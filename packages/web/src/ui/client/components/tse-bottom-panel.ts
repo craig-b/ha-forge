@@ -3,7 +3,6 @@ import { customElement, property, state } from 'lit/decorators.js';
 import type { BuildStep, EntityInfo, LogEntry } from '../types.js';
 
 import './tse-build-output.js';
-import './tse-entity-table.js';
 import './tse-exports-panel.js';
 import './tse-log-viewer.js';
 
@@ -29,19 +28,16 @@ export class TseBottomPanel extends LitElement {
       <div class="panel-resize-handle"
         @mousedown=${this._onResizeStart}></div>
       <div class="panel-tabs">
-        ${['build-output', 'entities', 'exports', 'logs'].map((panel) => html`
+        ${['build-output', 'exports', 'logs'].map((panel) => html`
           <button class="panel-tab ${this._activePanel === panel ? 'active' : ''}"
             @click=${() => this._switchPanel(panel)}>
-            ${{ 'build-output': 'Build Output', entities: 'Entities', exports: 'Exports', logs: 'Logs' }[panel]}
+            ${{ 'build-output': 'Build Output', exports: 'Exports', logs: 'Logs' }[panel]}
           </button>
         `)}
       </div>
 
       <div class="panel-content ${this._activePanel === 'build-output' ? 'active' : ''}">
         <tse-build-output .steps=${this.buildSteps} .messages=${this.buildMessages}></tse-build-output>
-      </div>
-      <div class="panel-content ${this._activePanel === 'entities' ? 'active' : ''}">
-        <tse-entity-table .entities=${this.entities}></tse-entity-table>
       </div>
       <div class="panel-content ${this._activePanel === 'exports' ? 'active' : ''}">
         <tse-exports-panel .entities=${this.entities}></tse-exports-panel>

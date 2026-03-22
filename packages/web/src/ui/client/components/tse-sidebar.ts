@@ -1,11 +1,12 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { FileEntry } from '../types.js';
+import type { EntityInfo, FileEntry } from '../types.js';
 
 @customElement('tse-sidebar')
 export class TseSidebar extends LitElement {
   @property({ type: Array }) files: FileEntry[] = [];
   @property() activeFile: string | null = null;
+  @property({ type: Array }) entities: EntityInfo[] = [];
 
   @state() private _ctxMenu: { x: number; y: number; path: string; name: string } | null = null;
   @state() private _renaming: string | null = null;
@@ -17,6 +18,8 @@ export class TseSidebar extends LitElement {
     this._onDocClick = this._onDocClick.bind(this);
     this._onResizeMove = this._onResizeMove.bind(this);
     this._onResizeUp = this._onResizeUp.bind(this);
+    this._onSplitMove = this._onSplitMove.bind(this);
+    this._onSplitUp = this._onSplitUp.bind(this);
     document.addEventListener('click', this._onDocClick);
   }
 
@@ -30,13 +33,47 @@ export class TseSidebar extends LitElement {
   }
 
   render() {
+    const fileEntities = this.activeFile
+      ? this.entities.filter((e) => e.sourceFile === this.activeFile)
+      : [];
+
+    // Group entities by type
+    const groups = new Map<string, EntityInfo[]>();
+    for (const e of fileEntities) {
+      const list = groups.get(e.type) ?? [];
+      list.push(e);
+      groups.set(e.type, list);
+    }
+
     return html`
-      <div class="sidebar-header">
-        <span>Files</span>
-        <button class="btn btn-sm" title="New file" @click=${this._onNewFile}>+</button>
+      <div class="sidebar-files" style="flex: var(--sidebar-files-flex, 2)">
+        <div class="sidebar-header">
+          <span>Files</span>
+          <button class="btn btn-sm" title="New file" @click=${this._onNewFile}>+</button>
+        </div>
+        <div class="file-tree">
+          ${this._renderEntries(this.files, 0)}
+        </div>
       </div>
-      <div class="file-tree">
-        ${this._renderEntries(this.files, 0)}
+      <div class="sidebar-split-handle" @mousedown=${this._onSplitStart}></div>
+      <div class="sidebar-entities" style="flex: var(--sidebar-entities-flex, 3)">
+        <div class="sidebar-header">
+          <span>Entities${fileEntities.length ? ` (${fileEntities.length})` : ''}</span>
+        </div>
+        <div class="entity-list">
+          ${fileEntities.length === 0
+            ? html`<div class="entity-list-empty">${this.activeFile ? 'No entities in this file' : 'No file open'}</div>`
+            : [...groups.entries()].map(([type, items]) => html`
+              <div class="entity-group-header">${type}</div>
+              ${items.map((e) => html`
+                <div class="entity-list-item" title="${e.id}">
+                  <span class="entity-dot ${e.status}"></span>
+                  <span class="entity-list-name">${e.name}</span>
+                  <span class="entity-list-state">${this._formatState(e)}</span>
+                </div>
+              `)}
+            `)}
+        </div>
       </div>
       <div class="sidebar-resize-handle"
         @mousedown=${this._onResizeStart}></div>
@@ -47,6 +84,13 @@ export class TseSidebar extends LitElement {
         </div>
       ` : nothing}
     `;
+  }
+
+  private _formatState(e: EntityInfo): string {
+    const s = String(e.state ?? '');
+    if (!s) return '';
+    const unit = e.unit_of_measurement;
+    return unit ? `${s} ${unit}` : s;
   }
 
   private _renderEntries(entries: FileEntry[], depth: number): unknown {
@@ -135,7 +179,7 @@ export class TseSidebar extends LitElement {
     this.dispatchEvent(new CustomEvent('tse-new-file', { bubbles: true, composed: true }));
   }
 
-  // ---- Resize ----
+  // ---- Width Resize (right edge) ----
 
   private _startX = 0;
   private _startWidth = 0;
@@ -159,6 +203,47 @@ export class TseSidebar extends LitElement {
   private _onResizeUp() {
     document.removeEventListener('mousemove', this._onResizeMove);
     document.removeEventListener('mouseup', this._onResizeUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
+  // ---- Split Resize (between files and entities) ----
+
+  private _splitStartY = 0;
+  private _splitStartFilesFlex = 0;
+  private _splitStartEntitiesFlex = 0;
+
+  private _onSplitStart(e: MouseEvent) {
+    e.preventDefault();
+    this._splitStartY = e.clientY;
+    const filesEl = this.querySelector('.sidebar-files') as HTMLElement | null;
+    const entitiesEl = this.querySelector('.sidebar-entities') as HTMLElement | null;
+    if (!filesEl || !entitiesEl) return;
+    const totalHeight = filesEl.offsetHeight + entitiesEl.offsetHeight;
+    this._splitStartFilesFlex = filesEl.offsetHeight / totalHeight;
+    this._splitStartEntitiesFlex = entitiesEl.offsetHeight / totalHeight;
+    document.addEventListener('mousemove', this._onSplitMove);
+    document.addEventListener('mouseup', this._onSplitUp);
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  private _onSplitMove(e: MouseEvent) {
+    const filesEl = this.querySelector('.sidebar-files') as HTMLElement | null;
+    const entitiesEl = this.querySelector('.sidebar-entities') as HTMLElement | null;
+    if (!filesEl || !entitiesEl) return;
+    const totalHeight = filesEl.offsetHeight + entitiesEl.offsetHeight;
+    const delta = e.clientY - this._splitStartY;
+    const deltaFrac = delta / totalHeight;
+    const newFilesFlex = Math.max(0.15, Math.min(0.85, this._splitStartFilesFlex + deltaFrac));
+    const newEntitiesFlex = 1 - newFilesFlex;
+    this.style.setProperty('--sidebar-files-flex', String(newFilesFlex));
+    this.style.setProperty('--sidebar-entities-flex', String(newEntitiesFlex));
+  }
+
+  private _onSplitUp() {
+    document.removeEventListener('mousemove', this._onSplitMove);
+    document.removeEventListener('mouseup', this._onSplitUp);
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
   }

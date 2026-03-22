@@ -211,7 +211,7 @@ export class TseApp extends LitElement {
       ></tse-header>
 
       <div id="main">
-        <tse-sidebar .files=${this._files} .activeFile=${this._activeFile}></tse-sidebar>
+        <tse-sidebar .files=${this._files} .activeFile=${this._activeFile} .entities=${this._entities}></tse-sidebar>
 
         <div id="content">
           <div id="editor-container">
@@ -2037,7 +2037,7 @@ export class TseApp extends LitElement {
   // ---- Panel changes ----
 
   private _onPanelChange(panel: string) {
-    if (panel === 'entities' || panel === 'exports') this._loadEntities();
+    if (panel === 'exports') this._loadEntities();
     if (panel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
   }
 
