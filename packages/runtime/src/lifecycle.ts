@@ -1183,6 +1183,7 @@ export class EntityLifecycleManager {
     await this.transport.register(syntheticEntity);
 
     // Check if "now" falls within a cron window
+    let firstRun = true;
     const evaluate = () => {
       const now = new Date();
       // Parse fresh each time to handle DST/timezone changes
@@ -1196,14 +1197,15 @@ export class EntityLifecycleManager {
       const msSincePrev = now.getTime() - prev.getTime();
       const newState = msSincePrev < 60_000 ? 'ON' : 'OFF';
 
-      if (newState !== instance.currentState) {
+      if (firstRun || newState !== instance.currentState) {
+        firstRun = false;
         instance.currentState = newState;
         this.transport.publishState(def.id, newState).catch(() => {});
         this.onStateChange?.(def.id, newState);
       }
     };
 
-    // Evaluate immediately
+    // Evaluate immediately (always publishes initial state)
     evaluate();
 
     // Re-evaluate every 30 seconds (handles minute boundaries reliably)
