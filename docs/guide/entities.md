@@ -1,6 +1,6 @@
 # Entity Types
 
-HA Forge provides factory functions for 24 entity platforms plus 7 higher-level constructs. Every entity definition must be exported from a `.ts` file. The runtime ignores unexported definitions.
+HA Forge provides factory functions for 22 entity platforms plus 7 higher-level constructs. Every entity definition must be exported from a `.ts` file. The runtime ignores unexported definitions.
 
 All entity definitions share a common shape:
 
@@ -151,9 +151,9 @@ export const blinds = cover({
   name: 'Blinds',
   config: { device_class: 'blind', position: true, tilt: true },
   onCommand(cmd) {
-    // cmd.command: 'OPEN' | 'CLOSE' | 'STOP'
-    // cmd.position?: number (0-100)
-    // cmd.tilt?: number (0-100)
+    // cmd.action: 'open' | 'close' | 'stop' | 'set_position' | 'set_tilt'
+    // cmd.position?: number (when action is 'set_position')
+    // cmd.tilt?: number (when action is 'set_tilt')
     sendToBlindController(cmd);
   },
   init() { return 'closed'; },
@@ -196,12 +196,13 @@ export const ceilingFan = fan({
   id: 'ceiling_fan',
   name: 'Ceiling Fan',
   config: {
-    speed_range: { min: 1, max: 6 },
+    speed_range_min: 1,
+    speed_range_max: 6,
     preset_modes: ['breeze', 'sleep'],
   },
   onCommand(cmd) {
-    // cmd.state: 'ON' | 'OFF'
-    // cmd.speed?: number
+    // cmd.state?: 'ON' | 'OFF'
+    // cmd.percentage?: number (0-100)
     // cmd.preset_mode?: 'breeze' | 'sleep'
     sendToFanController(cmd);
   },
@@ -294,7 +295,7 @@ import { button } from 'ha-forge';
 export const reboot = button({
   id: 'reboot_server',
   name: 'Reboot Server',
-  onCommand() {
+  onPress() {
     fetch('http://server.local/api/reboot', { method: 'POST' });
   },
 });
@@ -384,7 +385,6 @@ import { automation } from 'ha-forge';
 
 export const nightMode = automation({
   id: 'night_lights',
-  name: 'Night Lights',
   init() {
     this.events.on('binary_sensor.front_door', (e) => {
       if (e.new_state === 'on') {
@@ -411,7 +411,7 @@ export const businessHours = cron({
 
 ### task
 
-One-shot script surfaced as a button entity. `run()` is triggered on button press or on deploy. Gets `this.ha`, `this.log`, `this.mqtt` but no `this.events`.
+One-shot script surfaced as a button entity. `run()` is triggered on button press. Set `runOnDeploy: true` to also execute on deploy. Gets `this.ha`, `this.log`, `this.mqtt` but no `this.events`.
 
 ```typescript
 import { task } from 'ha-forge';
@@ -430,7 +430,7 @@ export const cleanup = task({
 
 ### mode
 
-State machine surfaced as a select entity. Named states with `enter`/`exit`/`guard` transition hooks.
+State machine surfaced as a select entity. `states` is a string array of valid modes, and `transitions` is a separate object keyed by state name with optional `enter`/`exit`/`guard` hooks.
 
 ```typescript
 import { mode } from 'ha-forge';
@@ -438,20 +438,21 @@ import { mode } from 'ha-forge';
 export const houseMode = mode({
   id: 'house_mode',
   name: 'House Mode',
-  states: {
+  states: ['home', 'away', 'sleeping'],
+  initial: 'home',
+  transitions: {
     home: {
-      enter: () => { /* lights on, heating normal */ },
-      exit: () => { /* ... */ },
+      enter() { /* lights on, heating normal */ },
+      exit() { /* ... */ },
     },
     away: {
-      guard: () => allDoorsLocked(), // must return true to allow transition
-      enter: () => { /* lights off, heating low */ },
+      guard() { return allDoorsLocked(); }, // must return true to allow transition
+      enter() { /* lights off, heating low */ },
     },
     sleeping: {
-      enter: () => { /* dim lights, lock doors */ },
+      enter() { /* dim lights, lock doors */ },
     },
   },
-  initial: 'home',
 });
 ```
 

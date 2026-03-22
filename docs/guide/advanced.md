@@ -210,7 +210,7 @@ export const nightDoorbell = automation({
 
 ## Mode (State Machines)
 
-`mode()` creates a select entity backed by a state machine. States have `enter`/`exit` hooks and `guard` functions that can prevent transitions.
+`mode()` creates a select entity backed by a state machine. `states` is a string array of valid modes, and `transitions` is a separate object keyed by state name with optional `enter`/`exit`/`guard` hooks.
 
 ```typescript
 import { mode } from 'ha-forge';
@@ -218,7 +218,9 @@ import { mode } from 'ha-forge';
 export const houseMode = mode({
   id: 'house_mode',
   name: 'House Mode',
-  states: {
+  states: ['home', 'away', 'sleeping', 'vacation'],
+  initial: 'home',
+  transitions: {
     home: {
       enter() {
         this.ha.callService('climate.living_room', 'set_temperature', { temperature: 22 });
@@ -226,8 +228,8 @@ export const houseMode = mode({
       },
     },
     away: {
-      guard: async () => {
-        const doors = await ha.getState('group.all_doors');
+      async guard() {
+        const doors = await this.ha.getState('group.all_doors');
         return doors.state === 'off'; // all doors must be closed
       },
       enter() {
@@ -245,13 +247,12 @@ export const houseMode = mode({
       },
     },
     vacation: {
-      guard: () => houseMode.current === 'away', // can only enter from 'away'
+      guard(from) { return from === 'away'; }, // can only enter from 'away'
       enter() {
         this.ha.callService('switch.water_main', 'turn_off');
       },
     },
   },
-  initial: 'home',
 });
 ```
 
@@ -261,7 +262,7 @@ In HA, this appears as `select.house_mode` with options `home`, `away`, `sleepin
 
 HA Forge registers two health entities for itself:
 
-- **`binary_sensor.ha_forge_build_healthy`** -- ON when all scripts compile cleanly, OFF when type errors exist.
+- **`binary_sensor.ha_forge_build_healthy`** -- uses `device_class: 'problem'`, so ON means unhealthy (type errors exist), OFF means healthy (all scripts compile cleanly).
 - **`sensor.ha_forge_type_errors`** -- error count, with error details in attributes.
 
 ### Scheduled Validation
