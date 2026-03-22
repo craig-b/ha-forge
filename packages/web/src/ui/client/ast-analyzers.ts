@@ -140,30 +140,40 @@ function checkFactoryCall(
     diagnostics.push(markerAt(arg, sf, `${name}() missing required 'name' property`, 'error'));
   }
 
-  // Validate entity ID format
+  // Validate entity ID
   const idNode = props.get('id');
   if (idNode && ts.isStringLiteral(idNode)) {
     const id = idNode.text;
 
-    // Extract for cross-file duplicate checking
-    const { line } = sf.getLineAndCharacterOfPosition(idNode.getStart(sf));
-    const start = idNode.getStart(sf) - sf.getLineStarts()[line];
-    entities.push({
-      id,
-      line: line + 1,
-      startCol: start + 1,
-      endCol: start + 1 + idNode.getWidth(sf),
-    });
+    if (id === '') {
+      diagnostics.push(markerAt(idNode, sf, `${name}() id must not be empty`, 'error'));
+    } else {
+      // Extract for cross-file duplicate checking
+      const { line } = sf.getLineAndCharacterOfPosition(idNode.getStart(sf));
+      const start = idNode.getStart(sf) - sf.getLineStarts()[line];
+      entities.push({
+        id,
+        line: line + 1,
+        startCol: start + 1,
+        endCol: start + 1 + idNode.getWidth(sf),
+      });
 
-    // snake_case validation: lowercase letters, digits, underscores
-    if (!/^[a-z][a-z0-9_]*$/.test(id)) {
-      const suggested = toSnakeCase(id);
-      const hint = suggested && suggested !== id ? ` (suggested: '${suggested}')` : '';
-      diagnostics.push(markerAt(idNode, sf,
-        `Entity ID '${id}' should be snake_case${hint}`,
-        'warning',
-      ));
+      // snake_case validation: lowercase letters, digits, underscores
+      if (!/^[a-z][a-z0-9_]*$/.test(id)) {
+        const suggested = toSnakeCase(id);
+        const hint = suggested && suggested !== id ? ` (suggested: '${suggested}')` : '';
+        diagnostics.push(markerAt(idNode, sf,
+          `Entity ID '${id}' should be snake_case${hint}`,
+          'warning',
+        ));
+      }
     }
+  }
+
+  // Validate entity name
+  const nameNode = props.get('name');
+  if (nameNode && ts.isStringLiteral(nameNode) && nameNode.text === '') {
+    diagnostics.push(markerAt(nameNode, sf, `${name}() name must not be empty`, 'warning'));
   }
 
   // Check for empty init()
