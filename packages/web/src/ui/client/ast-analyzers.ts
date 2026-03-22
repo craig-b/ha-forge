@@ -1347,11 +1347,11 @@ export function findCronStrings(sourceText: string, fileName = 'file.ts'): CronS
 export interface EntityDefinitionLocation {
   /** The entity ID from the `id:` property (e.g. 'living_room_temperature') */
   entityId: string;
-  /** Full HA entity ID (e.g. 'sensor.living_room_temperature') */
+  /** Full HA entity ID (e.g. 'sensor.living_room_temperature'), or 'device.{id}' for devices */
   fullEntityId: string;
-  /** Factory function name (e.g. 'sensor', 'binarySensor') */
+  /** Factory function name (e.g. 'sensor', 'binarySensor', 'device') */
   factoryName: string;
-  /** HA domain (e.g. 'sensor', 'binary_sensor') */
+  /** HA domain (e.g. 'sensor', 'binary_sensor'), or 'device' for devices */
   domain: string;
   /** Whether the definition is exported */
   isExported: boolean;
@@ -1359,6 +1359,8 @@ export interface EntityDefinitionLocation {
   line: number;
   /** 1-based end line */
   endLine: number;
+  /** Number of member entities (only for device definitions) */
+  memberCount?: number;
 }
 
 /** Find all entity definitions in source with their positions and HA entity IDs. */
@@ -1372,26 +1374,54 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
     if (ts!.isVariableStatement(node)) {
       const isExported = node.modifiers?.some(m => m.kind === ts!.SyntaxKind.ExportKeyword) ?? false;
       for (const decl of node.declarationList.declarations) {
-        if (!decl.initializer) continue;
-        const call = ts!.isCallExpression(decl.initializer) ? findFactoryCall(decl.initializer) : null;
-        if (!call) continue;
-        const factoryName = getCalledName(call);
-        if (!factoryName) continue;
-        const domain = FACTORY_DOMAINS[factoryName];
-        if (!domain) continue;
-        const entityId = extractEntityId(call);
-        if (!entityId) continue;
-        const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-        const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
-        results.push({
-          entityId,
-          fullEntityId: `${domain}.${entityId}`,
-          factoryName,
-          domain,
-          isExported,
-          line: startPos.line + 1,
-          endLine: endPos.line + 1,
-        });
+        if (!decl.initializer || !ts!.isCallExpression(decl.initializer)) continue;
+        const outerCall = decl.initializer;
+        const outerName = getCalledName(outerCall);
+
+        // device() calls
+        if (outerName === 'device') {
+          const entityId = extractEntityId(outerCall);
+          if (entityId) {
+            const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+            const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+            results.push({
+              entityId,
+              fullEntityId: `device.${entityId}`,
+              factoryName: 'device',
+              domain: 'device',
+              isExported,
+              line: startPos.line + 1,
+              endLine: endPos.line + 1,
+              memberCount: countDeviceMembers(outerCall),
+            });
+          }
+          // Don't return — still visit children for member entities
+        }
+
+        // Entity factory calls (including wrapped)
+        const call = findFactoryCall(outerCall);
+        if (call) {
+          const factoryName = getCalledName(call);
+          if (factoryName) {
+            const domain = FACTORY_DOMAINS[factoryName];
+            if (domain) {
+              const entityId = extractEntityId(call);
+              if (entityId) {
+                const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+                results.push({
+                  entityId,
+                  fullEntityId: `${domain}.${entityId}`,
+                  factoryName,
+                  domain,
+                  isExported,
+                  line: startPos.line + 1,
+                  endLine: endPos.line + 1,
+                });
+              }
+            }
+          }
+        }
       }
     }
     ts!.forEachChild(node, visit);
@@ -1411,6 +1441,20 @@ function extractEntityId(call: import('typescript').CallExpression): string | nu
     }
   }
   return null;
+}
+
+/** Count the number of properties in a device()'s `entities:` object. */
+function countDeviceMembers(call: import('typescript').CallExpression): number {
+  if (!ts) return 0;
+  const arg = call.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return 0;
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+        prop.name.text === 'entities' && ts.isObjectLiteralExpression(prop.initializer)) {
+      return prop.initializer.properties.length;
+    }
+  }
+  return 0;
 }
 
 function markerAt(

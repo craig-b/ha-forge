@@ -455,14 +455,23 @@ export class TseApp extends LitElement {
         const stateMap = new Map(this._entities.map(e => [e.id, e]));
 
         const lenses = defs.map(def => {
-          const entity = stateMap.get(def.fullEntityId);
           let title: string;
-          if (!entity) {
-            title = def.isExported ? `${def.fullEntityId} \u2014 not deployed` : `${def.fullEntityId} \u2014 not exported`;
+          if (def.domain === 'device') {
+            // Device: show member count and how many are deployed
+            const members = def.memberCount ?? 0;
+            const deployed = this._entities.filter(e => e.sourceFile === (model.uri.path || '').replace(/^\//, '')).length;
+            title = def.isExported
+              ? `\u25A0 device: ${def.entityId} \u2014 ${members} members${deployed > 0 ? `, ${deployed} deployed` : ''}`
+              : `\u25A0 device: ${def.entityId} \u2014 not exported`;
           } else {
-            const stateStr = entity.state != null ? String(entity.state) : '\u2014';
-            const icon = entity.status === 'healthy' ? '\u25CF' : entity.status === 'error' ? '\u25CB' : '\u25CB';
-            title = `${icon} ${def.fullEntityId}: ${stateStr}`;
+            const entity = stateMap.get(def.fullEntityId);
+            if (!entity) {
+              title = def.isExported ? `${def.fullEntityId} \u2014 not deployed` : `${def.fullEntityId} \u2014 not exported`;
+            } else {
+              const stateStr = entity.state != null ? String(entity.state) : '\u2014';
+              const icon = entity.status === 'healthy' ? '\u25CF' : entity.status === 'error' ? '\u25CB' : '\u25CB';
+              title = `${icon} ${def.fullEntityId}: ${stateStr}`;
+            }
           }
           return {
             range: new monaco.Range(def.line, 1, def.line, 1),
@@ -853,6 +862,7 @@ export class TseApp extends LitElement {
     text: '#9575CD',
     button: '#F06292',         // pink
     computed: '#4DB6AC',       // teal
+    device: '#66BB6A',          // green
   };
   private static readonly MINIMAP_DEFAULT_COLOR = '#90A4AE'; // blue grey
 
