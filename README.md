@@ -3,7 +3,7 @@
 Define Home Assistant entities in TypeScript. Type-safe, reactive, deployed as an HA add-on.
 
 ```ts
-device({
+export default device({
   id: 'weather_station',
   name: 'Weather Station',
   entities: {
