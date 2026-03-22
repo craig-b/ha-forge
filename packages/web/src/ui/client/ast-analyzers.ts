@@ -193,6 +193,68 @@ function checkFactoryCall(
     if (body && ts.isBlock(body) && body.statements.length === 0) {
       diagnostics.push(markerAt(initNode, sf, `Empty init() — did you forget to set up state updates?`, 'info'));
     }
+
+    // Suggest computed() for sensors that only watch state and update
+    if (name === 'sensor' && body && ts.isBlock(body)) {
+      checkSuggestComputed(body, initNode, sf, diagnostics);
+    }
+  }
+}
+
+// ---- Suggest computed() ----
+
+/**
+ * Check if a sensor's init() only subscribes to state changes and calls this.update —
+ * this pattern is better expressed as computed().
+ */
+function checkSuggestComputed(
+  body: import('typescript').Block,
+  initNode: import('typescript').Node,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts || body.statements.length === 0) return;
+
+  let hasEventsOn = false;
+  let hasUpdate = false;
+  let hasOtherLogic = false;
+
+  function walkInit(node: import('typescript').Node) {
+    if (!ts || hasOtherLogic) return;
+
+    if (ts.isPropertyAccessExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ThisKeyword) {
+      const name = node.name.text;
+      if (name === 'update' || name === 'attr') {
+        hasUpdate = true;
+      } else if (name === 'events') {
+        // this.events — fine, check for .on() usage
+      } else if (name === 'poll' || name === 'setTimeout' || name === 'setInterval' ||
+                 name === 'ha' || name === 'mqtt' || name === 'log') {
+        hasOtherLogic = true;
+      }
+    }
+
+    // Check for this.events.on() pattern
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const prop = node.expression;
+      if (prop.name.text === 'on' && ts.isPropertyAccessExpression(prop.expression) &&
+          prop.expression.name.text === 'events' &&
+          prop.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
+        hasEventsOn = true;
+      }
+    }
+
+    ts.forEachChild(node, walkInit);
+  }
+
+  walkInit(body);
+
+  if (hasEventsOn && hasUpdate && !hasOtherLogic) {
+    diagnostics.push(markerAt(initNode, sf,
+      `This sensor only watches state and calls this.update() — consider using computed() instead`,
+      'info',
+    ));
   }
 }
 
