@@ -1,4 +1,4 @@
-import type { SensorConfig, ComputedDefinition, ComputedAttribute, DeviceInfo, EntitySnapshot } from '../types.js';
+import type { SensorConfig, ComputedDefinition, ComputedAttribute, DeviceInfo, EntitySnapshot, EntityContext } from '../types.js';
 
 /** Options for defining a computed (derived) sensor entity. */
 export interface ComputedOptions<TWatch extends string = string> {
@@ -35,6 +35,12 @@ export interface ComputedOptions<TWatch extends string = string> {
    * Set to `0` to re-evaluate immediately on every change.
    */
   debounce?: number;
+  /**
+   * When `true`, don't evaluate until a watched entity changes.
+   * When `false` (default), fetch current state of all watched entities
+   * and evaluate immediately on init.
+   */
+  lazy?: boolean;
 }
 
 /** Options for a computed attribute (second argument to `computed(fn, opts)`). */
@@ -47,12 +53,15 @@ export interface ComputedAttributeOptions<TWatch extends string = string> {
 
 /**
  * Define a computed (derived) sensor entity.
- * State is a pure function of other entities — no `init()`, no polling.
+ * State is a pure function of other entities — no manual `init()` or polling needed.
  * The runtime auto-subscribes to watched entities and re-evaluates on change.
- * Only publishes when the computed value actually differs.
+ * Only publishes when the computed value actually differs (deduplication).
+ *
+ * Compatible with behaviors (`buffered`, `debounced`, `filtered`, `sampled`)
+ * since computed entities use the standard `init()` + `this.update()` lifecycle.
  *
  * @param options - Computed entity configuration.
- * @returns A `ComputedDefinition` registered with Home Assistant via MQTT discovery.
+ * @returns A `ComputedDefinition` (sensor with generated init).
  *
  * @example
  * ```ts
@@ -67,6 +76,9 @@ export interface ComputedAttributeOptions<TWatch extends string = string> {
  *   },
  *   config: { unit_of_measurement: '°C', device_class: 'temperature' },
  * });
+ *
+ * // Smoothed computed — evaluate every 30s average:
+ * export const smoothedComfort = buffered(comfort, { interval: 30_000, reduce: average });
  * ```
  */
 export function computed<TWatch extends string>(options: ComputedOptions<TWatch>): ComputedDefinition<TWatch>;
@@ -117,17 +129,72 @@ export function computed(
 
   // Overload 1: computed({ id, watch, compute, ... }) → ComputedDefinition
   const options = optionsOrFn;
+  const { watch, compute: computeFn, debounce: debounceMs = 100, lazy = false } = options;
+
   return {
     type: 'sensor',
-    __computed: true,
     id: options.id,
     name: options.name,
-    watch: options.watch,
-    compute: options.compute,
+    watch,
+    compute: computeFn,
+    lazy,
     ...(options.debounce !== undefined && { debounce: options.debounce }),
     ...(options.device && { device: options.device }),
     ...(options.category && { category: options.category }),
     ...(options.icon && { icon: options.icon }),
     ...(options.config && { config: options.config }),
-  };
+
+    // Generated init — sets up watch subscriptions via this.events.combine()
+    async init(this: EntityContext<string | number>) {
+      let lastValue: string | number | undefined;
+
+      const evaluate = (states: Record<string, EntitySnapshot | null>) => {
+        try {
+          const value = computeFn(states as Parameters<typeof computeFn>[0]);
+          // Dedup — only publish when value actually changes
+          if (String(value) !== String(lastValue)) {
+            lastValue = value;
+            this.update(value);
+          }
+        } catch (err) {
+          this.log.error('compute() failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      };
+
+      // Debounced evaluate
+      let pending: unknown;
+      const debouncedEvaluate = (states: Record<string, EntitySnapshot | null>) => {
+        if (pending) this.clearTimeout(pending as ReturnType<typeof setTimeout>);
+        if (debounceMs <= 0) {
+          evaluate(states);
+        } else {
+          const captured = states;
+          pending = this.setTimeout(() => {
+            pending = null;
+            evaluate(captured);
+          }, debounceMs);
+        }
+      };
+
+      // Subscribe to all watched entities
+      this.events.combine(watch, debouncedEvaluate);
+
+      // Non-lazy: fetch initial state and evaluate immediately
+      if (!lazy) {
+        const states: Record<string, EntitySnapshot | null> = {};
+        for (const eid of watch) {
+          const s = await this.ha.getState(eid);
+          states[eid] = s ? { state: s.state, attributes: s.attributes } : null;
+        }
+        const initialValue = computeFn(states as Parameters<typeof computeFn>[0]);
+        lastValue = initialValue;
+        return initialValue;
+      }
+
+      // Lazy: no initial state — entity stays unknown until first watched entity changes
+      return undefined as unknown as string | number;
+    },
+  } as ComputedDefinition;
 }

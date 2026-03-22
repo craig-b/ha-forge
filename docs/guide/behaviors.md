@@ -271,9 +271,8 @@ Behaviors accept stateful entity definitions -- entities that carry state and ca
 
 - **`button`** -- command-only, no state
 - **`notify`** -- write-only, no state
-- **`computed`** -- declarative derivation with no `init()` to wrap
 
-Wrapping a stateless entity is harmless at runtime but TypeScript will flag it.
+`computed` entities are fully compatible with behaviors -- they use `init()` + `this.update()` internally, so `buffered(computed({...}))` works as expected.
 
 ## Teardown
 

@@ -101,6 +101,46 @@ export const totalPower = computed({
 });
 ```
 
+### Lazy Evaluation
+
+By default, computed entities fetch the current state of all watched entities and evaluate immediately on init. Set `lazy: true` to defer evaluation until a watched entity actually changes:
+
+```typescript
+export const motion = computed({
+  id: 'any_motion',
+  name: 'Any Motion Detected',
+  watch: ['binary_sensor.hall_motion', 'binary_sensor.kitchen_motion'],
+  lazy: true, // don't evaluate until a motion sensor fires
+  compute: (states) => {
+    return Object.values(states).some((s) => s?.state === 'on') ? 'on' : 'off';
+  },
+});
+```
+
+### With Behaviors
+
+Computed entities are compatible with all behaviors (`buffered`, `debounced`, `filtered`, `sampled`):
+
+```typescript
+import { computed, buffered, average } from 'ha-forge';
+
+// Smooth a computed value over 30-second windows
+export const smoothedPower = buffered(
+  computed({
+    id: 'total_power_smooth',
+    name: 'Total Power (Smoothed)',
+    config: { device_class: 'power', unit_of_measurement: 'W' },
+    watch: ['sensor.grid_power', 'sensor.solar_power'],
+    compute: (states) => {
+      const grid = Number(states['sensor.grid_power']?.state ?? 0);
+      const solar = Number(states['sensor.solar_power']?.state ?? 0);
+      return grid + solar;
+    },
+  }),
+  { interval: 30_000, reduce: average },
+);
+```
+
 ### Computed Attributes
 
 The `compute` function can return attributes alongside the state:

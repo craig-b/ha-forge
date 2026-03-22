@@ -114,9 +114,8 @@ Behaviors accept `StatefulEntityDefinition` — the subset of entity definitions
 
 - **`button`** — command-only, no state to intercept
 - **`notify`** — write-only target, no state to intercept
-- **`computed`** — declarative derivation, no `init()` to wrap
 
-Wrapping a stateless entity is harmless at runtime (update is never called), but TypeScript will flag it.
+`computed` entities are compatible with behaviors — they use the standard `init()` + `this.update()` lifecycle internally, so wrapping a computed sensor in `buffered`, `debounced`, `filtered`, or `sampled` works as expected.
 
 ## Patterns
 
@@ -284,10 +283,10 @@ export const gridPeak = buffered(ctClampSensor('grid_peak', 'Grid Peak'), {
 
 ### Combining with Computed Entities
 
-Behaviors modify how raw state is published. Computed entities derive new state from existing entities. They work on different layers and complement each other naturally.
+Behaviors modify how raw state is published. Computed entities derive new state from existing entities. They work on different layers and complement each other naturally — and computed entities can themselves be wrapped in behaviors.
 
 ```typescript
-import { sensor, computed, debounced, filtered, sampled } from 'ha-forge';
+import { sensor, computed, debounced, filtered, sampled, buffered, average } from 'ha-forge';
 
 // Layer 1: Raw sensor with dead-band filter
 let lastHumidity = 0;
@@ -321,9 +320,12 @@ export const comfort = computed({
     return Math.round(temp + 0.5 * (rh - 40));
   },
 });
+
+// Layer 3: Smoothed comfort — 30s moving average of the computed value
+export const smoothedComfort = buffered(comfort, { interval: 30_000, reduce: average });
 ```
 
-The dead-band filter on humidity prevents the computed entity from re-evaluating on insignificant jitter. The computed entity's own debounce (default 100ms) coalesces cases where both temperature and humidity change in quick succession.
+The dead-band filter on humidity prevents the computed entity from re-evaluating on insignificant jitter. The computed entity's own debounce (default 100ms) coalesces cases where both temperature and humidity change in quick succession. The buffered wrapper on top smooths the computed output into a 30-second moving average.
 
 ### Combining with Event Streams
 

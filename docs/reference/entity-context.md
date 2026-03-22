@@ -496,7 +496,7 @@ Not all context methods are available on every entity type. The table below show
 | Entity Kind | Context Type | `this` bound in |
 |---|---|---|
 | `sensor`, `binary_sensor`, `switch`, `light`, `cover`, `climate`, `fan`, `lock`, `number`, `select`, `text`, `button`, `siren`, `humidifier`, `valve`, `water_heater`, `vacuum`, `lawn_mower`, `alarm_control_panel`, `notify`, `update`, `image` | `EntityContext<TState, TAttrs>` | `init()`, `destroy()`, `onCommand()`, `onPress()`, `onNotify()`, `onInstall()` |
-| `computed` | No user context (no `init`/`destroy`) | -- |
+| `computed` | `EntityContext<string \| number>` (generated `init()`) | `compute()` receives snapshots, `init()` is auto-generated |
 | `automation` | `AutomationContext` = `Omit<EntityContext, 'update' \| 'attr' \| 'poll'>` | `init()`, `destroy()` |
 | `task` | `TaskContext` = `Pick<EntityContext, 'ha' \| 'log' \| 'mqtt'>` | `run()` |
 | `mode` | `ModeContext` = `Pick<EntityContext, 'ha' \| 'log'>` | `enter()`, `exit()`, `guard()` (transition hooks) |

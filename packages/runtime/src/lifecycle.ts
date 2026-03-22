@@ -2,7 +2,6 @@ import type {
   AutomationContext,
   AutomationDefinition,
   ComputedAttribute,
-  ComputedDefinition,
   DeviceContext,
   DeviceDefinition,
   DeviceMemberDefinition,
@@ -292,16 +291,11 @@ export class EntityLifecycleManager {
     // Device-owned entities without their own init(): skip individual init
     // and command registration — the device's init() will drive them via entity handles.
     // Device-owned entities WITH init(): run their own lifecycle (autonomous members).
-    // Exception: computed entities always need their reactive subscriptions,
-    // and computed attributes always need their watchers wired up.
+    // Computed entities always have a generated init(), so they fall through to normal flow.
     if (ownedByDevice) {
       const hasOwnInit = 'init' in entity.definition && typeof entity.definition.init === 'function';
       if (!hasOwnInit) {
-        if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
-          await this.initComputed(instance, entity.definition as ComputedDefinition);
-        } else {
-          instance.initialized = true;
-        }
+        instance.initialized = true;
         this.initComputedAttributes(instance);
         this.logger.info(`Entity registered (device ${ownedByDevice}): ${entity.definition.id}`, {
           sourceFile: entity.sourceFile,
@@ -312,12 +306,6 @@ export class EntityLifecycleManager {
       this.logger.info(`Entity has own init (device ${ownedByDevice}): ${entity.definition.id}`, {
         sourceFile: entity.sourceFile,
       });
-    }
-
-    // Computed entities: auto-subscribe to watched entities, no user init
-    if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
-      await this.initComputed(instance, entity.definition as ComputedDefinition);
-      return;
     }
 
     // Set up command handler for bidirectional entities
@@ -474,79 +462,6 @@ export class EntityLifecycleManager {
 
     // Wire up computed attributes (reactive attribute values)
     this.initComputedAttributes(instance);
-  }
-
-  private async initComputed(instance: EntityInstance, def: ComputedDefinition): Promise<void> {
-    const { handles, entity } = instance;
-    const haApi = this.haApi;
-    const transport = this.transport;
-    const logger = this.logger;
-    const onStateChange = this.onStateChange;
-
-    if (!haApi) {
-      logger.warn(`Computed entity ${def.id}: no WebSocket connection, cannot subscribe to watched entities`);
-      instance.initialized = true;
-      return;
-    }
-
-    const entityId = def.id;
-    const debounceMs = def.debounce ?? 100;
-
-    const buildSnapshot = (): Record<string, EntitySnapshot | null> => {
-      const states: Record<string, EntitySnapshot | null> = {};
-      for (const eid of def.watch) {
-        states[eid] = haApi.getCachedSnapshot(eid);
-      }
-      return states;
-    };
-
-    const evaluate = async () => {
-      try {
-        const states = buildSnapshot();
-        const newValue = def.compute(states);
-        // Deduplicate — only publish when value actually differs
-        if (String(newValue) !== String(instance.currentState)) {
-          instance.currentState = newValue;
-          await transport.publishState(entityId, newValue);
-          transport.clearEntityFailure?.(entityId);
-          onStateChange?.(entityId, newValue);
-        }
-      } catch (err) {
-        transport.recordEntityFailure?.(entityId);
-        logger.error(`Computed entity ${entityId}: compute() failed`, {
-          error: err instanceof Error ? err.message : String(err),
-          sourceFile: entity.sourceFile,
-        });
-      }
-    };
-
-    // Set up debounced subscription to watched entities
-    let pending: ReturnType<typeof globalThis.setTimeout> | null = null;
-    const debouncedEvaluate = () => {
-      if (pending !== null) clearTimeout(pending);
-      if (debounceMs <= 0) {
-        evaluate();
-      } else {
-        pending = globalThis.setTimeout(() => {
-          pending = null;
-          evaluate();
-        }, debounceMs);
-      }
-    };
-
-    const unsub = haApi.on(def.watch, debouncedEvaluate);
-    handles.eventSubscriptions.push(() => {
-      unsub();
-      if (pending !== null) clearTimeout(pending);
-    });
-
-    // Run initial evaluation
-    await evaluate();
-
-    instance.initialized = true;
-    logger.info(`Computed entity initialized: ${entityId} (watching ${def.watch.length} entities)`, {
-      sourceFile: entity.sourceFile,
-    });
   }
 
   /**

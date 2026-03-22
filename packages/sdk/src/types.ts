@@ -887,22 +887,7 @@ export interface SensorDefinition extends BaseEntity<string | number, SensorConf
  * });
  * ```
  */
-export interface ComputedDefinition<TWatch extends string = string> {
-  type: 'sensor';
-  /** Runtime marker — distinguishes from regular sensors. */
-  __computed: true;
-  /** Unique entity identifier. */
-  id: string;
-  /** Human-readable name shown in the HA UI. */
-  name: string;
-  /** Optional device to group this entity under. */
-  device?: DeviceInfo;
-  /** Entity category. */
-  category?: 'config' | 'diagnostic';
-  /** MDI icon override. */
-  icon?: string;
-  /** Sensor-specific MQTT discovery config. */
-  config?: SensorConfig;
+export interface ComputedDefinition<TWatch extends string = string> extends SensorDefinition {
   /** Entity IDs to watch. When any changes state, `compute()` is re-evaluated. */
   watch: TWatch[];
   /**
@@ -917,6 +902,12 @@ export interface ComputedDefinition<TWatch extends string = string> {
    * once after the debounce window instead of once per change. Default: `100`.
    */
   debounce?: number;
+  /**
+   * When `true`, don't evaluate until a watched entity changes.
+   * When `false` (default), fetch current state of all watched entities
+   * and evaluate immediately on init.
+   */
+  lazy?: boolean;
 }
 
 // ---- Binary sensor ----
@@ -1874,8 +1865,8 @@ export type EntityDefinition =
   | UpdateDefinition
   | ImageDefinition;
 
-/** Entity definitions that carry state — excludes button (command-only), notify (write-only), and computed (declarative). */
-export type StatefulEntityDefinition = Exclude<EntityDefinition, ButtonDefinition | NotifyDefinition | ComputedDefinition>;
+/** Entity definitions that carry state — excludes button (command-only) and notify (write-only). */
+export type StatefulEntityDefinition = Exclude<EntityDefinition, ButtonDefinition | NotifyDefinition>;
 
 /**
  * A function that returns an array of entity definitions.
