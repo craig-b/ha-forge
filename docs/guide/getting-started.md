@@ -4,7 +4,7 @@
 
 - **Home Assistant OS** (HAOS) or a Supervised installation.
 - **Mosquitto MQTT broker** installed as an HA add-on. HA Forge uses MQTT discovery to register entities.
-- Basic TypeScript familiarity. You do not need a local development environment -- everything runs inside the add-on.
+- Basic TypeScript familiarity. You do not need a local development environment — everything runs inside the add-on.
 
 ## Installation
 
@@ -14,16 +14,62 @@
 4. Start the add-on. It appears in the sidebar as **HA Forge**.
 5. Click to open the web editor.
 
-## Your First Entity
+## Your First Device
 
-Create a new file called `weather.ts` in the editor. Paste this sensor that polls a temperature API:
+Create a new file called `greenhouse.ts` in the editor:
 
-```typescript
-import { sensor } from 'ha-forge';
+```ts
+export default device({
+  id: 'greenhouse',
+  name: 'Greenhouse',
+  entities: {
+    temp:     sensor({ id: 'temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
+    humidity: sensor({ id: 'humidity', name: 'Humidity', config: { device_class: 'humidity', unit_of_measurement: '%' } }),
+    fan:      defineSwitch({ id: 'fan', name: 'Vent Fan' }),
+  },
+  init() {
+    this.poll(async () => {
+      const data = await fetch('http://greenhouse.local/api').then(r => r.json());
+      this.entities.temp.update(data.temperature);
+      this.entities.humidity.update(data.humidity);
+    }, { interval: 30_000 });
+  },
+});
+```
 
-export const temp = sensor({
-  id: 'my_temp',
-  name: 'My Temperature',
+Key concepts:
+
+- **No imports needed.** `device`, `sensor`, `defineSwitch`, and all other factory functions are available globally.
+- **`export`** is required. The runtime only discovers exported definitions.
+- **`device()`** groups entities under one device in HA with a shared lifecycle. The `init()` runs once when deployed.
+- **`this.poll()`** calls a function on an interval. The timer is automatically cleaned up on teardown.
+- **`this.entities.temp.update()`** publishes a new state value for that entity.
+- **`defineSwitch()`** is optimistic by default — when a user toggles the switch in HA, the state updates automatically. No `onCommand` handler needed for simple toggles.
+
+## Save and Deploy
+
+Save your file with **Ctrl+S**. To build and deploy:
+
+- **Automatic:** Enable `auto_build_on_save` in the add-on settings. Every time you save a `.ts` file, the build pipeline runs automatically after a short debounce.
+- **Manual:** Click the **Rebuild All** button in the header bar.
+
+The build pipeline runs these steps:
+
+1. **Type generation** — pulls your HA entity registry and generates TypeScript types for autocomplete and validation.
+2. **Type check** — runs `tsc` to find errors. Errors appear as squiggles in the editor but do not block the build.
+3. **Bundle** — esbuild compiles your TypeScript into JavaScript.
+4. **Deploy** — the runtime loads the bundle, registers entities via MQTT discovery, calls `init()`, and publishes initial state.
+
+Your entities appear in HA immediately. Check **Developer Tools > States** for `sensor.temp`.
+
+## Individual Entities
+
+You don't always need a device. A file can export standalone entities:
+
+```ts
+export const cpuTemp = sensor({
+  id: 'cpu_temp',
+  name: 'CPU Temperature',
   config: {
     device_class: 'temperature',
     unit_of_measurement: '°C',
@@ -39,128 +85,66 @@ export const temp = sensor({
 });
 ```
 
-Key concepts:
+When a sensor's `init()` returns a value, that becomes the initial state. When `this.poll()` returns a value, it's published as the new state automatically — no `this.update()` needed.
 
-- **`export`** is required. The runtime only sees exported entity definitions.
-- **`id`** becomes the entity's unique ID in HA (prefixed with `ha_forge_`).
-- **`name`** is the display name. With device grouping, HA prepends the device name automatically.
-- **`config`** maps to MQTT discovery fields -- `device_class`, `unit_of_measurement`, and `state_class` control how HA displays and records the value.
-- **`init()`** runs when the entity starts. Set up polling, subscriptions, or any async work here. The return value is the initial state published to HA.
-- **`this.poll()`** calls a function on an interval and publishes the return value as the entity's state. The poll and its timer are automatically cleaned up when the entity is torn down.
+## Automatic Grouping
 
-## Building and Deploying
+Entities in the same file are automatically grouped into a device named after the file. A file called `garden.ts` with these exports:
 
-Click the **Build** button in the editor toolbar. The build pipeline runs these steps:
+```ts
+export const temp = sensor({
+  id: 'garden_temp',
+  name: 'Temperature',
+  config: { device_class: 'temperature', unit_of_measurement: '°C' },
+  init() { return 0; },
+});
 
-1. **Type generation** -- pulls your HA entity registry and generates TypeScript types.
-2. **npm install** -- installs any packages from `package.json` (only if changed).
-3. **Type check** -- runs `tsc` to find type errors. Errors appear as squiggles in the editor but do not block the build.
-4. **Bundle** -- esbuild compiles and bundles your TypeScript into JavaScript.
-5. **Deploy** -- the runtime loads the bundle, registers entities via MQTT discovery, calls `init()`, and publishes initial state.
-
-Your entity appears in HA immediately. Check **Developer Tools > States** for `sensor.my_temp`.
-
-## Adding a Controllable Entity
-
-Read-only sensors are one direction. Controllable entities like switches handle commands from HA:
-
-```typescript
-import { defineSwitch } from 'ha-forge';
-
-export const pump = defineSwitch({
-  id: 'garden_pump',
-  name: 'Garden Pump',
-  onCommand(command) {
-    setGPIO(17, command === 'ON');
-    this.update(command === 'ON' ? 'on' : 'off');
-  },
-  init() {
-    return 'off';
-  },
+export const humidity = sensor({
+  id: 'garden_humidity',
+  name: 'Humidity',
+  config: { device_class: 'humidity', unit_of_measurement: '%' },
+  init() { return 0; },
 });
 ```
 
-The flow is bidirectional:
+produces a device called "Garden" in HA containing both sensors.
 
-1. User toggles the switch in HA.
-2. HA publishes `ON` or `OFF` to the MQTT command topic.
-3. The runtime calls your `onCommand()` with the command.
-4. Your code acts on the hardware, then calls `this.update()` to confirm the new state back to HA.
-
-The `init()` return value sets the initial state when the entity first loads.
+For full control over the device — shared polling, coordinated lifecycle, typed entity handles — use `device()` as shown above. For a single entity where you don't want a device wrapper, set `name: null` on the entity definition.
 
 ## Reacting to HA State
 
-Use `this.events.on()` inside `init()` to subscribe to state changes from any entity in your HA installation:
+Use `this.events.on()` inside `init()` to subscribe to state changes from any entity in your HA installation. Building on the greenhouse example:
 
-```typescript
-import { automation } from 'ha-forge';
-
-export const porchLight = automation({
-  id: 'porch_light_on_door_open',
-  name: 'Porch Light on Door Open',
+```ts
+export default device({
+  id: 'greenhouse',
+  name: 'Greenhouse',
+  entities: {
+    temp: sensor({ id: 'temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
+    fan:  defineSwitch({ id: 'fan', name: 'Vent Fan' }),
+  },
   init() {
-    this.events.on('binary_sensor.front_door', (e) => {
-      if (e.new_state === 'on') {
-        this.ha.callService('light.porch', 'turn_on', { brightness: 255 });
-      }
+    this.poll(async () => {
+      const data = await fetch('http://greenhouse.local/api').then(r => r.json());
+      this.entities.temp.update(data.temperature);
+    }, { interval: 30_000 });
+
+    // Auto-toggle the fan based on temperature
+    this.events.on('sensor.temp', (e) => {
+      this.entities.fan.update(Number(e.new_state) > 30 ? 'on' : 'off');
     });
   },
 });
 ```
 
-Entity IDs autocomplete from your HA installation. The callback event is typed -- `e.new_state` for a binary sensor is `'on' | 'off'`, and attributes like `brightness` carry their valid ranges.
+Entity IDs autocomplete from your HA installation. The callback event is typed — `e.new_state` and `e.old_state` carry the correct types for each entity domain.
 
-All subscriptions created through `this.events` are lifecycle-managed. When the entity is torn down (on rebuild or shutdown), subscriptions are cleaned up automatically. You never need to manually unsubscribe.
-
-## Grouping Entities
-
-Entities in the same file are automatically grouped into a device in HA, named after the file. A file called `garden.ts` with three exports produces a device named "Garden" containing those three entities.
-
-For explicit control, provide a `device` config:
-
-```typescript
-import { sensor, defineSwitch } from 'ha-forge';
-
-const weatherStation = {
-  id: 'weather_station',
-  name: 'Weather Station',
-  manufacturer: 'Acme',
-  model: 'WS-3000',
-  suggested_area: 'Garden',
-};
-
-export const temp = sensor({
-  id: 'outdoor_temp',
-  name: 'Temperature',
-  device: weatherStation,
-  config: { device_class: 'temperature', unit_of_measurement: '°C' },
-  init() { /* ... */ return 0; },
-});
-
-export const rain = sensor({
-  id: 'rain_rate',
-  name: 'Rain Rate',
-  device: weatherStation,
-  config: { unit_of_measurement: 'mm/h' },
-  init() { /* ... */ return 0; },
-});
-```
-
-Both entities share the same `device.id`, so they appear under one device in HA.
-
-For a file with a single entity where you do not want the device wrapper, set `name: null` on the entity definition.
-
-## Using npm Packages
-
-Your scripts directory contains a `package.json` (scaffolded automatically on first run). Add packages by editing it directly or through the planned dependency management UI. Dependencies are installed during the build pipeline and bundled by esbuild, so they work seamlessly in the editor and at runtime.
-
-Types from installed packages (including `@types/*`) are injected into the Monaco editor for full IntelliSense.
+All subscriptions created through `this.events` are lifecycle-managed. When the entity is torn down on rebuild or shutdown, subscriptions are cleaned up automatically.
 
 ## What's Next
 
-- [Entity Types](entities.md) -- all 24 entity platforms and higher-level constructs.
-- [Reactive Patterns](reactive.md) -- event streams, reactions, watchdogs, and more.
-- [Composable Behaviors](behaviors.md) -- debouncing, filtering, sampling, and buffering.
-- [Web Editor](web-editor.md) -- Monaco features, entity dashboard, and log viewer.
-- [Advanced Patterns](advanced.md) -- entity factories, computed entities, cron, state machines, and health monitoring.
+- [Entity Types](entities.md) — all 24 entity platforms and higher-level constructs.
+- [Reactive Patterns](reactive.md) — event streams, reactions, watchdogs, and more.
+- [Composable Behaviors](behaviors.md) — debouncing, filtering, sampling, and buffering.
+- [Web Editor](web-editor.md) — Monaco features, entity dashboard, and log viewer.
+- [Advanced Patterns](advanced.md) — entity factories, computed entities, cron, state machines, and health monitoring.
