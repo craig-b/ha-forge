@@ -385,32 +385,67 @@ export class TseApp extends LitElement {
       this._diagTimer = setTimeout(() => this._runDiagnostics(), TseApp.DIAG_DEBOUNCE);
     });
 
-    // Quick-fix code action: add 'export' keyword
+    // Quick-fix code actions
     monaco.languages.registerCodeActionProvider('typescript', {
       provideCodeActions: (model: MonacoModelInstance, _range: unknown, context: { markers: MonacoMarkerData[] }) => {
         const actions: MonacoCodeAction[] = [];
         for (const marker of context.markers) {
-          if (marker.source !== TseApp.DIAG_OWNER) continue;
-          actions.push({
-            title: "Add 'export' to this declaration",
-            diagnostics: [marker],
-            kind: 'quickfix',
-            edit: {
-              edits: [{
-                resource: model.uri,
-                textEdit: {
-                  range: new monaco.Range(marker.startLineNumber, 1, marker.startLineNumber, 1),
-                  text: 'export ',
-                },
-                versionId: model.getVersionId(),
-              }],
-            },
-            isPreferred: true,
-          });
+          if (marker.source !== TseApp.DIAG_OWNER && marker.source !== TseApp.AST_DIAG_OWNER) continue;
+
+          // "not exported" → add export keyword
+          if (marker.message.includes('not exported')) {
+            actions.push(this._quickFix(model, marker,
+              "Add 'export' to this declaration",
+              new monaco.Range(marker.startLineNumber, 1, marker.startLineNumber, 1),
+              'export ',
+            ));
+          }
+
+          // "Do not await" → remove the await keyword
+          if (marker.message.startsWith('Do not await')) {
+            const line = model.getValue().split('\n')[marker.startLineNumber - 1];
+            const awaitMatch = line.match(/^(\s*)(await\s+)/);
+            if (awaitMatch) {
+              const col = awaitMatch[1].length + 1;
+              actions.push(this._quickFix(model, marker,
+                'Remove await',
+                new monaco.Range(marker.startLineNumber, col, marker.startLineNumber, col + awaitMatch[2].length),
+                '',
+              ));
+            }
+          }
+
+          // "Use this.setTimeout" → replace bare setTimeout/setInterval
+          const timerMatch = marker.message.match(/^Use (this\.(?:setTimeout|setInterval))\(\) instead of (setTimeout|setInterval)\(\)/);
+          if (timerMatch) {
+            actions.push(this._quickFix(model, marker,
+              `Replace with ${timerMatch[1]}()`,
+              new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn),
+              timerMatch[1],
+            ));
+          }
         }
         return { actions, dispose() {} };
       },
     });
+  }
+
+  private _quickFix(
+    model: MonacoModelInstance,
+    marker: MonacoMarkerData,
+    title: string,
+    range: MonacoRange,
+    text: string,
+  ): MonacoCodeAction {
+    return {
+      title,
+      diagnostics: [marker],
+      kind: 'quickfix',
+      edit: {
+        edits: [{ resource: model.uri, textEdit: { range, text }, versionId: model.getVersionId() }],
+      },
+      isPreferred: true,
+    };
   }
 
   private _runDiagnostics() {
