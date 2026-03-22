@@ -123,8 +123,8 @@ function checkFactoryCall(
     checkComputedCall(node, sf, diagnostics, entities);
     return;
   }
-  // automation, task, cron, mode don't require 'name'
-  const requiresName = !['automation', 'task', 'cron'].includes(name);
+  // automation doesn't have a name field
+  const requiresName = name !== 'automation';
 
   const arg = node.arguments[0];
   if (!arg || !ts.isObjectLiteralExpression(arg)) return;
