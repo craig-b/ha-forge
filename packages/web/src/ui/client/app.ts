@@ -55,6 +55,8 @@ declare const monaco: {
     createModel(content: string, language: string, uri: unknown): MonacoModelInstance;
     getModel(uri: unknown): MonacoModelInstance | null;
     setModelMarkers(model: MonacoModelInstance, owner: string, markers: MonacoMarkerData[]): void;
+    getModelMarkers(filter: { resource?: unknown; owner?: string }): MonacoMarkerData[];
+    onDidChangeMarkers(listener: (uris: unknown[]) => void): { dispose(): void };
     registerEditorOpener(opener: {
       openCodeEditor(
         source: MonacoEditorInstance & {
@@ -957,6 +959,8 @@ export class TseApp extends LitElement {
   private static readonly AST_DIAG_OWNER = 'ha-forge-ast';
   private static readonly CS_DIAG_OWNER = 'ha-forge-callservice';
   private static readonly DIAG_DEBOUNCE = 300;
+  /** Lines where our callService diagnostics found errors — TS overload errors on these lines are suppressed. */
+  private _csDiagLines = new Set<number>();
 
   private _setupCustomDiagnostics() {
     if (!this._editor) return;
@@ -965,6 +969,17 @@ export class TseApp extends LitElement {
     this._editor.onDidChangeModelContent(() => {
       if (this._diagTimer) clearTimeout(this._diagTimer);
       this._diagTimer = setTimeout(() => this._runDiagnostics(), TseApp.DIAG_DEBOUNCE);
+    });
+
+    // Suppress TS overload errors (2769) on lines where we have our own callService diagnostics
+    monaco.editor.onDidChangeMarkers(() => {
+      const model = this._editor?.getModel();
+      if (!model || this._csDiagLines.size === 0) return;
+      const tsMarkers = monaco.editor.getModelMarkers({ resource: model.uri, owner: 'typescript' });
+      const filtered = tsMarkers.filter(m => !(String(m.code) === '2769' && this._csDiagLines.has(m.startLineNumber)));
+      if (filtered.length < tsMarkers.length) {
+        monaco.editor.setModelMarkers(model, 'typescript', filtered);
+      }
     });
 
     // Quick-fix code actions
@@ -1186,15 +1201,16 @@ export class TseApp extends LitElement {
     }
 
     // callService / reactions / watchdog validation
-    const csMarkers = this._runCallServiceDiagnostics(sourceText);
+    const { markers: csMarkers, suppressLines } = this._runCallServiceDiagnostics(sourceText);
     const stateMarkers = this._runStateDiagnostics(sourceText);
+    this._csDiagLines = suppressLines;
     monaco.editor.setModelMarkers(model, TseApp.CS_DIAG_OWNER, [...csMarkers, ...stateMarkers]);
   }
 
   // ---- callService diagnostics ----
 
-  private _runCallServiceDiagnostics(sourceText: string): MonacoMarkerData[] {
-    if (!this._completionRegistry) return [];
+  private _runCallServiceDiagnostics(sourceText: string): { markers: MonacoMarkerData[]; suppressLines: Set<number> } {
+    if (!this._completionRegistry) return { markers: [], suppressLines: new Set() };
 
     const registry = this._completionRegistry as {
       domains: Record<string, { services: Record<string, { fields: Record<string, { type: string; description?: string; required: boolean }> }> }>;
@@ -1202,6 +1218,7 @@ export class TseApp extends LitElement {
     };
 
     const markers: MonacoMarkerData[] = [];
+    const suppressLines = new Set<number>();
     const lines = sourceText.split('\n');
 
     // Find all callService( occurrences and validate data fields
@@ -1221,10 +1238,12 @@ export class TseApp extends LitElement {
       if (!svc) continue;
 
       const validKeys = Object.keys(svc.fields);
+      let hasErrors = false;
 
       for (const key of parsed.dataKeys) {
         if (key.name in svc.fields) continue;
 
+        hasErrors = true;
         // Unknown key — find close matches
         const suggestion = TseApp._findClosestMatch(key.name, validKeys);
         const suggestionMsg = suggestion
@@ -1247,9 +1266,16 @@ export class TseApp extends LitElement {
           code: suggestion ? `suggest:${suggestion}` : undefined,
         });
       }
+
+      // Track the callService line so we can suppress TS overload errors there
+      if (hasErrors) {
+        const csLine = TseApp._offsetToLineCol(lines, match.index).line;
+        suppressLines.add(csLine);
+        suppressLines.add(csLine + 1); // first arg may be on the next line
+      }
     }
 
-    return markers;
+    return { markers, suppressLines };
   }
 
   // ---- reactions / watchdog state diagnostics ----
