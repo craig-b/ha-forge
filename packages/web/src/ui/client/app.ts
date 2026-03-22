@@ -1762,8 +1762,10 @@ export class TseApp extends LitElement {
     select: '#9575CD',
     text: '#9575CD',
     button: '#F06292',         // pink
-    computed: '#4DB6AC',       // teal
-    device: '#66BB6A',          // green
+    notify: '#F06292',         // pink
+    update: '#81C784',         // green
+    image: '#4DB6AC',          // teal
+    device: '#66BB6A',         // green
   };
   private static readonly MINIMAP_DEFAULT_COLOR = '#90A4AE'; // blue grey
 

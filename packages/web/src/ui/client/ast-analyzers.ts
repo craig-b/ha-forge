@@ -616,6 +616,10 @@ export const FACTORY_DOMAINS: Record<string, string> = {
   vacuum: 'vacuum',
   lawnMower: 'lawn_mower',
   alarmControlPanel: 'alarm_control_panel',
+  computed: 'sensor',
+  notify: 'notify',
+  update: 'update',
+  image: 'image',
 };
 
 function checkIdDomainMismatch(
@@ -1086,6 +1090,7 @@ const DEVICE_MEMBER_NAMES = new Set([
   'humidifier', 'valve', 'waterHeater', 'vacuum', 'lawnMower',
   'alarmControlPanel', 'computed',
   'automation', 'task', 'cron', 'mode',
+  'notify', 'update', 'image',
 ]);
 
 function collectStandaloneEntities(

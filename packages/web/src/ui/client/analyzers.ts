@@ -49,6 +49,7 @@ export const FACTORY_NAMES = [
   'text', 'button', 'siren', 'humidifier', 'valve',
   'waterHeater', 'vacuum', 'lawnMower', 'alarmControlPanel',
   'computed', 'mode', 'cron',
+  'notify', 'update', 'image',
 ];
 
 // Matches: const/let/var <name> = <factory>(...) at the start of a line
