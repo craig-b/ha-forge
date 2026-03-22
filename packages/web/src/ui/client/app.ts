@@ -90,7 +90,7 @@ declare const monaco: {
       provideHover(model: MonacoModelInstance, position: { lineNumber: number; column: number }): { range: MonacoRange; contents: Array<{ value: string }> } | null;
     }): { dispose(): void };
     registerCodeLensProvider(languageId: string, provider: {
-      onDidChangeCodeLenses?: { (listener: () => void): { dispose(): void } };
+      onDidChange?: { (listener: () => void): { dispose(): void } };
       provideCodeLenses(model: MonacoModelInstance): { lenses: Array<{ range: MonacoRange; command?: { id: string; title: string } }>; dispose(): void };
     }): { dispose(): void };
     registerDocumentHighlightProvider(languageId: string, provider: {
@@ -444,7 +444,7 @@ export class TseApp extends LitElement {
 
   private _setupCodeLensProvider() {
     monaco.languages.registerCodeLensProvider('typescript', {
-      onDidChangeCodeLenses: (listener: () => void) => {
+      onDidChange: (listener: () => void) => {
         this._codeLensChangeListeners.push(listener);
         return { dispose: () => { this._codeLensChangeListeners = this._codeLensChangeListeners.filter(l => l !== listener); } };
       },
