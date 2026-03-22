@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, toSnakeCase } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -437,6 +437,17 @@ export class TseApp extends LitElement {
               suggested,
             ));
           }
+
+          // Bare factory call "not assigned or exported [export const varName]" → wrap with export const
+          const bareMatch = marker.message.match(/\[export const (\w+)\]$/);
+          if (bareMatch) {
+            const varName = bareMatch[1];
+            actions.push(this._quickFix(model, marker,
+              `Export as '${varName}'`,
+              new monaco.Range(marker.startLineNumber, marker.startColumn, marker.startLineNumber, marker.startColumn),
+              `export const ${varName} = `,
+            ));
+          }
         }
         return { actions, dispose() {} };
       },
@@ -460,6 +471,7 @@ export class TseApp extends LitElement {
       isPreferred: true,
     };
   }
+
 
   private _runDiagnostics() {
     const model = this._editor?.getModel();

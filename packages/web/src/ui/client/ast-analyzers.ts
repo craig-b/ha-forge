@@ -324,8 +324,10 @@ function checkUnexportedEntities(
       const factory = findFactoryCall(stmt.expression);
       if (factory) {
         const factoryName = getCalledName(factory);
+        const varName = suggestVarName(factory);
+        const hint = varName ? ` [export const ${varName}]` : '';
         diagnostics.push(markerAt(stmt.expression, sf,
-          `${factoryName}() result is not assigned or exported — it will not be deployed`,
+          `${factoryName}() result is not assigned or exported — it will not be deployed${hint}`,
           'warning',
         ));
       }
@@ -378,6 +380,27 @@ export function toSnakeCase(input: string): string | null {
 
   if (!result || !/^[a-z][a-z0-9_]*$/.test(result)) return null;
   return result;
+}
+
+/** Convert snake_case to camelCase for variable names. */
+export function toCamelCase(input: string): string | null {
+  const snake = toSnakeCase(input);
+  if (!snake) return null;
+  return snake.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+
+/** Extract the entity ID from a factory call and suggest a camelCase variable name. */
+function suggestVarName(factory: import('typescript').CallExpression): string | null {
+  if (!ts) return null;
+  const arg = factory.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+        prop.name.text === 'id' && ts.isStringLiteral(prop.initializer)) {
+      return toCamelCase(prop.initializer.text);
+    }
+  }
+  return null;
 }
 
 // ---- Helpers ----
