@@ -1857,6 +1857,135 @@ function collectDeviceMembers(
   }
 }
 
+// ---- Entity dependency analysis (for CodeLens) ----
+
+export interface EntityDependencies {
+  watches: string[];
+  controls: string[];
+}
+
+/**
+ * Find reactive dependencies for each entity in the source.
+ * Returns a map from fullEntityId to its watch/control dependencies.
+ * Only detects string literals — variable references are not resolved.
+ */
+export function findEntityDependencies(sourceText: string, fileName = 'file.ts'): Map<string, EntityDependencies> {
+  if (!ts) return new Map();
+
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const defs = findEntityDefinitions(sourceText, fileName);
+  const result = new Map<string, EntityDependencies>();
+
+  // Initialize empty deps for each entity
+  for (const def of defs) {
+    result.set(def.fullEntityId, { watches: [], controls: [] });
+  }
+
+  // Find which entity def a line belongs to
+  function findOwnerEntity(line: number): EntityDefinitionLocation | undefined {
+    return defs.find(d => line >= d.line && line <= d.endLine);
+  }
+
+  function extractStringLiterals(node: import('typescript').Node): string[] {
+    if (!ts) return [];
+    if (ts.isStringLiteral(node)) return [node.text];
+    if (ts.isArrayLiteralExpression(node)) {
+      return node.elements
+        .filter((el): el is import('typescript').StringLiteral => ts!.isStringLiteral(el))
+        .map(el => el.text);
+    }
+    return [];
+  }
+
+  function visit(node: import('typescript').Node) {
+    if (ts!.isCallExpression(node)) {
+      const line = sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1;
+      const owner = findOwnerEntity(line);
+
+      if (owner) {
+        const dep = result.get(owner.fullEntityId)!;
+        const expr = node.expression;
+
+        // this.events.on / this.events.reactions / this.events.combine / this.events.withState / this.events.watchdog
+        if (ts!.isPropertyAccessExpression(expr)) {
+          const methodName = expr.name.text;
+          const obj = expr.expression;
+
+          // Check for this.events.* pattern
+          if (ts!.isPropertyAccessExpression(obj) &&
+              obj.name.text === 'events' &&
+              obj.expression.kind === ts!.SyntaxKind.ThisKeyword) {
+            if ((methodName === 'on' || methodName === 'watchdog') && node.arguments.length > 0) {
+              const ids = extractStringLiterals(node.arguments[0]);
+              for (const id of ids) if (!dep.watches.includes(id)) dep.watches.push(id);
+            }
+            if (methodName === 'combine' && node.arguments.length > 0) {
+              const ids = extractStringLiterals(node.arguments[0]);
+              for (const id of ids) if (!dep.watches.includes(id)) dep.watches.push(id);
+            }
+            if (methodName === 'withState' && node.arguments.length > 1) {
+              const ids0 = extractStringLiterals(node.arguments[0]);
+              const ids1 = extractStringLiterals(node.arguments[1]);
+              for (const id of [...ids0, ...ids1]) if (!dep.watches.includes(id)) dep.watches.push(id);
+            }
+            if (methodName === 'reactions' && node.arguments.length > 0) {
+              const arg = node.arguments[0];
+              if (ts!.isObjectLiteralExpression(arg)) {
+                for (const prop of arg.properties) {
+                  if (ts!.isPropertyAssignment(prop)) {
+                    let key: string | null = null;
+                    if (ts!.isStringLiteral(prop.name)) key = prop.name.text;
+                    else if (ts!.isIdentifier(prop.name)) key = prop.name.text;
+                    if (key && !dep.watches.includes(key)) dep.watches.push(key);
+                  }
+                }
+              }
+            }
+          }
+
+          // this.ha.callService / ha.callService
+          if (methodName === 'callService') {
+            const isThisHa = ts!.isPropertyAccessExpression(obj) &&
+              obj.name.text === 'ha' &&
+              obj.expression.kind === ts!.SyntaxKind.ThisKeyword;
+            const isGlobalHa = ts!.isIdentifier(obj) && obj.text === 'ha';
+            if ((isThisHa || isGlobalHa) && node.arguments.length > 0) {
+              const ids = extractStringLiterals(node.arguments[0]);
+              for (const id of ids) if (!dep.controls.includes(id)) dep.controls.push(id);
+            }
+          }
+        }
+
+        // computed({ watch: [...] }) — check if this is a computed factory call
+        if (ts!.isIdentifier(node.expression) && node.expression.text === 'computed' && node.arguments.length > 0) {
+          const arg = node.arguments[0];
+          if (ts!.isObjectLiteralExpression(arg)) {
+            for (const prop of arg.properties) {
+              if (ts!.isPropertyAssignment(prop) && ts!.isIdentifier(prop.name) && prop.name.text === 'watch') {
+                const ids = extractStringLiterals(prop.initializer);
+                for (const id of ids) if (!dep.watches.includes(id)) dep.watches.push(id);
+              }
+            }
+          }
+        }
+      }
+    }
+
+    ts!.forEachChild(node, visit);
+  }
+
+  visit(sf);
+
+  // Remove entities with no dependencies
+  for (const [key, dep] of result) {
+    if (dep.watches.length === 0 && dep.controls.length === 0) {
+      result.delete(key);
+    }
+  }
+
+  return result;
+}
+
 function markerAt(
   node: import('typescript').Node,
   sf: import('typescript').SourceFile,

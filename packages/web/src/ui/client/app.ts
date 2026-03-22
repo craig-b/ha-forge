@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -104,6 +104,40 @@ declare const monaco: {
     }): { dispose(): void };
     CompletionItemKind: { Snippet: number; Function: number; Text: number };
     CompletionItemInsertTextRule: { InsertAsSnippet: number };
+    registerInlayHintsProvider(languageId: string, provider: {
+      onDidChangeInlayHints?: { (listener: () => void): { dispose(): void } };
+      provideInlayHints(model: MonacoModelInstance, range: MonacoRange, token: unknown): {
+        hints: Array<{
+          position: { lineNumber: number; column: number };
+          label: string;
+          kind?: number;
+          paddingLeft?: boolean;
+          paddingRight?: boolean;
+          tooltip?: string;
+        }>;
+        dispose(): void;
+      };
+    }): { dispose(): void };
+    InlayHintKind: { Type: number; Parameter: number };
+    registerColorProvider(languageId: string, provider: {
+      provideDocumentColors(model: MonacoModelInstance, token: unknown): Array<{
+        color: { red: number; green: number; blue: number; alpha: number };
+        range: MonacoRange;
+      }>;
+      provideColorPresentations(model: MonacoModelInstance, colorInfo: {
+        color: { red: number; green: number; blue: number; alpha: number };
+        range: MonacoRange;
+      }, token: unknown): Array<{ label: string; textEdit?: { range: MonacoRange; text: string } }>;
+    }): { dispose(): void };
+    registerRenameProvider(languageId: string, provider: {
+      provideRenameEdits(model: MonacoModelInstance, position: { lineNumber: number; column: number },
+        newName: string, token: unknown): {
+        edits: Array<{ resource: unknown; textEdit: { range: MonacoRange; text: string }; versionId?: number }>;
+        rejectReason?: string;
+      };
+      resolveRenameLocation?(model: MonacoModelInstance, position: { lineNumber: number; column: number },
+        token: unknown): { range: MonacoRange; text: string; rejectReason?: string };
+    }): { dispose(): void };
     DocumentHighlightKind: { Text: number; Read: number; Write: number };
     SymbolKind: { Variable: number; Function: number; Module: number };
   };
@@ -289,6 +323,9 @@ export class TseApp extends LitElement {
       this._setupEntitySymbolProvider();
       this._setupCodeLensProvider();
       this._setupDocumentHighlightProvider();
+      this._setupInlayHintsProvider();
+      this._setupColorProvider();
+      this._setupRenameProvider();
       this._setupEntityCompletionProvider();
       this._setupCallServiceCompletionProvider();
       this._loadExtraTypes();
@@ -459,6 +496,7 @@ export class TseApp extends LitElement {
   // ---- CodeLens — live entity state ----
 
   private _codeLensChangeListeners: Array<() => void> = [];
+  private _inlayHintChangeListeners: Array<() => void> = [];
   private _cronstrue: { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string } | null = null;
 
   private _setupCodeLensProvider() {
@@ -528,6 +566,20 @@ export class TseApp extends LitElement {
           });
         }
 
+        // Dependency graph lenses
+        const deps = findEntityDependencies(model.getValue(), model.uri.path || 'file.ts');
+        for (const def of defs) {
+          const dep = deps.get(def.fullEntityId);
+          if (!dep || (dep.watches.length === 0 && dep.controls.length === 0)) continue;
+          const parts: string[] = [];
+          if (dep.watches.length > 0) parts.push(`Watches: ${dep.watches.join(', ')}`);
+          if (dep.controls.length > 0) parts.push(`Controls: ${dep.controls.join(', ')}`);
+          lenses.push({
+            range: new monaco.Range(def.line, 1, def.line, 1),
+            command: { id: '', title: `\u{1F517} ${parts.join(' | ')}` },
+          });
+        }
+
         return { lenses, dispose() {} };
       },
     });
@@ -536,6 +588,169 @@ export class TseApp extends LitElement {
   private _refreshCodeLenses() {
     console.debug(`[ha-forge] CodeLens refresh, ${this._codeLensChangeListeners.length} listeners`);
     for (const listener of this._codeLensChangeListeners) listener();
+  }
+
+  // ---- Inlay hints — full entity IDs ----
+
+  private _setupInlayHintsProvider() {
+    monaco.languages.registerInlayHintsProvider('typescript', {
+      onDidChangeInlayHints: (listener: () => void) => {
+        this._inlayHintChangeListeners.push(listener);
+        return { dispose: () => { this._inlayHintChangeListeners = this._inlayHintChangeListeners.filter(l => l !== listener); } };
+      },
+      provideInlayHints: (model: MonacoModelInstance, _range: MonacoRange) => {
+        if (!isAstReady()) return { hints: [], dispose() {} };
+
+        const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
+        const lines = model.getValue().split('\n');
+
+        const hints = defs.map(def => ({
+          position: { lineNumber: def.line, column: (lines[def.line - 1] || '').length + 1 },
+          label: def.fullEntityId,
+          kind: monaco.languages.InlayHintKind.Type,
+          paddingLeft: true,
+          tooltip: `MQTT entity: ${def.fullEntityId}`,
+        }));
+
+        return { hints, dispose() {} };
+      },
+    });
+  }
+
+  private _refreshInlayHints() {
+    for (const listener of this._inlayHintChangeListeners) listener();
+  }
+
+  // ---- Color previews — rgb_color swatches ----
+
+  private _setupColorProvider() {
+    monaco.languages.registerColorProvider('typescript', {
+      provideDocumentColors: (model: MonacoModelInstance) => {
+        const colors: Array<{ color: { red: number; green: number; blue: number; alpha: number }; range: MonacoRange }> = [];
+        const lines = model.getValue().split('\n');
+        const rgbRegex = /rgb_color:\s*\[(\d+),\s*(\d+),\s*(\d+)\]/g;
+
+        for (let i = 0; i < lines.length; i++) {
+          let match: RegExpExecArray | null;
+          rgbRegex.lastIndex = 0;
+          while ((match = rgbRegex.exec(lines[i])) !== null) {
+            const bracketStart = lines[i].indexOf('[', match.index);
+            const bracketEnd = lines[i].indexOf(']', bracketStart) + 1;
+            colors.push({
+              color: {
+                red: parseInt(match[1]) / 255,
+                green: parseInt(match[2]) / 255,
+                blue: parseInt(match[3]) / 255,
+                alpha: 1,
+              },
+              range: new monaco.Range(i + 1, bracketStart + 1, i + 1, bracketEnd + 1),
+            });
+          }
+        }
+        return colors;
+      },
+      provideColorPresentations: (_model: MonacoModelInstance, colorInfo: {
+        color: { red: number; green: number; blue: number; alpha: number };
+        range: MonacoRange;
+      }) => {
+        const r = Math.round(Math.min(255, Math.max(0, colorInfo.color.red * 255)));
+        const g = Math.round(Math.min(255, Math.max(0, colorInfo.color.green * 255)));
+        const b = Math.round(Math.min(255, Math.max(0, colorInfo.color.blue * 255)));
+        const text = `[${r}, ${g}, ${b}]`;
+        return [{ label: text, textEdit: { range: colorInfo.range, text } }];
+      },
+    });
+  }
+
+  // ---- Rename provider — F2 to rename entity IDs ----
+
+  private _setupRenameProvider() {
+    monaco.languages.registerRenameProvider('typescript', {
+      resolveRenameLocation: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
+        const line = model.getValue().split('\n')[position.lineNumber - 1];
+        if (!line) return { range: new monaco.Range(0, 0, 0, 0), text: '', rejectReason: 'Not an entity ID' };
+
+        const strResult = this._findStringAtPosition(line, position.column);
+        if (!strResult) return { range: new monaco.Range(0, 0, 0, 0), text: '', rejectReason: 'Not an entity ID' };
+
+        const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
+        const matchingDef = defs.find(d => d.entityId === strResult.value || d.fullEntityId === strResult.value);
+        if (!matchingDef) return { range: new monaco.Range(0, 0, 0, 0), text: '', rejectReason: 'Not an entity ID' };
+
+        const bareId = matchingDef.entityId;
+        return {
+          range: new monaco.Range(position.lineNumber, strResult.startCol, position.lineNumber, strResult.endCol),
+          text: bareId,
+        };
+      },
+
+      provideRenameEdits: (model: MonacoModelInstance, position: { lineNumber: number; column: number }, newName: string) => {
+        if (!/^[a-z][a-z0-9_]*$/.test(newName)) {
+          return { edits: [], rejectReason: 'Entity IDs must be snake_case (a-z, 0-9, _)' };
+        }
+
+        const line = model.getValue().split('\n')[position.lineNumber - 1];
+        if (!line) return { edits: [] };
+        const strResult = this._findStringAtPosition(line, position.column);
+        if (!strResult) return { edits: [] };
+
+        // Find the entity being renamed
+        const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
+        const matchingDef = defs.find(d => d.entityId === strResult.value || d.fullEntityId === strResult.value);
+        if (!matchingDef) return { edits: [] };
+
+        const oldBareId = matchingDef.entityId;
+        const oldFullId = matchingDef.fullEntityId;
+        const newFullId = matchingDef.domain + '.' + newName;
+
+        // Collect all entity defs across open files to check bare ID ambiguity
+        const allDefs: Array<{ entityId: string; fullEntityId: string }> = [];
+        for (const f of this._openFiles) {
+          if (isAstReady()) {
+            allDefs.push(...findEntityDefinitions(f.model.getValue(), f.model.uri.path || 'file.ts'));
+          }
+        }
+        const bareIdIsAmbiguous = allDefs.filter(d => d.entityId === oldBareId).length > 1;
+
+        const edits: Array<{ resource: unknown; textEdit: { range: MonacoRange; text: string }; versionId?: number }> = [];
+
+        for (const f of this._openFiles) {
+          // Skip read-only models (SDK/registry .d.ts files)
+          if (f.path.endsWith('.d.ts')) continue;
+          const fileLines = f.model.getValue().split('\n');
+          const isCurrentFile = f.model === model;
+
+          for (let i = 0; i < fileLines.length; i++) {
+            const fl = fileLines[i];
+            // Search for all quoted occurrences of the old bare and full IDs
+            for (const [pattern, replacement] of [
+              [oldFullId, newFullId],
+              ...(isCurrentFile || !bareIdIsAmbiguous ? [[oldBareId, newName]] : []),
+            ] as [string, string][]) {
+              let searchIdx = 0;
+              while (searchIdx < fl.length) {
+                let col = fl.indexOf("'" + pattern + "'", searchIdx);
+                if (col === -1) col = fl.indexOf('"' + pattern + '"', searchIdx);
+                if (col === -1) break;
+                const startCol = col + 2; // 1-based, skip quote
+                const endCol = startCol + pattern.length;
+                edits.push({
+                  resource: f.model.uri,
+                  textEdit: {
+                    range: new monaco.Range(i + 1, startCol, i + 1, endCol),
+                    text: replacement,
+                  },
+                  versionId: f.model.getVersionId(),
+                });
+                searchIdx = col + 1 + pattern.length + 1;
+              }
+            }
+          }
+        }
+
+        return { edits };
+      },
+    });
   }
 
   // ---- Document highlights — entity ID references ----
@@ -550,12 +765,13 @@ export class TseApp extends LitElement {
         if (!line) return [];
 
         // Find the string literal under the cursor
-        const stringAt = this._findStringAtPosition(line, position.column);
-        if (!stringAt) return [];
+        const stringResult = this._findStringAtPosition(line, position.column);
+        if (!stringResult) return [];
 
         // Check if this is an entity ID (bare or domain-qualified)
         const defs = findEntityDefinitions(source, model.uri.path || 'file.ts');
-        const bareId = stringAt.includes('.') ? stringAt.split('.').slice(1).join('.') : stringAt;
+        const bareId = stringResult.value.includes('.') ? stringResult.value.split('.').slice(1).join('.') : stringResult.value;
+        const stringAt = stringResult.value;
         const matchingDef = defs.find(d => d.entityId === bareId || d.fullEntityId === stringAt);
         if (!matchingDef) return [];
 
@@ -583,13 +799,13 @@ export class TseApp extends LitElement {
     });
   }
 
-  private _findStringAtPosition(line: string, column: number): string | null {
+  private _findStringAtPosition(line: string, column: number): { value: string; startCol: number; endCol: number } | null {
     const regex = /(['"])([^'"]*)\1/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(line)) !== null) {
       const start = match.index + 2; // 1-based column of string content start
       const end = start + match[2].length;
-      if (column >= start && column <= end) return match[2];
+      if (column >= start && column <= end) return { value: match[2], startCol: start, endCol: end };
     }
     return null;
   }
@@ -2044,6 +2260,7 @@ export class TseApp extends LitElement {
     this._entities = (data.entities as EntityInfo[]) ?? [];
     console.debug(`[ha-forge] Loaded ${this._entities.length} entities`);
     this._refreshCodeLenses();
+    this._refreshInlayHints();
   }
 
   // ---- Logs ----
