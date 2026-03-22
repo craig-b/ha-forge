@@ -309,18 +309,18 @@ export class TseApp extends LitElement {
     };
     document.head.appendChild(script);
 
-    // Load cronstrue for human-readable cron descriptions in hover tooltips
-    const cronstrueScript = document.createElement('script');
-    cronstrueScript.src = 'https://cdn.jsdelivr.net/npm/cronstrue@2.52.0/dist/cronstrue.min.js';
-    cronstrueScript.onload = () => { this._setupCronHoverProvider(); };
-    document.head.appendChild(cronstrueScript);
+    // Load cronstrue for human-readable cron descriptions in hover tooltips.
+    // cronstrue's UMD detects Monaco's AMD loader and registers as an AMD module
+    // instead of setting a global — so we must load it via require(), not a script tag.
+    require.config({
+      paths: { cronstrue: 'https://cdn.jsdelivr.net/npm/cronstrue@2.52.0/dist/cronstrue.min' },
+    });
+    require(['cronstrue'], (cronstrue: { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string }) => {
+      this._setupCronHoverProvider(cronstrue);
+    });
   }
 
-  private _setupCronHoverProvider() {
-    const cronstrue = (globalThis as Record<string, unknown>).cronstrue as
-      { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string } | undefined;
-    if (!cronstrue) return;
-
+  private _setupCronHoverProvider(cronstrue: { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string }) {
     monaco.languages.registerHoverProvider('typescript', {
       provideHover: (model: MonacoModelInstance, position: { lineNumber: number; column: number }) => {
         if (!isAstReady()) return null;
