@@ -162,7 +162,7 @@ export class MqttTransport implements Transport {
       payload = String(state);
     }
 
-    await this.publish(topic, payload, { retain: false });
+    await this.publish(topic, payload, { retain: true });
 
     if (entity && typeof state === 'object' && state !== null) {
       const cs = state as Record<string, unknown>;
