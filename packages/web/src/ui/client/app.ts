@@ -953,6 +953,7 @@ export class TseApp extends LitElement {
   private _diagTimer: ReturnType<typeof setTimeout> | null = null;
   private static readonly DIAG_OWNER = 'ha-forge-lint';
   private static readonly AST_DIAG_OWNER = 'ha-forge-ast';
+  private static readonly CS_DIAG_OWNER = 'ha-forge-callservice';
   private static readonly DIAG_DEBOUNCE = 300;
 
   private _setupCustomDiagnostics() {
@@ -983,6 +984,16 @@ export class TseApp extends LitElement {
         }
 
         for (const marker of context.markers) {
+          // callService field suggestion quick fix
+          if (marker.source === TseApp.CS_DIAG_OWNER && typeof marker.code === 'string' && marker.code.startsWith('suggest:')) {
+            const suggested = marker.code.slice('suggest:'.length);
+            actions.push(this._quickFix(model, marker,
+              `Replace with '${suggested}'`,
+              new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn),
+              suggested,
+            ));
+          }
+
           if (marker.source !== TseApp.DIAG_OWNER && marker.source !== TseApp.AST_DIAG_OWNER) continue;
 
           // "not exported" on a variable declaration → add export keyword
@@ -1131,6 +1142,278 @@ export class TseApp extends LitElement {
       // Update minimap entity markers
       this._updateMinimapDecorations(sourceText, model.uri.path || 'file.ts');
     }
+
+    // callService data field validation
+    const csMarkers = this._runCallServiceDiagnostics(sourceText);
+    monaco.editor.setModelMarkers(model, TseApp.CS_DIAG_OWNER, csMarkers);
+  }
+
+  // ---- callService diagnostics ----
+
+  private _runCallServiceDiagnostics(sourceText: string): MonacoMarkerData[] {
+    if (!this._completionRegistry) return [];
+
+    const registry = this._completionRegistry as {
+      domains: Record<string, { services: Record<string, { fields: Record<string, { type: string; description?: string; required: boolean }> }> }>;
+      entities: Record<string, { domain: string; services?: string[] }>;
+    };
+
+    const markers: MonacoMarkerData[] = [];
+    const lines = sourceText.split('\n');
+
+    // Find all callService( occurrences and validate data fields
+    const csRegex = /\.callService\s*\(/g;
+    let match: RegExpExecArray | null;
+    while ((match = csRegex.exec(sourceText)) !== null) {
+      const afterOpen = match.index + match[0].length;
+      const parsed = TseApp._parseCallServiceFull(sourceText, afterOpen);
+      if (!parsed || !parsed.dataKeys.length) continue;
+
+      const entity = registry.entities[parsed.entityId];
+      const domain = entity?.domain ?? parsed.entityId;
+      const domainData = registry.domains[domain];
+      if (!domainData) continue;
+
+      const svc = domainData.services[parsed.serviceName];
+      if (!svc) continue;
+
+      const validKeys = Object.keys(svc.fields);
+
+      for (const key of parsed.dataKeys) {
+        if (key.name in svc.fields) continue;
+
+        // Unknown key — find close matches
+        const suggestion = TseApp._findClosestMatch(key.name, validKeys);
+        const suggestionMsg = suggestion
+          ? `. Did you mean '${suggestion}'?`
+          : '';
+        const validList = validKeys.length > 0
+          ? `\nValid fields: ${validKeys.join(', ')}`
+          : '';
+
+        // Convert offset to line/col
+        const pos = TseApp._offsetToLineCol(lines, key.offset);
+        markers.push({
+          severity: monaco.MarkerSeverity.Error,
+          message: `Unknown field '${key.name}' for ${domain}.${parsed.serviceName}${suggestionMsg}${validList}`,
+          startLineNumber: pos.line,
+          startColumn: pos.col,
+          endLineNumber: pos.line,
+          endColumn: pos.col + key.name.length,
+          source: TseApp.CS_DIAG_OWNER,
+          code: suggestion ? `suggest:${suggestion}` : undefined,
+        });
+      }
+    }
+
+    return markers;
+  }
+
+  /**
+   * Parse a full callService call starting after the opening paren.
+   * Extracts entity ID, service name, and data object key names with offsets.
+   */
+  private static _parseCallServiceFull(
+    text: string, startOffset: number,
+  ): { entityId: string; serviceName: string; dataKeys: Array<{ name: string; offset: number }> } | null {
+    let i = startOffset;
+    let parenDepth = 0;
+    let braceDepth = 0;
+    let inString: string | null = null;
+    let argIndex = 0;
+    let entityId = '';
+    let serviceName = '';
+    let stringStart = -1;
+    const dataKeys: Array<{ name: string; offset: number }> = [];
+
+    while (i < text.length) {
+      const ch = text[i];
+
+      if (inString) {
+        if (ch === '\\') { i += 2; continue; }
+        if (ch === inString) {
+          const val = text.slice(stringStart, i);
+          if (argIndex === 0 && parenDepth === 0) entityId = val;
+          if (argIndex === 1 && parenDepth === 0) serviceName = val;
+          inString = null;
+        }
+        i++; continue;
+      }
+
+      if (ch === "'" || ch === '"') {
+        inString = ch;
+        stringStart = i + 1;
+        i++; continue;
+      }
+
+      // Line comments
+      if (ch === '/' && text[i + 1] === '/') {
+        while (i < text.length && text[i] !== '\n') i++;
+        continue;
+      }
+
+      // Block comments
+      if (ch === '/' && text[i + 1] === '*') {
+        i += 2;
+        while (i < text.length - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+        i += 2; continue;
+      }
+
+      if (ch === '(') { parenDepth++; i++; continue; }
+      if (ch === ')') {
+        if (parenDepth > 0) { parenDepth--; i++; continue; }
+        break; // end of callService()
+      }
+
+      if (ch === '{') {
+        braceDepth++;
+        // If entering the data object (arg 2, brace depth 1), scan for keys
+        if (argIndex === 2 && braceDepth === 1) {
+          i++;
+          // Scan object keys at this level
+          while (i < text.length) {
+            // Skip whitespace
+            while (i < text.length && /\s/.test(text[i])) i++;
+            if (i >= text.length || text[i] === '}') break;
+
+            // Skip comments
+            if (text[i] === '/' && text[i + 1] === '/') {
+              while (i < text.length && text[i] !== '\n') i++;
+              continue;
+            }
+            if (text[i] === '/' && text[i + 1] === '*') {
+              i += 2;
+              while (i < text.length - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+              i += 2; continue;
+            }
+
+            // Read key name (identifier or quoted string)
+            let keyName = '';
+            const keyOffset = i;
+            if (text[i] === "'" || text[i] === '"') {
+              const q = text[i]; i++;
+              const ks = i;
+              while (i < text.length && text[i] !== q) {
+                if (text[i] === '\\') i++;
+                i++;
+              }
+              keyName = text.slice(ks, i);
+              i++; // closing quote
+            } else if (/[a-zA-Z_$]/.test(text[i])) {
+              const ks = i;
+              while (i < text.length && /[\w$]/.test(text[i])) i++;
+              keyName = text.slice(ks, i);
+            } else {
+              i++; continue; // unexpected char, skip
+            }
+
+            // Skip to colon
+            while (i < text.length && /\s/.test(text[i])) i++;
+            if (text[i] !== ':') { i++; continue; } // not a key: value pair (spread, etc.)
+            i++; // skip colon
+
+            if (keyName) {
+              dataKeys.push({ name: keyName, offset: keyOffset });
+            }
+
+            // Skip value — track nested braces/parens/brackets/strings
+            let vDepth = 0;
+            while (i < text.length) {
+              const vc = text[i];
+              if (vc === "'" || vc === '"' || vc === '`') {
+                i++;
+                while (i < text.length) {
+                  if (text[i] === '\\') { i += 2; continue; }
+                  if (text[i] === vc) { i++; break; }
+                  i++;
+                }
+                continue;
+              }
+              if (vc === '{' || vc === '[' || vc === '(') { vDepth++; i++; continue; }
+              if (vc === '}' || vc === ']' || vc === ')') {
+                if (vDepth > 0) { vDepth--; i++; continue; }
+                break; // closing brace of data object
+              }
+              if (vc === ',' && vDepth === 0) { i++; break; }
+              i++;
+            }
+          }
+          if (i < text.length && text[i] === '}') { braceDepth--; i++; }
+          continue;
+        }
+        i++; continue;
+      }
+      if (ch === '}') { braceDepth--; i++; continue; }
+
+      if (ch === ',' && parenDepth === 0 && braceDepth === 0) {
+        argIndex++;
+      }
+      i++;
+    }
+
+    if (!entityId || !serviceName) return null;
+    return { entityId, serviceName, dataKeys };
+  }
+
+  private static _offsetToLineCol(lines: string[], offset: number): { line: number; col: number } {
+    let remaining = offset;
+    for (let i = 0; i < lines.length; i++) {
+      if (remaining <= lines[i].length) {
+        return { line: i + 1, col: remaining + 1 };
+      }
+      remaining -= lines[i].length + 1; // +1 for newline
+    }
+    return { line: lines.length, col: 1 };
+  }
+
+  /** Find the closest matching string from candidates using prefix, substring, then Levenshtein. */
+  private static _findClosestMatch(input: string, candidates: string[]): string | null {
+    if (candidates.length === 0) return null;
+    const lower = input.toLowerCase();
+
+    // 1. Exact prefix match (input is a prefix of a candidate)
+    const prefixMatch = candidates.find((c) => c.toLowerCase().startsWith(lower));
+    if (prefixMatch) return prefixMatch;
+
+    // 2. Reverse prefix (candidate is a prefix of input)
+    const revPrefix = candidates.find((c) => lower.startsWith(c.toLowerCase()));
+    if (revPrefix) return revPrefix;
+
+    // 3. Substring containment
+    const subMatch = candidates.find((c) => c.toLowerCase().includes(lower) || lower.includes(c.toLowerCase()));
+    if (subMatch) return subMatch;
+
+    // 4. Levenshtein distance <= 3
+    let bestDist = 4;
+    let bestMatch: string | null = null;
+    for (const c of candidates) {
+      const dist = TseApp._levenshtein(lower, c.toLowerCase());
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestMatch = c;
+      }
+    }
+    return bestMatch;
+  }
+
+  private static _levenshtein(a: string, b: string): number {
+    const m = a.length, n = b.length;
+    if (m === 0) return n;
+    if (n === 0) return m;
+
+    // Single-row DP
+    const row = Array.from({ length: n + 1 }, (_, i) => i);
+    for (let i = 1; i <= m; i++) {
+      let prev = i - 1;
+      row[0] = i;
+      for (let j = 1; j <= n; j++) {
+        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+        const val = Math.min(row[j] + 1, row[j - 1] + 1, prev + cost);
+        prev = row[j];
+        row[j] = val;
+      }
+    }
+    return row[n];
   }
 
   // ---- Minimap entity markers ----
