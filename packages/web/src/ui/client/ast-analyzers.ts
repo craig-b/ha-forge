@@ -1378,7 +1378,7 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
         const outerCall = decl.initializer;
         const outerName = getCalledName(outerCall);
 
-        // device() calls
+        // device() calls — push device + each member entity
         if (outerName === 'device') {
           const entityId = extractEntityId(outerCall);
           if (entityId) {
@@ -1395,10 +1395,11 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
               memberCount: countDeviceMembers(outerCall),
             });
           }
-          // Don't return — still visit children for member entities
+          collectDeviceMembers(outerCall, sf, isExported, results);
+          continue; // members already collected, skip standalone check
         }
 
-        // Entity factory calls (including wrapped)
+        // Standalone entity factory calls (including wrapped)
         const call = findFactoryCall(outerCall);
         if (call) {
           const factoryName = getCalledName(call);
@@ -1455,6 +1456,50 @@ function countDeviceMembers(call: import('typescript').CallExpression): number {
     }
   }
   return 0;
+}
+
+/** Extract member entity definitions from a device()'s `entities:` object. */
+function collectDeviceMembers(
+  deviceCall: import('typescript').CallExpression,
+  sf: import('typescript').SourceFile,
+  isExported: boolean,
+  results: EntityDefinitionLocation[],
+) {
+  if (!ts) return;
+  const arg = deviceCall.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+
+  for (const prop of arg.properties) {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name) ||
+        prop.name.text !== 'entities') continue;
+    if (!ts.isObjectLiteralExpression(prop.initializer)) continue;
+
+    for (const member of prop.initializer.properties) {
+      if (!ts.isPropertyAssignment(member)) continue;
+      // The value should be a factory call (possibly wrapped)
+      if (!ts.isCallExpression(member.initializer)) continue;
+      const call = findFactoryCall(member.initializer);
+      if (!call) continue;
+      const factoryName = getCalledName(call);
+      if (!factoryName) continue;
+      const domain = FACTORY_DOMAINS[factoryName];
+      if (!domain) continue;
+      const entityId = extractEntityId(call);
+      if (!entityId) continue;
+
+      const startPos = sf.getLineAndCharacterOfPosition(member.getStart(sf));
+      const endPos = sf.getLineAndCharacterOfPosition(member.getEnd());
+      results.push({
+        entityId,
+        fullEntityId: `${domain}.${entityId}`,
+        factoryName,
+        domain,
+        isExported,
+        line: startPos.line + 1,
+        endLine: endPos.line + 1,
+      });
+    }
+  }
 }
 
 function markerAt(
