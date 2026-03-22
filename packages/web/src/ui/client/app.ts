@@ -452,7 +452,8 @@ export class TseApp extends LitElement {
         if (!isAstReady()) return { lenses: [], dispose() {} };
 
         const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
-        const stateMap = new Map(this._entities.map(e => [e.id, e]));
+        // Build lookup by full entity ID (type.id) since _entities stores bare id + type separately
+        const stateMap = new Map(this._entities.map(e => [`${e.type}.${e.id}`, e]));
 
         const lenses = defs.map(def => {
           let title: string;
