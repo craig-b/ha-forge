@@ -4,31 +4,33 @@ Define Home Assistant entities in TypeScript. Type-safe, reactive, deployed as a
 
 ```ts
 export default device({
-  id: 'weather_station',
-  name: 'Weather Station',
+  id: 'greenhouse',
+  name: 'Greenhouse',
   entities: {
     temp:     sensor({ id: 'temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
     humidity: sensor({ id: 'humidity', name: 'Humidity', config: { device_class: 'humidity', unit_of_measurement: '%' } }),
-    heater:   defineSwitch({ id: 'heater', name: 'Heater' }),
-    comfort:  computed({
-      id: 'comfort', name: 'Comfort',
+    fan:      defineSwitch({ id: 'fan', name: 'Vent Fan' }),
+    climate:  computed({
+      id: 'climate', name: 'Climate',
       watch: ['sensor.temp', 'sensor.humidity'],
       compute: (s) => {
         const t = Number(s['sensor.temp']?.state), h = Number(s['sensor.humidity']?.state);
-        return t > 26 && h > 60 ? 'Muggy' : t < 15 ? 'Cold' : 'Comfortable';
+        return t > 30 || h > 80 ? 'Ventilate' : t < 10 ? 'Too cold' : 'Good';
       },
     }),
   },
   init() {
     this.poll(async () => {
-      const data = await fetch('https://api.weather.example/current').then(r => r.json());
+      const data = await fetch('http://greenhouse.local/api').then(r => r.json());
       this.entities.temp.update(data.temperature);
       this.entities.humidity.update(data.humidity);
-    }, { interval: 600_000 });
+    }, { interval: 30_000 });
 
-    this.events.on('binary_sensor.front_door', () => {
-      this.ha.callService('light.porch', 'turn_on');
-    }).transition('off', 'on');
+    // Auto-toggle the fan when climate status changes
+    this.events.on('sensor.climate', (e) => {
+      const fan = e.new_state === 'Ventilate' ? 'on' : 'off';
+      this.entities.fan.update(fan);
+    });
   },
 });
 ```
