@@ -278,8 +278,8 @@ export interface WatchdogRule {
  * ```
  */
 export type ScheduleOptions =
-  | { interval: number; cron?: never }
-  | { cron: string; interval?: never };
+  | { interval: number; cron?: never; fireImmediately?: boolean }
+  | { cron: string; interval?: never; fireImmediately?: boolean };
 
 /**
  * An invariant constraint that is checked periodically.
@@ -672,10 +672,10 @@ export interface EntityContext<TState = unknown, TAttrs extends Record<string, u
    * Uses chained timeouts to prevent overlapping executions.
    * Automatically cleaned up when the entity is destroyed.
    * @param fn - Function to call each cycle. Return a value to auto-publish state.
-   * @param opts - Schedule options (interval or cron) plus optional initial delay.
+   * @param opts - Schedule options (interval or cron). Set `fireImmediately: true` to run once before starting the schedule.
    */
-  poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void;
-  poll(fn: () => TState | Promise<TState>, opts: { cron: string; initialDelay?: number }): void;
+  poll(fn: () => TState | Promise<TState>, opts: { interval: number; fireImmediately?: boolean }): void;
+  poll(fn: () => TState | Promise<TState>, opts: { cron: string; fireImmediately?: boolean }): void;
   /** Scoped logger for this entity. Messages include the entity ID and source file automatically. */
   log: EntityLogger;
   /**
@@ -2158,10 +2158,10 @@ export interface DeviceContext<TEntities extends Record<string, DeviceMemberDefi
    * Unlike entity poll(), this does NOT auto-update a state — call
    * `this.entities.xxx.update()` inside the callback.
    * @param fn - Function to call each cycle.
-   * @param opts - Schedule options (interval or cron) plus optional initial delay.
+   * @param opts - Schedule options (interval or cron). Set `fireImmediately: true` to run once before starting the schedule.
    */
-  poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void;
-  poll(fn: () => void | Promise<void>, opts: { cron: string; initialDelay?: number }): void;
+  poll(fn: () => void | Promise<void>, opts: { interval: number; fireImmediately?: boolean }): void;
+  poll(fn: () => void | Promise<void>, opts: { cron: string; fireImmediately?: boolean }): void;
   /** Scoped logger for this device. Messages include the device ID and source file automatically. */
   log: EntityLogger;
   /**

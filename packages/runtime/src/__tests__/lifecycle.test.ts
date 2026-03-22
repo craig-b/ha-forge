@@ -220,7 +220,7 @@ describe('EntityLifecycleManager', () => {
   });
 
   // 9. poll() registers a repeating interval that calls publishState
-  it('sets up a repeating interval via context.poll()', async () => {
+  it('sets up a repeating interval via context.poll() (waits first)', async () => {
     let callCount = 0;
     const entity = makeSensorEntity('poller', {
       init() {
@@ -234,18 +234,41 @@ describe('EntityLifecycleManager', () => {
 
     await manager.deploy([entity]);
 
-    // poll() fires immediately on deploy, then repeats on interval
-    // Flush the immediate call
+    // poll() does NOT fire immediately — waits for first interval
     await vi.advanceTimersByTimeAsync(0);
+    expect(callCount).toBe(0);
+
+    // Advance 1s — first tick
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(callCount).toBe(1);
+
+    // Advance 2 more seconds — 2 more ticks
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(callCount).toBe(3);
+    expect(transport.publishState).toHaveBeenCalledTimes(3);
+    expect(transport.publishState).toHaveBeenLastCalledWith('poller', 'tick-3', undefined);
+  });
+
+  it('fires immediately with fireImmediately: true on interval poll', async () => {
+    let callCount = 0;
+    const entity = makeSensorEntity('poller-immediate', {
+      init() {
+        this.poll(() => {
+          callCount += 1;
+          return `tick-${callCount}`;
+        }, { interval: 1000, fireImmediately: true });
+        return undefined as unknown as string;
+      },
+    });
+
+    await manager.deploy([entity]);
+    await vi.advanceTimersByTimeAsync(0); // flush the immediate call
 
     expect(callCount).toBe(1);
 
-    // Advance timers by 3 seconds to trigger 3 more interval calls
-    await vi.advanceTimersByTimeAsync(3000);
-
-    expect(callCount).toBe(4);
-    expect(transport.publishState).toHaveBeenCalledTimes(4);
-    expect(transport.publishState).toHaveBeenLastCalledWith('poller', 'tick-4', undefined);
+    // Advance 2s — 2 more ticks from interval
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(callCount).toBe(3);
   });
 
   // 9b. poll() with cron expression schedules at cron-defined times
@@ -481,7 +504,7 @@ describe('EntityLifecycleManager', () => {
       expect(destroyFn).toHaveBeenCalledTimes(1);
     });
 
-    it('provides poll() in device context that fires immediately', async () => {
+    it('provides poll() in device context that waits for first interval', async () => {
       const { entities, devices, initFn } = makeDeviceWithEntities();
       let pollCount = 0;
 
@@ -490,6 +513,31 @@ describe('EntityLifecycleManager', () => {
           pollCount++;
           this.entities.temperature.update(`tick-${pollCount}`);
         }, { interval: 1000 });
+      });
+
+      await manager.deploy(entities, devices);
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Does NOT fire immediately
+      expect(pollCount).toBe(0);
+
+      // First tick after 1s
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(pollCount).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(pollCount).toBe(3);
+    });
+
+    it('provides poll() in device context with fireImmediately', async () => {
+      const { entities, devices, initFn } = makeDeviceWithEntities();
+      let pollCount = 0;
+
+      initFn.mockImplementation(function(this: { poll: (fn: () => void, opts: { interval: number; fireImmediately: boolean }) => void; entities: Record<string, { update: (v: unknown) => void }> }) {
+        this.poll(() => {
+          pollCount++;
+          this.entities.temperature.update(`tick-${pollCount}`);
+        }, { interval: 1000, fireImmediately: true });
       });
 
       await manager.deploy(entities, devices);
@@ -521,6 +569,28 @@ describe('EntityLifecycleManager', () => {
       await vi.advanceTimersByTimeAsync(60_000);
 
       expect(pollCount).toBe(1);
+    });
+
+    it('provides poll() with cron and fireImmediately in device context', async () => {
+      const { entities, devices, initFn } = makeDeviceWithEntities();
+      let pollCount = 0;
+
+      initFn.mockImplementation(function(this: { poll: (fn: () => void, opts: { cron: string; fireImmediately: boolean }) => void; entities: Record<string, { update: (v: unknown) => void }> }) {
+        this.poll(() => {
+          pollCount++;
+          this.entities.temperature.update(`cron-${pollCount}`);
+        }, { cron: '* * * * *', fireImmediately: true });
+      });
+
+      await manager.deploy(entities, devices);
+      await vi.advanceTimersByTimeAsync(0); // flush immediate
+
+      // Fires immediately
+      expect(pollCount).toBe(1);
+
+      // Then fires on cron schedule
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(pollCount).toBe(2);
     });
 
     it('registers command handlers for bidirectional entities in devices', async () => {

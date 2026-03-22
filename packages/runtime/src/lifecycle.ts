@@ -813,7 +813,7 @@ export class EntityLifecycleManager {
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
-      poll(fn: () => void | Promise<void>, opts: ScheduleOptions & { initialDelay?: number }) {
+      poll(fn: () => void | Promise<void>, opts: ScheduleOptions) {
         const run = async () => {
           try {
             await fn();
@@ -826,33 +826,20 @@ export class EntityLifecycleManager {
         const ref: PollRef = { timer: null };
         handles.pollRefs.push(ref);
 
+        if (opts.fireImmediately) {
+          run();
+        }
+
         if ('cron' in opts && opts.cron) {
-          const cronExpr = opts.cron;
-          const startCron = () => scheduleCron(cronExpr, run, ref);
-          if (opts.initialDelay) {
-            const t = globalThis.setTimeout(startCron, opts.initialDelay);
-            handles.timeouts.push(t);
-          } else {
-            startCron();
-          }
+          scheduleCron(opts.cron, run, ref);
         } else {
-          // Interval-based: fire immediately, then chain timeouts
           const scheduleNext = () => {
             ref.timer = globalThis.setTimeout(async () => {
               await run();
               scheduleNext();
             }, opts.interval!);
           };
-          const startPolling = async () => {
-            await run();
-            scheduleNext();
-          };
-          if (opts.initialDelay) {
-            const t = globalThis.setTimeout(startPolling, opts.initialDelay);
-            handles.timeouts.push(t);
-          } else {
-            startPolling();
-          }
+          scheduleNext();
         }
       },
 
@@ -1645,7 +1632,7 @@ export class EntityLifecycleManager {
       ha: haApi ? haApi.asStateless() : stubStatelessApi,
       events: haApi ? haApi.createScopedEvents(handles) : stubEvents,
 
-      poll(fn: () => unknown | Promise<unknown>, opts: ScheduleOptions & { initialDelay?: number }) {
+      poll(fn: () => unknown | Promise<unknown>, opts: ScheduleOptions) {
         const run = async () => {
           try {
             const value = await fn();
@@ -1661,15 +1648,12 @@ export class EntityLifecycleManager {
         const ref: PollRef = { timer: null };
         handles.pollRefs.push(ref);
 
+        if (opts.fireImmediately) {
+          run();
+        }
+
         if ('cron' in opts && opts.cron) {
-          const cronExpr = opts.cron;
-          const startCron = () => scheduleCron(cronExpr, run, ref);
-          if (opts.initialDelay) {
-            const t = globalThis.setTimeout(startCron, opts.initialDelay);
-            handles.timeouts.push(t);
-          } else {
-            startCron();
-          }
+          scheduleCron(opts.cron, run, ref);
         } else {
           const scheduleNext = () => {
             ref.timer = globalThis.setTimeout(async () => {
@@ -1677,16 +1661,7 @@ export class EntityLifecycleManager {
               scheduleNext();
             }, opts.interval!);
           };
-          const startPolling = async () => {
-            await run();
-            scheduleNext();
-          };
-          if (opts.initialDelay) {
-            const t = globalThis.setTimeout(startPolling, opts.initialDelay);
-            handles.timeouts.push(t);
-          } else {
-            startPolling();
-          }
+          scheduleNext();
         }
       },
 

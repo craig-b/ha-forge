@@ -80,10 +80,10 @@ Start a polling loop that calls `fn` on a schedule. If `fn` returns a value, it 
 
 ```ts
 // Interval-based
-poll(fn: () => TState | Promise<TState>, opts: { interval: number; initialDelay?: number }): void
+poll(fn: () => TState | Promise<TState>, opts: { interval: number; fireImmediately?: boolean }): void
 
 // Cron-based
-poll(fn: () => TState | Promise<TState>, opts: { cron: string; initialDelay?: number }): void
+poll(fn: () => TState | Promise<TState>, opts: { cron: string; fireImmediately?: boolean }): void
 ```
 
 **Parameters:**
@@ -93,12 +93,12 @@ poll(fn: () => TState | Promise<TState>, opts: { cron: string; initialDelay?: nu
 | `fn` | `() => TState \| Promise<TState>` | Yes | Function to call each cycle. If it returns a value (not `undefined`), the return value is published as the new state via `update()`. If it returns `void`, you must call `this.update()` manually. |
 | `opts.interval` | `number` | One of `interval` or `cron` required | Fixed interval in milliseconds between executions. |
 | `opts.cron` | `string` | One of `interval` or `cron` required | 5-field cron expression (minute hour day-of-month month day-of-week). |
-| `opts.initialDelay` | `number` | No | Delay in milliseconds before the first execution. Without this, the first poll runs immediately (interval) or at the next cron tick. |
+| `opts.fireImmediately` | `boolean` | No | When `true`, runs `fn` once immediately before starting the schedule. Default: `false`. |
 
 **Behavior:**
 
-- **Interval mode:** Fires immediately (unless `initialDelay` is set), then chains `setTimeout` calls. Each execution completes before the next is scheduled — no overlap.
-- **Cron mode:** Parses the cron expression, calculates delay to the next matching time, and schedules via `setTimeout`. After each execution, re-calculates the next tick.
+- **Interval mode:** Waits for the first interval before firing, then chains `setTimeout` calls. Each execution completes before the next is scheduled — no overlap. Set `fireImmediately: true` to run once immediately before starting the interval.
+- **Cron mode:** Parses the cron expression, calculates delay to the next matching time, and schedules via `setTimeout`. After each execution, re-calculates the next tick. Set `fireImmediately: true` to run once immediately before the first scheduled tick.
 - **Error handling:** Errors in `fn` are caught, logged via `this.log.error()`, and the poll continues on the next cycle. After consecutive failures, the entity is marked unavailable via the MQTT availability topic. When a poll succeeds again, the failure counter is cleared.
 - **Cleanup:** All poll timers are tracked and automatically disposed on entity teardown.
 
@@ -521,6 +521,6 @@ Inside `device()` init/destroy, `this.entities` provides typed handles for each 
 Unlike `EntityContext.poll()`, the device version does NOT auto-update state. It always takes a `void`-returning function. Use `this.entities.xxx.update()` inside the callback.
 
 ```ts
-poll(fn: () => void | Promise<void>, opts: { interval: number; initialDelay?: number }): void
-poll(fn: () => void | Promise<void>, opts: { cron: string; initialDelay?: number }): void
+poll(fn: () => void | Promise<void>, opts: { interval: number; fireImmediately?: boolean }): void
+poll(fn: () => void | Promise<void>, opts: { cron: string; fireImmediately?: boolean }): void
 ```
