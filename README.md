@@ -9,11 +9,11 @@ device({
   entities: {
     temp:     sensor({ id: 'temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
     humidity: sensor({ id: 'humidity', name: 'Humidity', config: { device_class: 'humidity', unit_of_measurement: '%' } }),
-    heater:   switch({ id: 'heater', name: 'Heater' }),
-    clothing: computed({
-      id: 'clothing', name: 'Clothing',
-      watch: ['sensor.temp'],
-      compute: (s) => Number(s['sensor.temp']?.state) < 15 ? 'Jacket' : 'T-shirt',
+    heater:   defineSwitch({ id: 'heater', name: 'Heater' }),
+    summary:  computed({
+      id: 'summary', name: 'Summary',
+      watch: ['sensor.temp', 'sensor.humidity'],
+      compute: (s) => Number(s['sensor.temp']?.state) < 15 ? 'Cold' : 'Comfortable',
     }),
   },
   init() {
