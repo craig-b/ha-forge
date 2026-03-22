@@ -64,6 +64,7 @@ export function analyzeWithAst(sourceText: string, fileName = 'file.ts'): AstAna
       checkFactoryCall(node, sf, diagnostics, entities);
       checkAwaitOnFactory(node, sf, diagnostics);
       checkCronExpression(node, sf, diagnostics);
+      checkSensorConfig(node, sf, diagnostics);
     }
 
     if (ts!.isPropertyAccessExpression(node) &&
@@ -263,6 +264,71 @@ function checkComputedCall(
         prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) &&
         prop.initializer.text === '') {
       diagnostics.push(markerAt(prop.initializer, sf, `computed() name must not be empty`, 'warning'));
+    }
+  }
+}
+
+// ---- Sensor config validation ----
+
+/** Default units for common sensor device classes. */
+const DEVICE_CLASS_UNITS: Record<string, string> = {
+  temperature: '°C',
+  humidity: '%',
+  pressure: 'hPa',
+  power: 'W',
+  energy: 'kWh',
+  voltage: 'V',
+  current: 'A',
+  frequency: 'Hz',
+  illuminance: 'lx',
+  speed: 'm/s',
+  distance: 'm',
+  weight: 'kg',
+  volume: 'L',
+  gas: 'm³',
+  carbon_dioxide: 'ppm',
+  carbon_monoxide: 'ppm',
+  battery: '%',
+  signal_strength: 'dBm',
+  moisture: '%',
+  pm25: 'µg/m³',
+  pm10: 'µg/m³',
+  duration: 's',
+};
+
+function checkSensorConfig(
+  node: import('typescript').CallExpression,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts) return;
+  const name = getCalledName(node);
+  if (name !== 'sensor') return;
+
+  const arg = node.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+
+  // Find the config property
+  for (const prop of arg.properties) {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+    if (prop.name.text !== 'config' || !ts.isObjectLiteralExpression(prop.initializer)) continue;
+
+    const configProps = new Map<string, import('typescript').Node>();
+    for (const cp of prop.initializer.properties) {
+      if (ts.isPropertyAssignment(cp) && ts.isIdentifier(cp.name)) {
+        configProps.set(cp.name.text, cp.initializer);
+      }
+    }
+
+    const deviceClassNode = configProps.get('device_class');
+    if (deviceClassNode && ts.isStringLiteral(deviceClassNode)) {
+      const deviceClass = deviceClassNode.text;
+      if (!configProps.has('unit_of_measurement') && deviceClass in DEVICE_CLASS_UNITS) {
+        diagnostics.push(markerAt(deviceClassNode, sf,
+          `sensor with device_class '${deviceClass}' should have unit_of_measurement (typically '${DEVICE_CLASS_UNITS[deviceClass]}')`,
+          'warning',
+        ));
+      }
     }
   }
 }

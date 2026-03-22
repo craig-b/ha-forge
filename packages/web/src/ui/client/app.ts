@@ -463,6 +463,20 @@ export class TseApp extends LitElement {
             ));
           }
 
+          // Missing unit_of_measurement → add it after device_class
+          const unitMatch = marker.message.match(/should have unit_of_measurement \(typically '(.+?)'\)$/);
+          if (unitMatch) {
+            const unit = unitMatch[1];
+            // Insert after the device_class line (marker is on the device_class value)
+            const line = model.getValue().split('\n')[marker.startLineNumber - 1];
+            const indent = line.match(/^(\s*)/)?.[1] ?? '';
+            actions.push(this._quickFix(model, marker,
+              `Add unit_of_measurement: '${unit}'`,
+              new monaco.Range(marker.startLineNumber, line.length + 1, marker.startLineNumber, line.length + 1),
+              `\n${indent}unit_of_measurement: '${unit}',`,
+            ));
+          }
+
           // Device refactor: wrap standalone entities into device()
           if (marker.message.includes('[ha-forge:device-refactor]')) {
             const source = model.getValue();
