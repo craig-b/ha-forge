@@ -10,10 +10,13 @@ export default device({
     temp:     sensor({ id: 'temp', name: 'Temperature', config: { device_class: 'temperature', unit_of_measurement: '°C' } }),
     humidity: sensor({ id: 'humidity', name: 'Humidity', config: { device_class: 'humidity', unit_of_measurement: '%' } }),
     heater:   defineSwitch({ id: 'heater', name: 'Heater' }),
-    summary:  computed({
-      id: 'summary', name: 'Summary',
+    comfort:  computed({
+      id: 'comfort', name: 'Comfort',
       watch: ['sensor.temp', 'sensor.humidity'],
-      compute: (s) => Number(s['sensor.temp']?.state) < 15 ? 'Cold' : 'Comfortable',
+      compute: (s) => {
+        const t = Number(s['sensor.temp']?.state), h = Number(s['sensor.humidity']?.state);
+        return t > 26 && h > 60 ? 'Muggy' : t < 15 ? 'Cold' : 'Comfortable';
+      },
     }),
   },
   init() {
