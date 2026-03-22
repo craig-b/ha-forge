@@ -336,11 +336,10 @@ describe('tse-bottom-panel', () => {
   it('renders panel tabs', async () => {
     const el = await renderElement('tse-bottom-panel');
     const tabs = el.querySelectorAll('.panel-tab');
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(3);
     expect(tabs[0].textContent).toContain('Build Output');
-    expect(tabs[1].textContent).toContain('Entities');
-    expect(tabs[2].textContent).toContain('Exports');
-    expect(tabs[3].textContent).toContain('Logs');
+    expect(tabs[1].textContent).toContain('Exports');
+    expect(tabs[2].textContent).toContain('Logs');
   });
 
   it('switches active panel on tab click', async () => {
@@ -356,7 +355,7 @@ describe('tse-bottom-panel', () => {
     const handler = vi.fn();
     el.addEventListener('tse-panel-change', handler);
     const tabs = el.querySelectorAll('.panel-tab');
-    (tabs[3] as HTMLButtonElement).click();
+    (tabs[2] as HTMLButtonElement).click();
     expect(handler).toHaveBeenCalledOnce();
     expect(handler.mock.calls[0][0].detail.panel).toBe('logs');
   });
