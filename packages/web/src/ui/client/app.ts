@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -1135,6 +1135,22 @@ export class TseApp extends LitElement {
                 'Wrap entities in device()',
                 new monaco.Range(1, 1, lineCount, source.split('\n')[lineCount - 1].length + 1),
                 refactored,
+              ));
+            }
+          }
+
+          // Convert sensor to computed()
+          if (marker.message.includes('[ha-forge:suggest-computed]')) {
+            const source = model.getValue();
+            const filePath = model.uri.path || 'file.ts';
+            const edit = generateSensorToComputed(source, filePath, marker.startLineNumber);
+            if (edit) {
+              const lines = source.split('\n');
+              const endCol = lines[edit.endLine - 1].length + 1;
+              actions.push(this._quickFix(model, marker,
+                'Convert to computed()',
+                new monaco.Range(edit.startLine, 1, edit.endLine, endCol),
+                edit.text,
               ));
             }
           }
