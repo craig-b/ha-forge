@@ -27,6 +27,7 @@ import { isTaskDefinition, isModeDefinition, isCronDefinition, isAutomationDefin
 import type { RegistrableEntity, Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 import { CronExpressionParser } from 'cron-parser';
+import cronstrue from 'cronstrue';
 
 export interface LifecycleLogger {
   debug(message: string, data?: Record<string, unknown>): void;
@@ -76,6 +77,10 @@ interface CronInstance {
   /** Current state: 'ON' or 'OFF'. */
   currentState: string;
   initialized: boolean;
+  /** ISO timestamp of next scheduled fire. */
+  nextFire?: string;
+  /** Human-readable cron description. */
+  cronDescription?: string;
 }
 
 interface ModeInstance {
@@ -826,7 +831,7 @@ export class EntityLifecycleManager {
         const ref: PollRef = { timer: null };
         handles.pollRefs.push(ref);
 
-        if (opts.fireImmediately) {
+        if ((opts as { fireImmediately?: boolean }).fireImmediately) {
           run();
         }
 
@@ -1250,6 +1255,14 @@ export class EntityLifecycleManager {
     };
     await this.transport.register(syntheticEntity);
 
+    // Compute static attributes
+    let cronDescription: string;
+    try {
+      cronDescription = cronstrue.toString(def.schedule);
+    } catch {
+      cronDescription = def.schedule;
+    }
+
     // Check if "now" falls within a cron window
     let firstRun = true;
     const evaluate = () => {
@@ -1268,7 +1281,20 @@ export class EntityLifecycleManager {
       if (firstRun || newState !== instance.currentState) {
         firstRun = false;
         instance.currentState = newState;
-        this.transport.publishState(def.id, newState).catch(() => {});
+
+        // Calculate next fire time
+        const nextExpr = CronExpressionParser.parse(def.schedule, { currentDate: now });
+        const nextFire = nextExpr.next().toDate();
+        instance.nextFire = nextFire.toISOString();
+        instance.cronDescription = cronDescription;
+
+        const attributes = {
+          next_fire: instance.nextFire,
+          cron_expression: def.schedule,
+          cron_description: cronDescription,
+        };
+
+        this.transport.publishState(def.id, newState, attributes).catch(() => {});
         this.onStateChange?.(def.id, newState);
       }
     };
@@ -1647,8 +1673,7 @@ export class EntityLifecycleManager {
         };
         const ref: PollRef = { timer: null };
         handles.pollRefs.push(ref);
-
-        if (opts.fireImmediately) {
+        if ((opts as { fireImmediately?: boolean }).fireImmediately) {
           run();
         }
 
@@ -1844,7 +1869,7 @@ export class EntityLifecycleManager {
     ];
   }
 
-  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string; unit_of_measurement?: string } | undefined {
+  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string; unit_of_measurement?: string; next_fire?: string; cron_description?: string } | undefined {
     const instance = this.instances.get(entityId);
     if (instance) {
       const def = instance.entity.definition;
@@ -1891,6 +1916,8 @@ export class EntityLifecycleManager {
         type: 'cron',
         name: cronInstance.cron.definition.name,
         sourceFile: cronInstance.cron.sourceFile,
+        next_fire: cronInstance.nextFire,
+        cron_description: cronInstance.cronDescription,
       };
     }
 

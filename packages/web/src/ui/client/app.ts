@@ -363,7 +363,9 @@ export class TseApp extends LitElement {
       paths: { cronstrue: 'https://cdn.jsdelivr.net/npm/cronstrue@2.52.0/dist/cronstrue.min' },
     });
     require(['cronstrue'], (cronstrue: { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string }) => {
+      this._cronstrue = cronstrue;
       this._setupCronHoverProvider(cronstrue);
+      this._refreshCodeLenses();
       console.debug('[ha-forge] cronstrue loaded');
     }, (err: unknown) => console.warn('[ha-forge] Failed to load cronstrue', err));
   }
@@ -457,6 +459,7 @@ export class TseApp extends LitElement {
   // ---- CodeLens — live entity state ----
 
   private _codeLensChangeListeners: Array<() => void> = [];
+  private _cronstrue: { toString(expr: string, opts?: { throwExceptionOnParseError?: boolean }): string } | null = null;
 
   private _setupCodeLensProvider() {
     monaco.languages.registerCodeLensProvider('typescript', {
@@ -471,7 +474,8 @@ export class TseApp extends LitElement {
         // Build lookup by full entity ID (type.id) since _entities stores bare id + type separately
         const stateMap = new Map(this._entities.map(e => [`${e.type}.${e.id}`, e]));
 
-        const lenses = defs.map(def => {
+        const lenses: Array<{ range: unknown; command: { id: string; title: string } }> = [];
+        for (const def of defs) {
           let title: string;
           if (def.domain === 'device') {
             // Device: show member count and how many are deployed
@@ -484,6 +488,12 @@ export class TseApp extends LitElement {
             const entity = stateMap.get(def.fullEntityId);
             if (!entity) {
               title = def.isExported ? `${def.fullEntityId} \u2014 not deployed` : `${def.fullEntityId} \u2014 not exported`;
+            } else if (entity.type === 'cron' && entity.next_fire) {
+              const status = entity.status === 'healthy' ? '\u2713' : '\u2717';
+              const label = entity.state === 'ON' ? 'active' : 'scheduled';
+              const nextDate = new Date(entity.next_fire);
+              const nextStr = nextDate.toLocaleString();
+              title = `${status} ${def.fullEntityId}: ${label} \u2014 next ${nextStr}`;
             } else {
               const stateStr = entity.state != null ? String(entity.state) : '\u2014';
               const status = entity.status === 'healthy' ? '\u2713' : '\u2717';
@@ -491,11 +501,32 @@ export class TseApp extends LitElement {
               title = `${status} ${def.fullEntityId}: ${stateStr}${unit}`;
             }
           }
-          return {
+
+          // Add cronstrue description lens above cron entities
+          if (def.factoryName === 'cron' && this._cronstrue) {
+            const entity = stateMap.get(def.fullEntityId);
+            let description = entity?.cron_description;
+            // Fall back to local cronstrue if not deployed yet
+            if (!description) {
+              const cronStrings = findCronStrings(model.getValue(), model.uri.path || 'file.ts');
+              const cronStr = cronStrings.find(c => c.startLine >= def.line && c.startLine <= (def.endLine ?? def.line + 20));
+              if (cronStr) {
+                try { description = this._cronstrue!.toString(cronStr.value, { throwExceptionOnParseError: true }); } catch { /* ignore */ }
+              }
+            }
+            if (description) {
+              lenses.push({
+                range: new monaco.Range(def.line, 1, def.line, 1),
+                command: { id: '', title: `\u23F0 ${description}` },
+              });
+            }
+          }
+
+          lenses.push({
             range: new monaco.Range(def.line, 1, def.line, 1),
             command: { id: '', title },
-          };
-        });
+          });
+        }
 
         return { lenses, dispose() {} };
       },

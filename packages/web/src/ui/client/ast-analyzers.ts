@@ -617,6 +617,7 @@ export const FACTORY_DOMAINS: Record<string, string> = {
   lawnMower: 'lawn_mower',
   alarmControlPanel: 'alarm_control_panel',
   computed: 'sensor',
+  cron: 'binary_sensor',
   notify: 'notify',
   update: 'update',
   image: 'image',

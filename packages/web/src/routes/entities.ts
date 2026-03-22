@@ -8,6 +8,8 @@ export interface EntityInfo {
   sourceFile: string;
   status: 'healthy' | 'error' | 'unavailable';
   unit_of_measurement?: string;
+  next_fire?: string;
+  cron_description?: string;
 }
 
 export type GetEntitiesFn = () => EntityInfo[];

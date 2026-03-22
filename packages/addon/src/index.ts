@@ -255,6 +255,8 @@ async function main(): Promise<void> {
             sourceFile: info?.sourceFile ?? '',
             status: 'healthy' as const,
             unit_of_measurement: info?.unit_of_measurement,
+            next_fire: info?.next_fire,
+            cron_description: info?.cron_description,
           };
         });
       },

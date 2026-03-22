@@ -321,7 +321,7 @@ export class BuildManager {
     return this.lifecycle.getEntityState(entityId);
   }
 
-  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string; unit_of_measurement?: string } | undefined {
+  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string; unit_of_measurement?: string; next_fire?: string; cron_description?: string } | undefined {
     return this.lifecycle.getEntityInfo(entityId);
   }
 }
