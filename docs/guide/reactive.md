@@ -40,20 +40,19 @@ Entity IDs and domains autocomplete from your HA installation's type registry.
 
 ## EventStream Operators
 
-When you omit the callback from `on()`, you get a chainable `EventStream`. Operators transform or filter the stream before the final `.do()` handler.
+`on()` returns a chainable `EventStream`. The callback passed to `on()` is the terminal action -- operators added to the stream transform or filter events *before* the callback fires.
 
 ### .filter(predicate)
 
 Passes events only when the predicate returns true.
 
 ```typescript
-this.events.on('sensor.outdoor_temp')
-  .filter((e) => Number(e.new_state) > 30)
-  .do((e) => {
+this.events.on('sensor.outdoor_temp', (e) => {
     this.ha.callService('notify.mobile', 'send_message', {
       message: `Temperature is ${e.new_state}°C`,
     });
-  });
+  })
+  .filter((e) => Number(e.new_state) > 30);
 ```
 
 ### .map(transform)
@@ -61,12 +60,11 @@ this.events.on('sensor.outdoor_temp')
 Transforms the event before passing it downstream.
 
 ```typescript
-this.events.on('sensor.power_meter')
-  .map((e) => ({ ...e, watts: Number(e.new_state) }))
-  .filter((e) => e.watts > 1000)
-  .do((e) => {
-    this.log.warn('High power draw', { watts: e.watts });
-  });
+this.events.on('sensor.power_meter', (e) => {
+    this.log.warn('High power draw', { watts: Number(e.new_state) });
+  })
+  .map((e) => ({ ...e, new_state: String(Math.round(Number(e.new_state))) }))
+  .filter((e) => Number(e.new_state) > 1000);
 ```
 
 ### .debounce(ms)
@@ -74,12 +72,11 @@ this.events.on('sensor.power_meter')
 Waits for `ms` milliseconds of silence before passing the last event. Resets the timer on each new event.
 
 ```typescript
-this.events.on('sensor.temperature')
-  .debounce(5000)
-  .do((e) => {
+this.events.on('sensor.temperature', (e) => {
     // Only fires after temperature stops changing for 5 seconds
     this.update(Number(e.new_state));
-  });
+  })
+  .debounce(5000);
 ```
 
 ### .throttle(ms)
@@ -87,12 +84,11 @@ this.events.on('sensor.temperature')
 Passes at most one event per `ms` milliseconds. The first event passes immediately; subsequent events within the window are dropped.
 
 ```typescript
-this.events.on('sensor.energy_meter')
-  .throttle(60_000)
-  .do((e) => {
+this.events.on('sensor.energy_meter', (e) => {
     // At most one update per minute
     recordEnergyReading(Number(e.new_state));
-  });
+  })
+  .throttle(60_000);
 ```
 
 ### .distinctUntilChanged()
@@ -100,39 +96,36 @@ this.events.on('sensor.energy_meter')
 Drops events where the new state equals the previous state. Useful for entities that fire attribute-only changes.
 
 ```typescript
-this.events.on('input_select.house_mode')
-  .distinctUntilChanged()
-  .do((e) => {
+this.events.on('input_select.house_mode', (e) => {
     this.log.info('Mode changed', { from: e.old_state, to: e.new_state });
-  });
+  })
+  .distinctUntilChanged();
 ```
 
 ### .transition(from, to)
 
-Passes events only when the state transitions from one specific value to another. A shorthand for filtering on `old_state` and `new_state`.
+Passes events only when the state transitions from one specific value to another. A shorthand for filtering on `old_state` and `new_state`. Accepts `'*'` as a wildcard for either side.
 
 ```typescript
-this.events.on('binary_sensor.front_door')
-  .transition('off', 'on')
-  .do(() => {
+this.events.on('binary_sensor.front_door', () => {
     this.ha.callService('light.hallway', 'turn_on');
-  });
+  })
+  .transition('off', 'on');
 ```
 
-### .do(callback)
+### .unsubscribe()
 
-Terminal operator -- attaches the handler. Required to activate the stream.
+Tears down the stream and all internal timers. Usually not needed -- streams are automatically cleaned up when the entity is torn down.
 
 ### Chaining
 
-Operators chain naturally. Order matters -- each operator processes the output of the previous one.
+Operators chain naturally. Order matters -- each operator processes the output of the previous one, and the callback passed to `on()` fires last.
 
 ```typescript
-this.events.on('sensor.power_meter')
+this.events.on('sensor.power_meter', (e) => this.update(Number(e.new_state)))
   .filter((e) => Number(e.new_state) > 0)       // drop zero readings
   .throttle(10_000)                               // at most every 10s
-  .distinctUntilChanged()                          // skip duplicates
-  .do((e) => this.update(Number(e.new_state)));
+  .distinctUntilChanged();                         // skip duplicates
 ```
 
 ## Declarative Reactions
@@ -249,18 +242,21 @@ Periodically checks a condition and fires a handler when it is violated. Unlike 
 
 ```typescript
 this.events.invariant({
-  check: async () => {
+  name: 'smoke_check',
+  condition: async () => {
     const state = await this.ha.getState('binary_sensor.smoke_detector');
-    return state.state === 'off';  // true = condition holds
+    return state?.state === 'off';  // true = condition holds
   },
-  every: 60_000,  // check every minute
-  else: () => {
+  check: { interval: 60_000 },  // check every minute
+  violated: () => {
     this.ha.callService('notify.emergency', 'send_message', {
       message: 'Smoke detected!',
     });
   },
 });
 ```
+
+The `check` field accepts a `ScheduleOptions` object: either `{ interval: number }` for a fixed polling interval, or `{ cron: string }` for a cron expression. Both support an optional `fireImmediately` flag to run the first check at startup.
 
 ## sequence()
 
@@ -282,6 +278,23 @@ this.events.sequence({
 
 The sequence resets if a step times out or the events arrive out of order.
 
+### Negated Steps
+
+A step with `negate: true` matches when the entity does *not* reach the target state within the time window. This requires `within` to be set. Useful for "X happened, but Y never followed" patterns:
+
+```typescript
+this.events.sequence({
+  name: 'doorbell_then_no_answer',
+  steps: [
+    { entity: 'binary_sensor.doorbell', to: 'on' },
+    { entity: 'lock.front_door', to: 'unlocked', within: 120_000, negate: true },
+  ],
+  do: () => this.ha.callService('notify.mobile', 'send_message', {
+    message: 'Someone rang the doorbell and nobody answered',
+  }),
+});
+```
+
 ## Where Each API is Available
 
 | API | automation | sensor / switch / etc. | device | task |
@@ -293,7 +306,6 @@ The sequence resets if a step times out or the events arrive out of order.
 | `this.events.watchdog()` | Yes | Yes | Yes | No |
 | `this.events.invariant()` | Yes | Yes | Yes | No |
 | `this.events.sequence()` | Yes | Yes | Yes | No |
-| `this.ha.on()` | Yes | Yes | Yes | Yes |
 | `this.ha.callService()` | Yes | Yes | Yes | Yes |
 | `this.update()` | No | Yes | Via entities | No |
 
@@ -301,11 +313,6 @@ The sequence resets if a step times out or the events arrive out of order.
 
 `automation` entities get the full reactive API but no `this.update()` (they have no state of their own, unless `entity: true` is set).
 
-## this.events vs this.ha.on()
+## this.ha (StatelessHAApi)
 
-Both subscribe to HA state changes. The difference:
-
-- **`this.events.on()`** -- lifecycle-managed, auto-cleaned on teardown, returns chainable `EventStream`.
-- **`this.ha.on()`** -- also lifecycle-managed when called from entity context, but does not return an `EventStream`. Simpler for one-off callbacks.
-
-Prefer `this.events.on()` for entity scripts. It gives you stream operators and makes intent clearer.
+The `this.ha` object is a stateless API for querying and acting on Home Assistant. It provides `callService`, `getState`, `getEntities`, `fireEvent`, and `friendlyName`. It does **not** have an `on()` method -- all event subscriptions go through `this.events`.
