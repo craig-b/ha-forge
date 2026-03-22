@@ -841,6 +841,7 @@ function collectStandaloneEntities(
       let destroyText: string | null = null;
       let simpleInit = true;
 
+      let hasDevice = false;
       if (arg && ts.isObjectLiteralExpression(arg)) {
         for (const prop of arg.properties) {
           const propName = getPropName(prop);
@@ -851,12 +852,16 @@ function collectStandaloneEntities(
           if (propName === 'destroy') {
             destroyText = extractFunctionBodyText(prop, sourceText);
           }
+          if (propName === 'device') {
+            hasDevice = true;
+          }
         }
       }
 
-      // Build expression text without init/destroy (they move to device level)
-      const exprText = initText || destroyText
-        ? removeInitDestroy(decl.initializer, sourceText, sf)
+      // Build expression text without init/destroy/device (they move to device level)
+      const needsStrip = initText || destroyText || hasDevice;
+      const exprText = needsStrip
+        ? removePropsFromExpr(decl.initializer, sourceText, sf, ['init', 'destroy', 'device'])
         : sourceText.slice(decl.initializer.getStart(sf), decl.initializer.getEnd());
 
       const { line: sl } = sf.getLineAndCharacterOfPosition(stmt.getStart(sf));
@@ -904,24 +909,40 @@ function extractFunctionBodyText(
 function checkSimpleInit(prop: import('typescript').ObjectLiteralElementLike): boolean {
   if (!ts) return false;
 
+  // async init can't be trivially moved
+  if ((ts.isMethodDeclaration(prop) || ts.isFunctionExpression(prop) || ts.isArrowFunction(prop)) &&
+      prop.modifiers?.some(m => m.kind === ts!.SyntaxKind.AsyncKeyword)) {
+    return false;
+  }
+
   let simple = true;
-  const REWRITABLE = new Set(['update', 'attr']);
 
   function walk(node: import('typescript').Node) {
     if (!ts || !simple) return;
-    // Look for this.xxx property access
-    if (ts.isPropertyAccessExpression(node) &&
-        node.expression.kind === ts.SyntaxKind.ThisKeyword) {
-      const name = node.name.text;
-      if (!REWRITABLE.has(name)) {
-        // this.ha, this.events, this.log, this.mqtt etc. are same on device context — fine
-        // this.poll, this.setTimeout, this.setInterval are also on device context — fine
-        // But this.poll() has different return semantics — mark as not simple
-        if (name === 'poll') {
-          simple = false;
-        }
+
+    // Return statements mean the init produces initial state — can't move to device
+    if (ts.isReturnStatement(node)) {
+      simple = false;
+      return;
+    }
+
+    // Bare setTimeout/setInterval — not auto-cleaned in device context
+    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
+      const name = node.expression.text;
+      if (name === 'setTimeout' || name === 'setInterval') {
+        simple = false;
+        return;
       }
     }
+
+    // this.poll() has different semantics on device context
+    if (ts.isPropertyAccessExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.ThisKeyword &&
+        node.name.text === 'poll') {
+      simple = false;
+      return;
+    }
+
     ts.forEachChild(node, walk);
   }
 
@@ -930,12 +951,13 @@ function checkSimpleInit(prop: import('typescript').ObjectLiteralElementLike): b
 }
 
 /**
- * Return the expression text with init() and destroy() properties removed.
+ * Return the expression text with named properties removed from the inner factory call.
  */
-function removeInitDestroy(
+function removePropsFromExpr(
   expr: import('typescript').CallExpression,
   sourceText: string,
   sf: import('typescript').SourceFile,
+  propsToRemove: string[],
 ): string {
   if (!ts) return sourceText.slice(expr.getStart(sf), expr.getEnd());
 
@@ -945,12 +967,12 @@ function removeInitDestroy(
     return sourceText.slice(expr.getStart(sf), expr.getEnd());
   }
 
-  // Find init/destroy properties and remove them
+  const removeSet = new Set(propsToRemove);
   const removals: Array<{ start: number; end: number }> = [];
   const props = arg.properties;
   for (let i = 0; i < props.length; i++) {
     const propName = getPropName(props[i]);
-    if (propName === 'init' || propName === 'destroy') {
+    if (propName && removeSet.has(propName)) {
       let start = props[i].getStart(sf);
       let end = props[i].getEnd();
       // Remove trailing comma if present
@@ -981,7 +1003,8 @@ function removeInitDestroy(
     pos = end;
   }
   result += sourceText.slice(pos, expr.getEnd());
-  return result;
+  // Clean up consecutive blank lines left by removal
+  return result.replace(/\n\s*\n\s*\n/g, '\n\n');
 }
 
 function checkDeviceRefactor(
@@ -1042,10 +1065,11 @@ export function generateDeviceRefactor(sourceText: string, fileName: string): st
     if (ent.destroyText) destroys.push({ memberKey: ent.memberKey, text: ent.destroyText });
   }
 
-  // Build the members block
-  const membersLines = entities.map(ent =>
-    `    ${ent.memberKey}: ${ent.exprText},`
-  ).join('\n');
+  // Build the members block — re-indent each expression to 6 spaces
+  const membersLines = entities.map(ent => {
+    const indented = reindent(ent.exprText, 6);
+    return `    ${ent.memberKey}: ${indented},`;
+  }).join('\n');
 
   // Build init block
   let initBlock = '';
@@ -1246,6 +1270,38 @@ function suggestVarName(factory: import('typescript').CallExpression): string | 
 }
 
 // ---- Helpers ----
+
+/**
+ * Re-indent a multi-line code string. Detects the existing minimum indentation
+ * and adjusts all lines to the target indent level. The first line is returned
+ * without leading whitespace (since it follows `memberKey: ` on the same line).
+ */
+function reindent(text: string, targetIndent: number): string {
+  const lines = text.split('\n');
+  if (lines.length <= 1) return text.trim();
+
+  // Find the minimum indentation of non-empty lines (excluding first line)
+  let minIndent = Infinity;
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) continue;
+    const indent = line.match(/^(\s*)/)?.[1].length ?? 0;
+    if (indent < minIndent) minIndent = indent;
+  }
+  if (minIndent === Infinity) minIndent = 0;
+
+  const pad = ' '.repeat(targetIndent);
+  const result = [lines[0].trim()];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.trim().length === 0) {
+      result.push('');
+    } else {
+      result.push(pad + line.slice(minIndent));
+    }
+  }
+  return result.join('\n');
+}
 
 function markerAt(
   node: import('typescript').Node,
