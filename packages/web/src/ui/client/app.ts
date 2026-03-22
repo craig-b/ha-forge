@@ -1895,6 +1895,18 @@ export class TseApp extends LitElement {
     this.requestUpdate();
   }
 
+  private async _saveFileAs(filePath: string) {
+    const file = this._openFiles.find((f) => f.path === filePath);
+    if (!file) return;
+    const name = prompt('Save as:', filePath);
+    if (!name || name === filePath) return;
+    const safeName = name.endsWith('.ts') ? name : name + '.ts';
+    const content = file.model.getValue();
+    await this._api('PUT', '/api/files/' + encodeURIComponent(safeName), { content });
+    await this._loadFileTree();
+    await this._openFile(safeName);
+  }
+
   private _createNewFile() {
     const name = prompt('File name (e.g., sensors.ts):');
     if (!name) return;
@@ -2033,7 +2045,10 @@ export class TseApp extends LitElement {
 
   private _setupKeyboard() {
     document.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+        e.preventDefault();
+        if (this._activeFile) this._saveFileAs(this._activeFile);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         if (this._activeFile) this._saveFile(this._activeFile);
       }
