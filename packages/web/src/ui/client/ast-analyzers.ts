@@ -117,7 +117,10 @@ function checkFactoryCall(
   if (!name || !FACTORY_NAMES.includes(name)) return;
 
   // computed() has different required fields (watch, compute)
-  if (name === 'computed') return;
+  if (name === 'computed') {
+    checkComputedCall(node, sf, diagnostics, entities);
+    return;
+  }
   // automation, task, cron, mode don't require 'name'
   const requiresName = !['automation', 'task', 'cron'].includes(name);
 
@@ -184,6 +187,81 @@ function checkFactoryCall(
     const body = 'body' in initNode ? initNode.body : undefined;
     if (body && ts.isBlock(body) && body.statements.length === 0) {
       diagnostics.push(markerAt(initNode, sf, `Empty init() — did you forget to set up state updates?`, 'info'));
+    }
+  }
+}
+
+// ---- computed() validation ----
+
+function checkComputedCall(
+  node: import('typescript').CallExpression,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+  entities: EntityInfo[],
+) {
+  if (!ts) return;
+  const arg = node.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+
+  const props = new Set<string>();
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+      props.add(prop.name.text);
+    } else if (ts.isMethodDeclaration(prop) && prop.name && ts.isIdentifier(prop.name)) {
+      props.add(prop.name.text);
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      props.add(prop.name.text);
+    }
+  }
+
+  if (!props.has('id')) {
+    diagnostics.push(markerAt(arg, sf, `computed() missing required 'id' property`, 'error'));
+  }
+  if (!props.has('name')) {
+    diagnostics.push(markerAt(arg, sf, `computed() missing required 'name' property`, 'error'));
+  }
+  if (!props.has('watch')) {
+    diagnostics.push(markerAt(arg, sf, `computed() missing required 'watch' property — array of entity IDs to observe`, 'error'));
+  }
+  if (!props.has('compute')) {
+    diagnostics.push(markerAt(arg, sf, `computed() missing required 'compute' property — function to derive the state`, 'error'));
+  }
+
+  // Extract entity ID for duplicate checking (same as regular factories)
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+        prop.name.text === 'id' && ts.isStringLiteral(prop.initializer)) {
+      const id = prop.initializer.text;
+      if (id === '') {
+        diagnostics.push(markerAt(prop.initializer, sf, `computed() id must not be empty`, 'error'));
+      } else {
+        const { line } = sf.getLineAndCharacterOfPosition(prop.initializer.getStart(sf));
+        const start = prop.initializer.getStart(sf) - sf.getLineStarts()[line];
+        entities.push({
+          id,
+          line: line + 1,
+          startCol: start + 1,
+          endCol: start + 1 + prop.initializer.getWidth(sf),
+        });
+
+        if (!/^[a-z][a-z0-9_]*$/.test(id)) {
+          const suggested = toSnakeCase(id);
+          const hint = suggested && suggested !== id ? ` (suggested: '${suggested}')` : '';
+          diagnostics.push(markerAt(prop.initializer, sf,
+            `Entity ID '${id}' should be snake_case${hint}`,
+            'warning',
+          ));
+        }
+      }
+    }
+  }
+
+  // Check for empty name
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+        prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) &&
+        prop.initializer.text === '') {
+      diagnostics.push(markerAt(prop.initializer, sf, `computed() name must not be empty`, 'warning'));
     }
   }
 }
