@@ -994,6 +994,18 @@ export class TseApp extends LitElement {
             ));
           }
 
+          // reactions/watchdog state value suggestion quick fix
+          if (marker.source === TseApp.CS_DIAG_OWNER && typeof marker.code === 'string' && marker.code.startsWith('suggest-state:')) {
+            const parts = marker.code.split(':');
+            const suggested = parts[1];
+            // Replace the quoted string value (marker covers the full quoted string)
+            actions.push(this._quickFix(model, marker,
+              `Replace with '${suggested}'`,
+              new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn),
+              `'${suggested}'`,
+            ));
+          }
+
           if (marker.source !== TseApp.DIAG_OWNER && marker.source !== TseApp.AST_DIAG_OWNER) continue;
 
           // "not exported" on a variable declaration → add export keyword
@@ -1143,9 +1155,10 @@ export class TseApp extends LitElement {
       this._updateMinimapDecorations(sourceText, model.uri.path || 'file.ts');
     }
 
-    // callService data field validation
+    // callService / reactions / watchdog validation
     const csMarkers = this._runCallServiceDiagnostics(sourceText);
-    monaco.editor.setModelMarkers(model, TseApp.CS_DIAG_OWNER, csMarkers);
+    const stateMarkers = this._runStateDiagnostics(sourceText);
+    monaco.editor.setModelMarkers(model, TseApp.CS_DIAG_OWNER, [...csMarkers, ...stateMarkers]);
   }
 
   // ---- callService diagnostics ----
@@ -1207,6 +1220,225 @@ export class TseApp extends LitElement {
     }
 
     return markers;
+  }
+
+  // ---- reactions / watchdog state diagnostics ----
+
+  /**
+   * Validate `to` state values in reactions() and watchdog() calls.
+   * Pattern: `.reactions({ 'entity.id': { to: 'value' } })`
+   * Pattern: `.watchdog({ 'entity.id': { expect: { to: 'value' } } })`
+   */
+  private _runStateDiagnostics(sourceText: string): MonacoMarkerData[] {
+    if (!this._completionRegistry) return [];
+
+    const registry = this._completionRegistry as {
+      entities: Record<string, { domain: string; states: string[] }>;
+    };
+
+    const markers: MonacoMarkerData[] = [];
+    const lines = sourceText.split('\n');
+
+    // Find reactions() and watchdog() calls
+    const ruleRegex = /\.(?:reactions|watchdog)\s*\(\s*\{/g;
+    let match: RegExpExecArray | null;
+    while ((match = ruleRegex.exec(sourceText)) !== null) {
+      const isWatchdog = match[0].includes('watchdog');
+      const objStart = match.index + match[0].length; // after the opening {
+      const entries = TseApp._parseEntityRuleEntries(sourceText, objStart);
+
+      for (const entry of entries) {
+        // Validate entity ID exists in registry
+        const entityData = registry.entities[entry.entityId];
+        if (!entityData || entityData.states.length === 0) continue;
+
+        for (const toValue of entry.toValues) {
+          if (entityData.states.includes(toValue.value)) continue;
+
+          const suggestion = TseApp._findClosestMatch(toValue.value, entityData.states);
+          const suggestionMsg = suggestion ? `. Did you mean '${suggestion}'?` : '';
+          const method = isWatchdog ? 'watchdog' : 'reactions';
+
+          const pos = TseApp._offsetToLineCol(lines, toValue.offset);
+          markers.push({
+            severity: monaco.MarkerSeverity.Error,
+            message: `Invalid state '${toValue.value}' for ${entry.entityId}${suggestionMsg}\nValid states: ${entityData.states.join(', ')}`,
+            startLineNumber: pos.line,
+            startColumn: pos.col,
+            endLineNumber: pos.line,
+            endColumn: pos.col + toValue.value.length + 2, // +2 for quotes
+            source: TseApp.CS_DIAG_OWNER,
+            code: suggestion ? `suggest-state:${suggestion}:${pos.col}` : undefined,
+          });
+        }
+      }
+    }
+
+    return markers;
+  }
+
+  /**
+   * Parse entries from a reactions/watchdog rules object.
+   * Returns entity IDs and their `to:` string values with offsets.
+   */
+  private static _parseEntityRuleEntries(
+    text: string, startOffset: number,
+  ): Array<{ entityId: string; toValues: Array<{ value: string; offset: number }> }> {
+    const entries: Array<{ entityId: string; toValues: Array<{ value: string; offset: number }> }> = [];
+    let i = startOffset;
+    let braceDepth = 0; // we're already inside the outer {
+
+    while (i < text.length) {
+      // Skip whitespace
+      while (i < text.length && /\s/.test(text[i])) i++;
+      if (i >= text.length || text[i] === '}') break;
+
+      // Skip comments
+      if (text[i] === '/' && text[i + 1] === '/') {
+        while (i < text.length && text[i] !== '\n') i++;
+        continue;
+      }
+      if (text[i] === '/' && text[i + 1] === '*') {
+        i += 2;
+        while (i < text.length - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+        i += 2; continue;
+      }
+
+      // Read entity ID key (must be quoted string for entity IDs like 'light.kitchen')
+      if (text[i] !== "'" && text[i] !== '"') {
+        // Skip non-string keys (computed properties, etc.)
+        i = TseApp._skipValue(text, i);
+        continue;
+      }
+      const q = text[i]; i++;
+      const keyStart = i;
+      while (i < text.length && text[i] !== q) {
+        if (text[i] === '\\') i++;
+        i++;
+      }
+      const entityId = text.slice(keyStart, i);
+      i++; // closing quote
+
+      // Skip to colon
+      while (i < text.length && /\s/.test(text[i])) i++;
+      if (text[i] !== ':') { i++; continue; }
+      i++; // skip colon
+
+      // Skip whitespace
+      while (i < text.length && /\s/.test(text[i])) i++;
+
+      // Expect opening { for the rule object
+      if (text[i] !== '{') {
+        i = TseApp._skipValue(text, i);
+        continue;
+      }
+      i++; // skip opening {
+
+      // Scan for `to:` properties inside the rule object
+      const toValues: Array<{ value: string; offset: number }> = [];
+      let ruleDepth = 0;
+
+      while (i < text.length) {
+        while (i < text.length && /\s/.test(text[i])) i++;
+        if (i >= text.length) break;
+        if (text[i] === '}') {
+          if (ruleDepth === 0) { i++; break; }
+          ruleDepth--; i++; continue;
+        }
+
+        // Skip comments
+        if (text[i] === '/' && text[i + 1] === '/') {
+          while (i < text.length && text[i] !== '\n') i++;
+          continue;
+        }
+        if (text[i] === '/' && text[i + 1] === '*') {
+          i += 2;
+          while (i < text.length - 1 && !(text[i] === '*' && text[i + 1] === '/')) i++;
+          i += 2; continue;
+        }
+
+        // Read property name
+        let propName = '';
+        if (text[i] === "'" || text[i] === '"') {
+          const pq = text[i]; i++;
+          const ps = i;
+          while (i < text.length && text[i] !== pq) { if (text[i] === '\\') i++; i++; }
+          propName = text.slice(ps, i);
+          i++;
+        } else if (/[a-zA-Z_$]/.test(text[i])) {
+          const ps = i;
+          while (i < text.length && /[\w$]/.test(text[i])) i++;
+          propName = text.slice(ps, i);
+        } else {
+          i = TseApp._skipValue(text, i);
+          continue;
+        }
+
+        // Skip to colon
+        while (i < text.length && /\s/.test(text[i])) i++;
+        if (text[i] !== ':') { i++; continue; }
+        i++;
+        while (i < text.length && /\s/.test(text[i])) i++;
+
+        if (propName === 'to' && ruleDepth <= 1 && (text[i] === "'" || text[i] === '"')) {
+          // Direct `to: 'value'` — used in reactions
+          // Or nested `expect: { to: 'value' }` in watchdog (ruleDepth would be 1)
+          const vq = text[i]; i++;
+          const vs = i;
+          const valOffset = vs - 1; // include quote for marker
+          while (i < text.length && text[i] !== vq) { if (text[i] === '\\') i++; i++; }
+          toValues.push({ value: text.slice(vs, i), offset: valOffset });
+          i++; // closing quote
+        } else if (propName === 'expect' && text[i] === '{') {
+          // watchdog: expect: { to: '...' } — enter nested object
+          ruleDepth++;
+          i++; // skip {
+          continue;
+        } else {
+          i = TseApp._skipValue(text, i);
+        }
+
+        // Skip trailing comma
+        while (i < text.length && /\s/.test(text[i])) i++;
+        if (i < text.length && text[i] === ',') i++;
+      }
+
+      entries.push({ entityId, toValues });
+
+      // Skip trailing comma after entity rule
+      while (i < text.length && /\s/.test(text[i])) i++;
+      if (i < text.length && text[i] === ',') i++;
+    }
+
+    return entries;
+  }
+
+  /** Skip over a value expression (string, object, array, function, etc.) tracking depth. */
+  private static _skipValue(text: string, start: number): number {
+    let i = start;
+    let depth = 0;
+
+    while (i < text.length) {
+      const ch = text[i];
+      if (ch === "'" || ch === '"' || ch === '`') {
+        i++;
+        while (i < text.length) {
+          if (text[i] === '\\') { i += 2; continue; }
+          if (text[i] === ch) { i++; break; }
+          i++;
+        }
+        if (depth === 0) return i;
+        continue;
+      }
+      if (ch === '{' || ch === '[' || ch === '(') { depth++; i++; continue; }
+      if (ch === '}' || ch === ']' || ch === ')') {
+        if (depth > 0) { depth--; i++; continue; }
+        return i;
+      }
+      if ((ch === ',' || ch === ';') && depth === 0) return i;
+      i++;
+    }
+    return i;
   }
 
   /**
