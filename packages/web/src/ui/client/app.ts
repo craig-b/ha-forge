@@ -484,8 +484,10 @@ export class TseApp extends LitElement {
               title = def.isExported ? `${def.fullEntityId} \u2014 not deployed` : `${def.fullEntityId} \u2014 not exported`;
             } else {
               const stateStr = entity.state != null ? String(entity.state) : '\u2014';
-              const icon = entity.status === 'healthy' ? '\u25CF' : entity.status === 'error' ? '\u25CB' : '\u25CB';
-              title = `${icon} ${def.fullEntityId}: ${stateStr}`;
+              const status = entity.status === 'healthy' ? '\u2713' : '\u2717';
+              const domainIcon = TseApp.DOMAIN_ICONS[def.domain] ?? '';
+              const unit = entity.unit_of_measurement ? ` ${entity.unit_of_measurement}` : '';
+              title = `${status} ${domainIcon} ${def.fullEntityId}: ${stateStr}${unit}`;
             }
           }
           return {
@@ -1649,6 +1651,23 @@ export class TseApp extends LitElement {
   }
 
   // ---- Minimap entity markers ----
+
+  private static readonly DOMAIN_ICONS: Record<string, string> = {
+    sensor: '\u{1F4CA}',         // 📊
+    binary_sensor: '\u{1F534}',  // 🔴
+    light: '\u{1F4A1}',          // 💡
+    switch: '\u{1F50C}',         // 🔌
+    cover: '\u{1FA9F}',          // 🪟
+    climate: '\u{1F321}',        // 🌡️
+    fan: '\u{1F32C}',            // 🌬️
+    lock: '\u{1F512}',           // 🔒
+    number: '\u{1F522}',         // 🔢
+    select: '\u{1F4CB}',         // 📋
+    text: '\u{1F524}',           // 🔤
+    button: '\u{23FA}',          // ⏺
+    automation: '\u{2699}',      // ⚙
+    computed: '\u{1F9EE}',       // 🧮
+  };
 
   private static readonly MINIMAP_COLORS: Record<string, string> = {
     sensor: '#4FC3F7',         // light blue

@@ -7,6 +7,7 @@ export interface EntityInfo {
   state: unknown;
   sourceFile: string;
   status: 'healthy' | 'error' | 'unavailable';
+  unit_of_measurement?: string;
 }
 
 export type GetEntitiesFn = () => EntityInfo[];

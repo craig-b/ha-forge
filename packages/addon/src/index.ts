@@ -254,6 +254,7 @@ async function main(): Promise<void> {
             state: buildManager.getEntityState(id),
             sourceFile: info?.sourceFile ?? '',
             status: 'healthy' as const,
+            unit_of_measurement: info?.unit_of_measurement,
           };
         });
       },

@@ -36,6 +36,7 @@ export interface EntityInfo {
   state: unknown;
   sourceFile?: string;
   status: string;
+  unit_of_measurement?: string;
 }
 
 export interface LogEntry {

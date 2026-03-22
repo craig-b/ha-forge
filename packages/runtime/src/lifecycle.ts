@@ -1786,13 +1786,15 @@ export class EntityLifecycleManager {
     ];
   }
 
-  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string } | undefined {
+  getEntityInfo(entityId: string): { type: string; name: string; sourceFile: string; unit_of_measurement?: string } | undefined {
     const instance = this.instances.get(entityId);
     if (instance) {
+      const config = (instance.entity.definition as Record<string, unknown>).config as Record<string, unknown> | undefined;
       return {
         type: instance.entity.definition.type,
         name: instance.entity.definition.name || entityId,
         sourceFile: instance.entity.sourceFile,
+        unit_of_measurement: typeof config?.unit_of_measurement === 'string' ? config.unit_of_measurement : undefined,
       };
     }
 
