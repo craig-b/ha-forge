@@ -680,6 +680,102 @@ function rewriteInitForDevice(initText: string, memberKey: string): string {
     .replace(/this\.attr\b/g, `this.entities.${memberKey}.attr`);
 }
 
+// ---- Fill in device info ----
+
+export interface DeviceInfoInsertion {
+  /** Line of the object literal's closing brace (where we insert before) */
+  insertLine: number;
+  /** Column of the closing brace */
+  insertCol: number;
+  /** Text to insert (the device property) */
+  text: string;
+  /** Whether a leading comma is needed */
+  needsComma: boolean;
+}
+
+/**
+ * If the cursor is on a factory call that has no `device` property,
+ * return the insertion point and derived device info text.
+ */
+export function getDeviceInfoInsertion(
+  sourceText: string,
+  fileName: string,
+  cursorLine: number,
+): DeviceInfoInsertion | null {
+  if (!ts) return null;
+
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const baseName = fileName.replace(/^.*\//, '').replace(/\.\w+$/, '');
+  const deviceId = toSnakeCase(baseName) ?? baseName;
+  const deviceName = deviceId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+  // Find a factory call at the cursor line
+  let result: DeviceInfoInsertion | null = null;
+
+  function visit(node: import('typescript').Node) {
+    if (!ts || result) return;
+
+    if (ts.isCallExpression(node)) {
+      const factory = findFactoryCall(node);
+      if (factory) {
+        const arg = factory.arguments[0];
+        if (arg && ts.isObjectLiteralExpression(arg)) {
+          const { line: objStart } = sf.getLineAndCharacterOfPosition(arg.getStart(sf));
+          const { line: objEnd } = sf.getLineAndCharacterOfPosition(arg.getEnd());
+
+          // Check if cursor is within this object literal's range
+          if (cursorLine >= objStart + 1 && cursorLine <= objEnd + 1) {
+            // Check if device property already exists
+            const hasDevice = arg.properties.some(p => getPropName(p) === 'device');
+            if (hasDevice) return;
+
+            // Find insertion point: before the closing brace
+            const closeBrace = arg.getEnd() - 1; // position of '}'
+            const { line: closeLine, character: closeChar } = sf.getLineAndCharacterOfPosition(closeBrace);
+
+            // Check if last property has a trailing comma
+            const lastProp = arg.properties[arg.properties.length - 1];
+            let needsComma = false;
+            if (lastProp) {
+              const afterLast = sourceText.slice(lastProp.getEnd(), closeBrace);
+              needsComma = !afterLast.includes(',');
+            }
+
+            // Detect indentation from existing properties
+            let indent = '  ';
+            if (arg.properties.length > 0) {
+              const firstProp = arg.properties[0];
+              const { character } = sf.getLineAndCharacterOfPosition(firstProp.getStart(sf));
+              indent = ' '.repeat(character);
+            }
+
+            const deviceText = [
+              `${indent}device: {`,
+              `${indent}  id: '${deviceId}',`,
+              `${indent}  name: '${deviceName}',`,
+              `${indent}  manufacturer: 'ha-forge',`,
+              `${indent}  model: 'User Script',`,
+              `${indent}},`,
+            ].join('\n');
+
+            result = {
+              insertLine: closeLine + 1,
+              insertCol: closeChar + 1,
+              text: (needsComma ? ',\n' : '\n') + deviceText + '\n',
+              needsComma,
+            };
+          }
+        }
+      }
+    }
+
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sf);
+  return result;
+}
+
 // ---- Snake case conversion ----
 
 /**

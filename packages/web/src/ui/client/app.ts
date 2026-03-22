@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -387,8 +387,22 @@ export class TseApp extends LitElement {
 
     // Quick-fix code actions
     monaco.languages.registerCodeActionProvider('typescript', {
-      provideCodeActions: (model: MonacoModelInstance, _range: unknown, context: { markers: MonacoMarkerData[] }) => {
+      provideCodeActions: (model: MonacoModelInstance, range: MonacoRange, context: { markers: MonacoMarkerData[] }) => {
         const actions: MonacoCodeAction[] = [];
+
+        // Refactoring: fill in derived device info (no diagnostic needed)
+        if (isAstReady()) {
+          const filePath = model.uri.path || 'file.ts';
+          const insertion = getDeviceInfoInsertion(model.getValue(), filePath, range.startLineNumber);
+          if (insertion) {
+            actions.push(this._refactorAction(model,
+              'Fill in device info (derived from filename)',
+              new monaco.Range(insertion.insertLine, insertion.insertCol, insertion.insertLine, insertion.insertCol),
+              insertion.text,
+            ));
+          }
+        }
+
         for (const marker of context.markers) {
           if (marker.source !== TseApp.DIAG_OWNER && marker.source !== TseApp.AST_DIAG_OWNER) continue;
 
@@ -487,6 +501,22 @@ export class TseApp extends LitElement {
     };
   }
 
+  private _refactorAction(
+    model: MonacoModelInstance,
+    title: string,
+    range: MonacoRange,
+    text: string,
+  ): MonacoCodeAction {
+    return {
+      title,
+      diagnostics: [],
+      kind: 'refactor',
+      edit: {
+        edits: [{ resource: model.uri, textEdit: { range, text }, versionId: model.getVersionId() }],
+      },
+      isPreferred: false,
+    };
+  }
 
   private _runDiagnostics() {
     const model = this._editor?.getModel();
