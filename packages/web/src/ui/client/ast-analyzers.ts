@@ -144,7 +144,10 @@ function checkFactoryCall(
     diagnostics.push(markerAt(arg, sf, `${name}() missing required 'id' property`, 'error'));
   }
   if (requiresName && !props.has('name')) {
-    diagnostics.push(markerAt(arg, sf, `${name}() missing required 'name' property`, 'error'));
+    const idNode = props.get('id');
+    const suggestedName = idNode && ts.isStringLiteral(idNode) && idNode.text ? idToTitle(idNode.text) : null;
+    const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
+    diagnostics.push(markerAt(arg, sf, `${name}() missing required 'name' property${hint}`, 'error'));
   }
 
   // Validate entity ID
@@ -285,7 +288,16 @@ function checkComputedCall(
     diagnostics.push(markerAt(arg, sf, `computed() missing required 'id' property`, 'error'));
   }
   if (!props.has('name')) {
-    diagnostics.push(markerAt(arg, sf, `computed() missing required 'name' property`, 'error'));
+    // Find id value for suggestion
+    let suggestedName: string | null = null;
+    for (const prop of arg.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'id' && ts.isStringLiteral(prop.initializer) && prop.initializer.text) {
+        suggestedName = idToTitle(prop.initializer.text);
+        break;
+      }
+    }
+    const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
+    diagnostics.push(markerAt(arg, sf, `computed() missing required 'name' property${hint}`, 'error'));
   }
   if (!props.has('watch')) {
     diagnostics.push(markerAt(arg, sf, `computed() missing required 'watch' property — array of entity IDs to observe`, 'error'));
@@ -1110,6 +1122,14 @@ export function getDeviceInfoInsertion(
  * Convert an arbitrary string to snake_case.
  * Returns null if the result would be empty or invalid.
  */
+/** Convert a snake_case entity ID to a Title Case name. */
+export function idToTitle(id: string): string {
+  return id
+    .split('_')
+    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export function toSnakeCase(input: string): string | null {
   const result = input
     // Insert underscore before uppercase runs: "camelCase" → "camel_Case", "XMLParser" → "XML_Parser"
