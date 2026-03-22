@@ -1304,6 +1304,56 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
         }
       }
     }
+
+    // Match: export default [wrapper(] factory({id: '...'}) [)]
+    if (ts!.isExportAssignment(node) && !node.isExportEquals && ts!.isCallExpression(node.expression)) {
+      const outerCall = node.expression;
+      const outerName = getCalledName(outerCall);
+
+      if (outerName === 'device') {
+        const entityId = extractEntityId(outerCall);
+        if (entityId) {
+          const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+          const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+          results.push({
+            entityId,
+            fullEntityId: `device.${entityId}`,
+            factoryName: 'device',
+            domain: 'device',
+            isExported: true,
+            line: startPos.line + 1,
+            endLine: endPos.line + 1,
+            memberCount: countDeviceMembers(outerCall),
+          });
+        }
+        collectDeviceMembers(outerCall, sf, true, results);
+      } else {
+        const call = findFactoryCall(outerCall);
+        if (call) {
+          const factoryName = getCalledName(call);
+          if (factoryName) {
+            const domain = FACTORY_DOMAINS[factoryName];
+            if (domain) {
+              const entityId = extractEntityId(call);
+              if (entityId) {
+                const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+                const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+                results.push({
+                  entityId,
+                  fullEntityId: `${domain}.${entityId}`,
+                  factoryName,
+                  domain,
+                  isExported: true,
+                  line: startPos.line + 1,
+                  endLine: endPos.line + 1,
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+
     ts!.forEachChild(node, visit);
   }
   visit(sf);
