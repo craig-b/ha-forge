@@ -335,8 +335,8 @@ function checkComputedCall(
 
 // ---- Entity ID domain mismatch ----
 
-/** Maps factory names to their HA entity domain. */
-const FACTORY_DOMAINS: Record<string, string> = {
+/** Maps factory names to their HA entity domain. Exported for CodeLens/inlay hints. */
+export const FACTORY_DOMAINS: Record<string, string> = {
   sensor: 'sensor',
   binarySensor: 'binary_sensor',
   light: 'light',
@@ -1340,6 +1340,77 @@ export function findCronStrings(sourceText: string, fileName = 'file.ts'): CronS
   }
   visit(sf);
   return results;
+}
+
+// ---- Entity definition finder (for CodeLens, highlights, minimap) ----
+
+export interface EntityDefinitionLocation {
+  /** The entity ID from the `id:` property (e.g. 'living_room_temperature') */
+  entityId: string;
+  /** Full HA entity ID (e.g. 'sensor.living_room_temperature') */
+  fullEntityId: string;
+  /** Factory function name (e.g. 'sensor', 'binarySensor') */
+  factoryName: string;
+  /** HA domain (e.g. 'sensor', 'binary_sensor') */
+  domain: string;
+  /** Whether the definition is exported */
+  isExported: boolean;
+  /** 1-based line of the declaration/expression start */
+  line: number;
+  /** 1-based end line */
+  endLine: number;
+}
+
+/** Find all entity definitions in source with their positions and HA entity IDs. */
+export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'): EntityDefinitionLocation[] {
+  if (!ts) return [];
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+  const results: EntityDefinitionLocation[] = [];
+
+  function visit(node: import('typescript').Node) {
+    // Match: [export] const x = [wrapper(] factory({id: '...'}) [)]
+    if (ts!.isVariableStatement(node)) {
+      const isExported = node.modifiers?.some(m => m.kind === ts!.SyntaxKind.ExportKeyword) ?? false;
+      for (const decl of node.declarationList.declarations) {
+        if (!decl.initializer) continue;
+        const call = ts!.isCallExpression(decl.initializer) ? findFactoryCall(decl.initializer) : null;
+        if (!call) continue;
+        const factoryName = getCalledName(call);
+        if (!factoryName) continue;
+        const domain = FACTORY_DOMAINS[factoryName];
+        if (!domain) continue;
+        const entityId = extractEntityId(call);
+        if (!entityId) continue;
+        const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
+        const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+        results.push({
+          entityId,
+          fullEntityId: `${domain}.${entityId}`,
+          factoryName,
+          domain,
+          isExported,
+          line: startPos.line + 1,
+          endLine: endPos.line + 1,
+        });
+      }
+    }
+    ts!.forEachChild(node, visit);
+  }
+  visit(sf);
+  return results;
+}
+
+function extractEntityId(call: import('typescript').CallExpression): string | null {
+  if (!ts) return null;
+  const arg = call.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+        prop.name.text === 'id' && ts.isStringLiteral(prop.initializer)) {
+      return prop.initializer.text;
+    }
+  }
+  return null;
 }
 
 function markerAt(
