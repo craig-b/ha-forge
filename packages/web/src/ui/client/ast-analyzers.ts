@@ -379,12 +379,13 @@ interface StandaloneEntity {
   endLine: number;
 }
 
-/** Names of entity factories that produce stateful entities (not devices, automations, tasks, etc.) */
-const ENTITY_FACTORY_NAMES = new Set([
+/** Names of factories that can be device members. */
+const DEVICE_MEMBER_NAMES = new Set([
   'sensor', 'binarySensor', 'light', 'defineSwitch', 'cover', 'climate',
   'fan', 'lock', 'number', 'select', 'text', 'button', 'siren',
   'humidifier', 'valve', 'waterHeater', 'vacuum', 'lawnMower',
   'alarmControlPanel', 'computed',
+  'automation', 'task', 'cron', 'mode',
 ]);
 
 function collectStandaloneEntities(
@@ -404,7 +405,7 @@ function collectStandaloneEntities(
       const factory = findFactoryCall(decl.initializer);
       if (!factory) continue;
       const factoryName = getCalledName(factory);
-      if (!factoryName || !ENTITY_FACTORY_NAMES.has(factoryName)) continue;
+      if (!factoryName || !DEVICE_MEMBER_NAMES.has(factoryName)) continue;
 
       const varName = ts.isIdentifier(decl.name) ? decl.name.text : null;
       if (!varName) continue;
