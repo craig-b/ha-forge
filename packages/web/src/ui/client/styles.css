@@ -81,7 +81,18 @@ tse-sidebar {
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
+  position: relative;
 }
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  cursor: ew-resize;
+  background: transparent;
+}
+.sidebar-resize-handle:hover { background: var(--accent); }
 .sidebar-header {
   display: flex;
   justify-content: space-between;

@@ -15,6 +15,8 @@ export class TseSidebar extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._onDocClick = this._onDocClick.bind(this);
+    this._onResizeMove = this._onResizeMove.bind(this);
+    this._onResizeUp = this._onResizeUp.bind(this);
     document.addEventListener('click', this._onDocClick);
   }
 
@@ -36,6 +38,8 @@ export class TseSidebar extends LitElement {
       <div class="file-tree">
         ${this._renderEntries(this.files, 0)}
       </div>
+      <div class="sidebar-resize-handle"
+        @mousedown=${this._onResizeStart}></div>
       ${this._ctxMenu ? html`
         <div class="ctx-menu" style="top:${this._ctxMenu.y}px;left:${this._ctxMenu.x}px">
           <div class="ctx-item" @click=${this._ctxRename}>Rename</div>
@@ -129,5 +133,33 @@ export class TseSidebar extends LitElement {
 
   private _onNewFile() {
     this.dispatchEvent(new CustomEvent('tse-new-file', { bubbles: true, composed: true }));
+  }
+
+  // ---- Resize ----
+
+  private _startX = 0;
+  private _startWidth = 0;
+
+  private _onResizeStart(e: MouseEvent) {
+    e.preventDefault();
+    this._startX = e.clientX;
+    this._startWidth = this.getBoundingClientRect().width;
+    document.addEventListener('mousemove', this._onResizeMove);
+    document.addEventListener('mouseup', this._onResizeUp);
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  private _onResizeMove(e: MouseEvent) {
+    const delta = e.clientX - this._startX;
+    const newWidth = Math.max(120, Math.min(600, this._startWidth + delta));
+    document.documentElement.style.setProperty('--sidebar-width', `${newWidth}px`);
+  }
+
+  private _onResizeUp() {
+    document.removeEventListener('mousemove', this._onResizeMove);
+    document.removeEventListener('mouseup', this._onResizeUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
   }
 }
