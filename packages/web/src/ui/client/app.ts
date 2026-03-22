@@ -392,8 +392,9 @@ export class TseApp extends LitElement {
         for (const marker of context.markers) {
           if (marker.source !== TseApp.DIAG_OWNER && marker.source !== TseApp.AST_DIAG_OWNER) continue;
 
-          // "not exported" → add export keyword
-          if (marker.message.includes('not exported')) {
+          // "not exported" on a variable declaration → add export keyword
+          // (bare calls like `sensor({...})` also say "not exported" but can't be fixed with just `export `)
+          if (marker.message.includes('is not exported')) {
             actions.push(this._quickFix(model, marker,
               "Add 'export' to this declaration",
               new monaco.Range(marker.startLineNumber, 1, marker.startLineNumber, 1),
