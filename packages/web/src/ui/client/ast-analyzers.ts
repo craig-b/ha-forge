@@ -63,6 +63,7 @@ export function analyzeWithAst(sourceText: string, fileName = 'file.ts'): AstAna
     if (ts!.isCallExpression(node)) {
       checkFactoryCall(node, sf, diagnostics, entities);
       checkAwaitOnFactory(node, sf, diagnostics);
+      checkCronExpression(node, sf, diagnostics);
     }
 
     if (ts!.isPropertyAccessExpression(node) &&
@@ -262,6 +263,150 @@ function checkComputedCall(
         prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) &&
         prop.initializer.text === '') {
       diagnostics.push(markerAt(prop.initializer, sf, `computed() name must not be empty`, 'warning'));
+    }
+  }
+}
+
+// ---- Cron expression validation ----
+
+/** Field ranges for standard 5-field cron: minute, hour, day-of-month, month, day-of-week. */
+const CRON_FIELD_RANGES: Array<{ name: string; min: number; max: number }> = [
+  { name: 'minute', min: 0, max: 59 },
+  { name: 'hour', min: 0, max: 23 },
+  { name: 'day of month', min: 1, max: 31 },
+  { name: 'month', min: 1, max: 12 },
+  { name: 'day of week', min: 0, max: 7 },
+];
+
+/**
+ * Validate a cron expression string. Returns null if valid, or an error message.
+ */
+function validateCronExpression(expr: string): string | null {
+  const fields = expr.trim().split(/\s+/);
+  if (fields.length !== 5) {
+    return `Cron expression must have 5 fields (minute hour day-of-month month day-of-week), got ${fields.length}`;
+  }
+
+  for (let i = 0; i < 5; i++) {
+    const err = validateCronField(fields[i], CRON_FIELD_RANGES[i]);
+    if (err) return err;
+  }
+  return null;
+}
+
+function validateCronField(field: string, range: { name: string; min: number; max: number }): string | null {
+  // Split on commas for list values
+  for (const part of field.split(',')) {
+    if (part === '') return `Empty value in ${range.name} field`;
+
+    // Handle step: */5 or 1-10/2
+    const stepParts = part.split('/');
+    if (stepParts.length > 2) return `Invalid step expression '${part}' in ${range.name} field`;
+
+    const base = stepParts[0];
+    const step = stepParts[1];
+
+    if (step !== undefined) {
+      const stepNum = Number(step);
+      if (!Number.isInteger(stepNum) || stepNum < 1) {
+        return `Invalid step value '${step}' in ${range.name} field`;
+      }
+    }
+
+    if (base === '*') continue;
+
+    // Handle range: 1-5
+    if (base.includes('-')) {
+      const [startStr, endStr, ...extra] = base.split('-');
+      if (extra.length > 0) return `Invalid range '${base}' in ${range.name} field`;
+      const start = Number(startStr);
+      const end = Number(endStr);
+      if (!Number.isInteger(start) || !Number.isInteger(end)) {
+        return `Invalid range '${base}' in ${range.name} field`;
+      }
+      if (start < range.min || start > range.max) {
+        return `${range.name} value ${start} out of range (${range.min}-${range.max})`;
+      }
+      if (end < range.min || end > range.max) {
+        return `${range.name} value ${end} out of range (${range.min}-${range.max})`;
+      }
+      if (start > end) {
+        return `Invalid range ${start}-${end} in ${range.name} field (start > end)`;
+      }
+      continue;
+    }
+
+    // Single number
+    const num = Number(base);
+    if (!Number.isInteger(num)) {
+      return `Invalid value '${base}' in ${range.name} field`;
+    }
+    if (num < range.min || num > range.max) {
+      return `${range.name} value ${num} out of range (${range.min}-${range.max})`;
+    }
+  }
+
+  return null;
+}
+
+function checkCronExpression(
+  node: import('typescript').CallExpression,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts) return;
+  const name = getCalledName(node);
+
+  // cron() factory — check schedule property
+  if (name === 'cron') {
+    const arg = node.arguments[0];
+    if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+    for (const prop of arg.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+          prop.name.text === 'schedule' && ts.isStringLiteral(prop.initializer)) {
+        const err = validateCronExpression(prop.initializer.text);
+        if (err) {
+          diagnostics.push(markerAt(prop.initializer, sf, err, 'error'));
+        }
+      }
+    }
+    return;
+  }
+
+  // this.poll({ cron: '...' }) — check cron property in options
+  if (ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === 'poll' &&
+      node.arguments.length >= 2) {
+    const opts = node.arguments[1];
+    if (!ts.isObjectLiteralExpression(opts)) return;
+    for (const prop of opts.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+          prop.name.text === 'cron' && ts.isStringLiteral(prop.initializer)) {
+        const err = validateCronExpression(prop.initializer.text);
+        if (err) {
+          diagnostics.push(markerAt(prop.initializer, sf, err, 'error'));
+        }
+      }
+    }
+  }
+
+  // invariant({ check: { cron: '...' } }) — check nested cron
+  if (name === 'invariant' && node.arguments.length >= 1) {
+    const arg = node.arguments[0];
+    if (!ts.isObjectLiteralExpression(arg)) return;
+    for (const prop of arg.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+          prop.name.text === 'check' && ts.isObjectLiteralExpression(prop.initializer)) {
+        for (const inner of prop.initializer.properties) {
+          if (ts.isPropertyAssignment(inner) && ts.isIdentifier(inner.name) &&
+              inner.name.text === 'cron' && ts.isStringLiteral(inner.initializer)) {
+            const err = validateCronExpression(inner.initializer.text);
+            if (err) {
+              diagnostics.push(markerAt(inner.initializer, sf, err, 'error'));
+            }
+          }
+        }
+      }
     }
   }
 }
