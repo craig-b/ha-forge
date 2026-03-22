@@ -398,6 +398,32 @@ const smoothedTemp = debounced(
 
 `debounced` wraps `this.update()` to buffer values and emit smoothed output. Other composable behaviors can follow the same pattern — wrapping the entity definition and intercepting context methods.
 
+## Higher-Level Entity Types
+
+Beyond the 24 MQTT platform factories, the SDK provides higher-level constructs:
+
+- **`automation()`** — Pure reactive script with managed lifecycle. Gets `this.ha`, `this.events`, `this.log`. Optional `entity: true` surfaces as binary_sensor.
+- **`task()`** — One-shot script surfaced as a button entity. `run()` triggered on press or deploy. Gets `this.ha`, `this.log`, `this.mqtt` but no `this.events`.
+- **`computed()`** — Derived sensor. State is a pure function of watched entities. Re-evaluates reactively, debounced (100ms default), only publishes on change.
+- **`cron()`** — Schedule entity surfaced as binary_sensor. ON during matching cron minutes, OFF otherwise.
+- **`mode()`** — State machine surfaced as select entity. Named states with `enter`/`exit`/`guard` transition hooks.
+- **`device()`** — Groups entities under shared lifecycle with one `init()`, coordinated polling, `this.entities.<name>` access.
+- **`entityFactory()`** — Dynamic entity generation from async function. Returns array of entity definitions.
+
+## this.events — Entity-Scoped Reactive API
+
+Inside entity `init()`, `this.events` provides lifecycle-managed subscriptions:
+
+- **`on()`** — State change subscription. Returns chainable `EventStream` with operators: `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.transition()`.
+- **`reactions()`** — Declarative reaction rules with `to`, `when`, `do`, `after` (delayed, auto-cancelled).
+- **`combine()`** — Watch multiple entities, callback gets all snapshots on any change.
+- **`withState()`** — Enrich trigger events with context entity snapshots.
+- **`watchdog()`** — Detect missing expected events within time windows.
+- **`invariant()`** — Periodic condition checking with violation handlers.
+- **`sequence()`** — Ordered event detection across entities within time windows.
+
+All subscriptions auto-clean on entity teardown. See the [Entity Context API reference](../reference/entity-context.md) for full signatures.
+
 ## ha.* API
 
 The global `ha` object provides typed access to Home Assistant:

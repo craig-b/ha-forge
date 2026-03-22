@@ -1,5 +1,7 @@
 # Entity Context API
 
+> For a guided introduction, see the [Getting Started guide](../guide/getting-started.md) and [Entity Types guide](../guide/entities.md).
+
 The entity context is bound as `this` inside entity lifecycle callbacks (`init()`, `destroy()`, `onCommand()`, `onPress()`, `onNotify()`, `onInstall()`). It provides methods for publishing state, polling, logging, timers, MQTT access, HA API access, and lifecycle-managed event subscriptions.
 
 The TypeScript type is `EntityContext<TState, TAttrs>`, where `TState` is the entity's state type and `TAttrs` is the attributes type.

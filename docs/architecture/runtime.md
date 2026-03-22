@@ -77,14 +77,15 @@ User-facing API is transport-agnostic. Adding support for new entity types means
 
 ### MQTT Transport (v1)
 
-Covers all 26 MQTT discovery-supported entity types:
+Covers MQTT discovery-supported entity types. 24 have SDK factory functions:
 
 ```
 sensor, binary_sensor, image, switch, light, cover, fan, lock,
 climate, humidifier, valve, water_heater, vacuum, lawn_mower, siren,
-number, select, text, button, scene, notify, update, event,
-device_tracker, camera, alarm_control_panel
+number, select, text, button, notify, update, alarm_control_panel
 ```
+
+4 additional platforms are supported by MQTT discovery but lack SDK factories: `scene`, `event`, `device_tracker`, `camera`.
 
 #### Device Discovery
 
@@ -263,16 +264,20 @@ Every entity callback (`init`, `destroy`, `onCommand`, poll functions) runs with
 ```typescript
 interface EntityContext<TState> {
   update: (value: TState, attributes?: Record<string, unknown>) => void;
-  poll: (fn: () => TState | Promise<TState>, opts: { interval: number }) => void;
+  attr: (attributes: Record<string, unknown>) => void;
+  poll: (fn: () => TState | Promise<TState>, opts: { interval: number } | { cron: string }) => void;
+  ha: StatelessHAApi;  // callService, getState, getEntities, fireEvent, friendlyName
+  events: EventsContext;  // on, reactions, combine, withState, watchdog, invariant, sequence
   log: {
     debug: (message: string, data?: Record<string, unknown>) => void;
     info: (message: string, data?: Record<string, unknown>) => void;
     warn: (message: string, data?: Record<string, unknown>) => void;
     error: (message: string, data?: Record<string, unknown>) => void;
   };
-  setTimeout: (fn: () => void, ms: number) => void;
-  setInterval: (fn: () => void, ms: number) => void;
-  fetch: typeof globalThis.fetch;
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+  setInterval: (fn: () => void, ms: number) => unknown;
+  clearInterval: (handle: unknown) => void;
   mqtt: {
     publish: (topic: string, payload: string, opts?: { retain?: boolean }) => void;
     subscribe: (topic: string, handler: (payload: string) => void) => void;
@@ -291,7 +296,53 @@ This prevents resource leaks across redeploys. User code never needs to manually
 
 ## Reactive System
 
-### ha.on() — State Subscriptions
+### this.events — Entity-Scoped Subscriptions
+
+Entity contexts provide `this.events` with lifecycle-managed subscriptions that auto-clean on teardown. This is the preferred API for entity scripts (over the global `ha.on()`).
+
+#### events.on()
+
+Returns a chainable `EventStream`:
+
+```typescript
+this.events.on('light.living_room', (e) => { /* typed callback */ });
+
+// With stream operators
+this.events.on('sensor.temperature')
+  .filter((e) => Number(e.new_state) > 30)
+  .debounce(5000)
+  .do((e) => { /* handler */ });
+```
+
+EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.transition(from, to)`, `.do(callback)`, `.unsubscribe()`.
+
+#### events.reactions()
+
+Declarative reaction rules with optional delayed execution (auto-cancelled on state change).
+
+#### events.combine()
+
+Watch multiple entities, callback fires on any change with all current snapshots.
+
+#### events.withState()
+
+Subscribe to a trigger entity, enriched with context entity snapshots.
+
+#### events.watchdog()
+
+Detect missing expected events within time windows.
+
+#### events.invariant()
+
+Periodic condition checks with violation handlers.
+
+#### events.sequence()
+
+Ordered event detection across multiple entities within time windows.
+
+See the [Entity Context API reference](../reference/entity-context.md) for full signatures.
+
+### ha.on() — Global State Subscriptions
 
 Three overloads, all using discriminated unions for type safety:
 

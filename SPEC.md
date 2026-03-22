@@ -2,6 +2,13 @@
 
 ## Specification v0.3
 
+> **Note:** This spec is the original design document. The authoritative, up-to-date documentation lives in:
+> - [docs/guide/](docs/guide/) — user guides
+> - [docs/reference/](docs/reference/) — API reference
+> - [docs/architecture/](docs/architecture/) — system internals
+>
+> Where this spec diverges from the architecture docs or implementation, the architecture docs and implementation are correct.
+
 ---
 
 ## Overview
@@ -28,7 +35,7 @@ The core differentiator is the type system. The SDK generates TypeScript types f
 
 **2. User Scripts**
 
-- TypeScript files stored in `/config/ha-forge/`.
+- TypeScript files stored in `/config/`.
 - Each file exports one or more entity definitions, reactive behaviors, or entity factories.
 - Edited via the built-in Monaco editor (primary) or VS Code Server add-on / File Editor / Samba / SSH (alternative).
 - Automatically included in HA's built-in backup system.
@@ -80,7 +87,7 @@ The build is an explicit, discrete step — not implicit file watching. The user
 
 ### Steps
 
-1. **Type generation**: pull entity registry, service definitions, and state data from HA WebSocket API (`get_services`, `get_states`, `config/entity_registry/list`, `config/device_registry/list`, `config/area_registry/list`). Generate `.d.ts` type declarations and companion runtime validator module. Write to `/config/ha-forge/.generated/`.
+1. **Type generation**: pull entity registry, service definitions, and state data from HA WebSocket API (`get_services`, `get_states`, `config/entity_registry/list`, `config/device_registry/list`, `config/area_registry/list`). Generate `.d.ts` type declarations and companion runtime validator module. Write to `/config/.generated/`.
 
 2. **Dependency install**: if `package.json` has changed since last build, run `npm install` in the scripts directory.
 
@@ -121,7 +128,7 @@ This gives the user full IntelliSense without any manual setup.
 
 ### VS Code Compatibility
 
-The same types are written to disk at `/config/ha-forge/.generated/` and `/config/ha-forge/node_modules/ha-forge/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking.
+The same types are written to disk at `/config/.generated/` and `/config/node_modules/ha-forge/`. A `tsconfig.json` is scaffolded on first run. Users who prefer VS Code Server, SSH + local editor, or any other TypeScript-aware tool get the same autocomplete and error checking.
 
 ---
 
@@ -493,16 +500,22 @@ interface BaseEntity<TState, TConfig = {}> {
 
 ### Supported Entity Types (v1 — MQTT Transport)
 
+24 entity platforms have SDK factory functions:
+
 ```typescript
+// Platforms with factory functions
 type EntityType =
   | 'sensor' | 'binary_sensor' | 'image'
   | 'switch' | 'light' | 'cover' | 'fan' | 'lock'
   | 'climate' | 'humidifier' | 'valve' | 'water_heater'
   | 'vacuum' | 'lawn_mower' | 'siren'
   | 'number' | 'select' | 'text' | 'button'
-  | 'scene' | 'notify' | 'update' | 'event'
-  | 'device_tracker' | 'camera' | 'alarm_control_panel' | 'tag';
+  | 'notify' | 'update' | 'alarm_control_panel';
 ```
+
+4 additional platforms are supported by MQTT discovery but do not have SDK factory functions yet: `scene`, `event`, `device_tracker`, `camera`. These can be created via `entityFactory()` with manual discovery payloads.
+
+Higher-level constructs (not direct MQTT platforms): `automation`, `computed`, `cron`, `mode`, `task`, `device`, `entityFactory`.
 
 ### Entity Definitions (Selected Examples)
 
@@ -725,7 +738,7 @@ interface Transport {
 
 ### MQTT Transport (v1)
 
-- Covers all 28 MQTT discovery-supported entity types.
+- Covers all MQTT discovery-supported entity types (24 with SDK factories, 4 additional via manual discovery).
 - Discovery payloads published as retained messages.
 - Uses `default_entity_id` (not the deprecated `object_id`).
 - Availability topic with LWT to `offline` on crash/shutdown.
@@ -910,23 +923,25 @@ arch:
 init: false
 homeassistant_api: true
 map:
-  - config:rw
+  - addon_config:rw
 services:
   - mqtt:need
 ingress: true
 ingress_port: 8099
+ingress_entry: /
 panel_icon: mdi:language-typescript
+panel_title: HA Forge
 options:
-  scripts_path: ha-forge
   log_level: info
   log_retention_days: 7
   validation_schedule_minutes: 60
+  auto_build_on_save: false
   auto_rebuild_on_registry_change: false
 schema:
-  scripts_path: str
   log_level: list(debug|info|warn|error)
   log_retention_days: int
   validation_schedule_minutes: int
+  auto_build_on_save: bool
   auto_rebuild_on_registry_change: bool
 ```
 
@@ -941,7 +956,7 @@ schema:
 ### File Watching (Optional)
 
 Disabled by default. When enabled:
-- Watches `/config/ha-forge/` for `.ts` file changes.
+- Watches `/config/` for `.ts` file changes.
 - Debounces (500ms).
 - Triggers a full build on change.
 - Does not watch `package.json` changes (dependency changes always require explicit build via UI).
@@ -966,7 +981,7 @@ After `npm install`, the build pipeline scans `node_modules/` for `.d.ts` files 
 
 ## Backup & Persistence
 
-- User scripts in `/config/ha-forge/` are included in HA's built-in backup.
+- User scripts in `/config/` are included in HA's built-in backup.
 - `node_modules/` can be excluded from backup (regenerated via `npm install`). Add-on options control this.
 - SQLite log database lives in the add-on's `/data` directory. Included in backup if the add-on is selected.
 - Entity state is transient — recomputed on startup via `init()`. No state persistence in v1.
@@ -1013,24 +1028,28 @@ Backed by SQLite in the same database. Per-entity key namespace.
 
 ---
 
-## Out of Scope for v1
+## Out of Scope / Not Yet Implemented
 
-- Native bridge transport for unsupported entity types.
-- Entity state persistence across restarts.
+- **Native bridge transport** for entity types MQTT discovery doesn't support (media_player, calendar, weather). Planned for v2.
+- **Entity state persistence** across restarts (`this.store.get()`/`this.store.set()`). Planned.
+- **SDK factory functions for scene, event, device_tracker, camera** — MQTT discovery supports these, but no factory functions exist yet. Creatable via `entityFactory()`.
+- **npm dependency management UI** in the web editor. Currently, edit `package.json` directly.
 - Multi-file imports between user scripts (each file is self-contained; shared code goes in npm packages or a local shared module).
-- Visual automation builder (the reaction map API is the text-based equivalent).
+- Visual automation builder (the reaction map API + stream operators serve as the code-based equivalent).
 - Template entities (HA's template platform handles derived entities well already).
 
 ---
 
+## Resolved Design Decisions
+
+1. **Worker threads vs single process**: Single process with try/catch. Matches Node-RED's model. Error isolation is per-entity via lifecycle boundaries.
+
+2. **Hot reload granularity**: Smart redeploy — only changed files are re-deployed. esbuild bundles per-file, so unchanged files keep running.
+
+3. **Auto-build on save**: Opt-in (disabled by default). Configurable via `auto_build_on_save` add-on option.
+
 ## Open Questions
 
-1. **Worker threads vs single process**: running each file in a worker thread isolates crashes but adds complexity. Single process with try/catch is simpler and matches Node-RED's model. Leaning single process for v1.
+1. **SDK distribution**: publish a types-only `ha-forge` package to npm for local development?
 
-2. **SDK distribution**: publish a types-only `ha-forge` package to npm for users who want to develop locally and deploy to HA? Or keep it purely internal?
-
-3. **Hot reload granularity**: current design rebuilds everything on any change. Per-file incremental builds are possible with esbuild but add complexity around shared state and dependency tracking. Worth revisiting if build times become a problem.
-
-4. **Auto-build on save**: should this be the default? Or keep explicit build as default with auto-build as opt-in? Leaning opt-in to avoid surprises during development.
-
-5. **Rate limiting on HA subscriptions**: a careless `ha.on('sensor.rapidly_updating_thing', ...)` could generate enormous event volume. Should the SDK debounce by default? Configurable per subscription?
+2. **Rate limiting on HA subscriptions**: a careless `ha.on('sensor.rapidly_updating_thing', ...)` could generate large event volume. Stream operators (`.throttle()`, `.debounce()`) exist as opt-in solutions. Should there be a default throttle?

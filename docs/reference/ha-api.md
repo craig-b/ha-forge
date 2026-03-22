@@ -1,5 +1,7 @@
 # HA API Reference
 
+> For usage examples, see the [Reactive Patterns guide](../guide/reactive.md).
+
 The HA API provides access to Home Assistant's services, state, entity registry, event bus, and entity metadata. It is available in two forms:
 
 - **`this.ha`** — Inside entity lifecycle callbacks (`init()`, `destroy()`, `onCommand()`, etc.), the `StatelessHAApi` interface with query/action methods only.

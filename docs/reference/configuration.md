@@ -1,5 +1,7 @@
 # Configuration Reference
 
+> For setup instructions, see the [Getting Started guide](../guide/getting-started.md).
+
 ---
 
 ## Add-on Options

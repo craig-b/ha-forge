@@ -1,5 +1,7 @@
 # Event Stream Reference
 
+> For usage examples, see the [Reactive Patterns guide](../guide/reactive.md).
+
 An `EventStream` is a composable, chainable event pipeline returned by `this.events.on()`. Operators transform the stream and return a new `EventStream`, enabling fluent chaining. All internal timers and subscriptions are cleaned up when the stream is unsubscribed or the owning entity is torn down.
 
 ```ts
