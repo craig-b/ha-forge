@@ -969,30 +969,46 @@ function checkDeviceRefactor(
 ) {
   if (!ts) return;
 
-  // Skip if file already has a device() call
+  // Check if file already has a device() call
+  let hasDevice = false;
   for (const stmt of sf.statements) {
     if (ts.isVariableStatement(stmt)) {
       for (const decl of stmt.declarationList.declarations) {
-        if (decl.initializer && ts.isCallExpression(decl.initializer)) {
-          const name = getCalledName(decl.initializer);
-          if (name === 'device') return;
+        if (decl.initializer && ts.isCallExpression(decl.initializer) && getCalledName(decl.initializer) === 'device') {
+          hasDevice = true;
         }
       }
+    }
+    if (ts.isExportAssignment(stmt) && !stmt.isExportEquals && ts.isCallExpression(stmt.expression) && getCalledName(stmt.expression) === 'device') {
+      hasDevice = true;
     }
   }
 
   const entities = collectStandaloneEntities(sf, sf.getFullText());
-  if (entities.length < 2) return;
 
-  // Place diagnostic on the first entity
-  diagnostics.push({
-    startLine: entities[0].startLine,
-    startCol: 1,
-    endLine: entities[0].endLine,
-    endCol: 1,
-    message: `${entities.length} standalone entities could be grouped into a device() [ha-forge:device-refactor]`,
-    severity: 'info',
-  });
+  if (hasDevice) {
+    // Suggest moving standalone entities into the existing device
+    for (const ent of entities) {
+      diagnostics.push({
+        startLine: ent.startLine,
+        startCol: 1,
+        endLine: ent.endLine,
+        endCol: 1,
+        message: `'${ent.varName}' could be moved into the device() entities [ha-forge:move-into-device]`,
+        severity: 'info',
+      });
+    }
+  } else {
+    if (entities.length < 2) return;
+    diagnostics.push({
+      startLine: entities[0].startLine,
+      startCol: 1,
+      endLine: entities[0].endLine,
+      endCol: 1,
+      message: `${entities.length} standalone entities could be grouped into a device() [ha-forge:device-refactor]`,
+      severity: 'info',
+    });
+  }
 }
 
 /**
@@ -1038,6 +1054,93 @@ ${membersLines}
 
   const parts = [before, deviceDecl, after].filter(p => p.length > 0);
   return parts.join('\n\n');
+}
+
+// ---- Move standalone entity into existing device ----
+
+export interface MoveIntoDeviceEdit {
+  /** Member key for the entities block (camelCase var name) */
+  memberKey: string;
+  /** Text to insert as a new member (already indented) */
+  insertText: string;
+  /** Line to insert at (end of the entities block, before closing brace) */
+  insertLine: number;
+  insertCol: number;
+  /** Range of the standalone statement to delete */
+  deleteStartLine: number;
+  deleteEndLine: number;
+}
+
+/**
+ * Generate edit info for moving a standalone entity into the existing device.
+ * Returns null if the entity or device cannot be found.
+ */
+export function generateMoveIntoDevice(
+  sourceText: string,
+  fileName: string,
+  entityStartLine: number,
+): MoveIntoDeviceEdit | null {
+  if (!ts) return null;
+
+  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
+
+  // Find the device() call and its entities block
+  let deviceCall: import('typescript').CallExpression | null = null;
+  for (const stmt of sf.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (decl.initializer && ts.isCallExpression(decl.initializer) && getCalledName(decl.initializer) === 'device') {
+          deviceCall = decl.initializer;
+        }
+      }
+    }
+    if (ts.isExportAssignment(stmt) && !stmt.isExportEquals && ts.isCallExpression(stmt.expression) && getCalledName(stmt.expression) === 'device') {
+      deviceCall = stmt.expression;
+    }
+  }
+  if (!deviceCall) return null;
+
+  // Find the entities property in device({ ..., entities: { ... } })
+  const deviceArg = deviceCall.arguments[0];
+  if (!deviceArg || !ts.isObjectLiteralExpression(deviceArg)) return null;
+
+  let entitiesObj: import('typescript').ObjectLiteralExpression | null = null;
+  for (const prop of deviceArg.properties) {
+    if (ts.isPropertyAssignment(prop) && getPropName(prop) === 'entities' && ts.isObjectLiteralExpression(prop.initializer)) {
+      entitiesObj = prop.initializer;
+      break;
+    }
+  }
+  if (!entitiesObj) return null;
+
+  // Find the standalone entity at the given line
+  const entities = collectStandaloneEntities(sf, sourceText);
+  const entity = entities.find(e => e.startLine === entityStartLine);
+  if (!entity) return null;
+
+  // Find insertion point: just before the closing brace of the entities object
+  const closeBrace = entitiesObj.getEnd() - 1; // position of '}'
+  const { line: insertLine } = sf.getLineAndCharacterOfPosition(closeBrace);
+
+  // Determine indent from existing members or default to 4 spaces
+  let memberIndent = '    '; // 4 spaces default
+  if (entitiesObj.properties.length > 0) {
+    const firstProp = entitiesObj.properties[0];
+    const { character } = sf.getLineAndCharacterOfPosition(firstProp.getStart(sf));
+    memberIndent = ' '.repeat(character);
+  }
+
+  const indentedExpr = reindent(entity.exprText, memberIndent.length + 2);
+  const insertText = `${memberIndent}${entity.memberKey}: ${indentedExpr},\n`;
+
+  return {
+    memberKey: entity.memberKey,
+    insertText,
+    insertLine: insertLine + 1, // 1-based
+    insertCol: 1,
+    deleteStartLine: entity.startLine,
+    deleteEndLine: entity.endLine,
+  };
 }
 
 // ---- Fill in device info ----

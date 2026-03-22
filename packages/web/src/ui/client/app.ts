@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, FACTORY_DOMAINS } from './ast-analyzers.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -1136,6 +1136,34 @@ export class TseApp extends LitElement {
                 new monaco.Range(1, 1, lineCount, source.split('\n')[lineCount - 1].length + 1),
                 refactored,
               ));
+            }
+          }
+
+          // Move standalone entity into existing device
+          if (marker.message.includes('[ha-forge:move-into-device]')) {
+            const source = model.getValue();
+            const filePath = model.uri.path || 'file.ts';
+            const edit = generateMoveIntoDevice(source, filePath, marker.startLineNumber);
+            if (edit) {
+              const lines = source.split('\n');
+              // Delete the standalone statement (include trailing blank line if present)
+              let delEnd = edit.deleteEndLine;
+              if (delEnd < lines.length && lines[delEnd].trim() === '') delEnd++;
+              const deleteRange = new monaco.Range(edit.deleteStartLine, 1, delEnd + 1, 1);
+              // Insert into the device entities block
+              const insertRange = new monaco.Range(edit.insertLine, edit.insertCol, edit.insertLine, edit.insertCol);
+              actions.push({
+                title: `Move '${edit.memberKey}' into device entities`,
+                diagnostics: [marker],
+                kind: 'quickfix',
+                edit: {
+                  edits: [
+                    { resource: model.uri, textEdit: { range: insertRange, text: edit.insertText }, versionId: model.getVersionId() },
+                    { resource: model.uri, textEdit: { range: deleteRange, text: '' }, versionId: model.getVersionId() },
+                  ],
+                },
+                isPreferred: true,
+              });
             }
           }
         }
