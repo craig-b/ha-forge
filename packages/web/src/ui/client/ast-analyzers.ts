@@ -782,7 +782,7 @@ function checkUnexportedEntities(
       const factory = findFactoryCall(stmt.expression);
       if (factory) {
         const factoryName = getCalledName(factory);
-        const varName = suggestVarName(factory);
+        const varName = suggestVarName(factory) ?? factoryName;
         const hint = varName ? ` [export const ${varName}]` : '';
         diagnostics.push(markerAt(stmt.expression, sf,
           `${factoryName}() result is not assigned or exported — it will not be deployed${hint}`,
