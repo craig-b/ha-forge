@@ -54,6 +54,7 @@ export function analyzeWithAst(sourceText: string, fileName = 'file.ts'): AstAna
   const entities: EntityInfo[] = [];
 
   visit(sf);
+  checkDuplicateIds(entities, diagnostics);
   checkUnexportedEntities(sf, diagnostics);
   checkDeviceRefactor(sf, diagnostics, fileName);
   return { diagnostics, entities };
@@ -298,6 +299,27 @@ function checkBareTimer(
       `Use this.${name}() instead of ${name}() — managed timers are auto-cleared on teardown`,
       'warning',
     ));
+  }
+}
+
+// ---- Duplicate entity IDs ----
+
+function checkDuplicateIds(entities: EntityInfo[], diagnostics: AnalyzerDiagnostic[]) {
+  const seen = new Map<string, EntityInfo>();
+  for (const entity of entities) {
+    const prev = seen.get(entity.id);
+    if (prev) {
+      diagnostics.push({
+        startLine: entity.line,
+        startCol: entity.startCol,
+        endLine: entity.line,
+        endCol: entity.endCol,
+        message: `Duplicate entity ID '${entity.id}' (first defined on line ${prev.line})`,
+        severity: 'error',
+      });
+    } else {
+      seen.set(entity.id, entity);
+    }
   }
 }
 
