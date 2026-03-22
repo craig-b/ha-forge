@@ -174,6 +174,9 @@ function checkFactoryCall(
           'warning',
         ));
       }
+
+      // Domain mismatch check
+      checkIdDomainMismatch(name, idNode, sf, diagnostics);
     }
   }
 
@@ -264,6 +267,55 @@ function checkComputedCall(
         prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) &&
         prop.initializer.text === '') {
       diagnostics.push(markerAt(prop.initializer, sf, `computed() name must not be empty`, 'warning'));
+    }
+  }
+}
+
+// ---- Entity ID domain mismatch ----
+
+/** Maps factory names to their HA entity domain. */
+const FACTORY_DOMAINS: Record<string, string> = {
+  sensor: 'sensor',
+  binarySensor: 'binary_sensor',
+  light: 'light',
+  defineSwitch: 'switch',
+  cover: 'cover',
+  climate: 'climate',
+  fan: 'fan',
+  lock: 'lock',
+  number: 'number',
+  select: 'select',
+  text: 'text',
+  button: 'button',
+  siren: 'siren',
+  humidifier: 'humidifier',
+  valve: 'valve',
+  waterHeater: 'water_heater',
+  vacuum: 'vacuum',
+  lawnMower: 'lawn_mower',
+  alarmControlPanel: 'alarm_control_panel',
+};
+
+function checkIdDomainMismatch(
+  factoryName: string,
+  idNode: import('typescript').StringLiteral,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts) return;
+  const id = idNode.text;
+  const ownDomain = FACTORY_DOMAINS[factoryName];
+  if (!ownDomain) return;
+
+  // Check if the ID starts with a different domain prefix
+  for (const [, domain] of Object.entries(FACTORY_DOMAINS)) {
+    if (domain === ownDomain) continue;
+    if (id.startsWith(domain + '_')) {
+      diagnostics.push(markerAt(idNode, sf,
+        `Entity ID '${id}' starts with '${domain}_' but this is a ${ownDomain} — the full entity ID will be ${ownDomain}.${id}`,
+        'info',
+      ));
+      return;
     }
   }
 }
