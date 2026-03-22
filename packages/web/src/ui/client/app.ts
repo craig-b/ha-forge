@@ -1067,21 +1067,30 @@ export class TseApp extends LitElement {
             ));
           }
 
-          // Missing name → add name after id line
-          const nameMatch = marker.message.match(/missing required 'name' property \(suggested: '(.+?)'\)$/);
+          // Missing or empty name → add/replace name
+          const nameMatch = marker.message.match(/(?:missing required 'name' property|name must not be empty) \(suggested: '(.+?)'\)$/);
           if (nameMatch) {
             const suggested = nameMatch[1];
-            // Find the id line to insert after it
-            const lines = model.getValue().split('\n');
-            for (let i = marker.startLineNumber - 1; i < Math.min(marker.endLineNumber + 5, lines.length); i++) {
-              if (/^\s*id:\s*['"]/.test(lines[i])) {
-                const indent = lines[i].match(/^(\s*)/)?.[1] ?? '';
-                actions.push(this._quickFix(model, marker,
-                  `Add name: '${suggested}'`,
-                  new monaco.Range(i + 1, lines[i].length + 1, i + 1, lines[i].length + 1),
-                  `\n${indent}name: '${suggested}',`,
-                ));
-                break;
+            if (marker.message.includes('must not be empty')) {
+              // Replace the empty string (marker covers the '' node)
+              actions.push(this._quickFix(model, marker,
+                `Set name to '${suggested}'`,
+                new monaco.Range(marker.startLineNumber, marker.startColumn, marker.endLineNumber, marker.endColumn),
+                `'${suggested}'`,
+              ));
+            } else {
+              // Insert after the id line
+              const lines = model.getValue().split('\n');
+              for (let i = marker.startLineNumber - 1; i < Math.min(marker.endLineNumber + 5, lines.length); i++) {
+                if (/^\s*id:\s*['"]/.test(lines[i])) {
+                  const indent = lines[i].match(/^(\s*)/)?.[1] ?? '';
+                  actions.push(this._quickFix(model, marker,
+                    `Add name: '${suggested}'`,
+                    new monaco.Range(i + 1, lines[i].length + 1, i + 1, lines[i].length + 1),
+                    `\n${indent}name: '${suggested}',`,
+                  ));
+                  break;
+                }
               }
             }
           }

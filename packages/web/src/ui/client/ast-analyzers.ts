@@ -143,11 +143,17 @@ function checkFactoryCall(
   if (!props.has('id')) {
     diagnostics.push(markerAt(arg, sf, `${name}() missing required 'id' property`, 'error'));
   }
-  if (requiresName && !props.has('name')) {
-    const idNode = props.get('id');
-    const suggestedName = idNode && ts.isStringLiteral(idNode) && idNode.text ? idToTitle(idNode.text) : null;
-    const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
-    diagnostics.push(markerAt(arg, sf, `${name}() missing required 'name' property${hint}`, 'error'));
+  if (requiresName) {
+    const nameNode = props.get('name');
+    const nameMissing = !nameNode;
+    const nameEmpty = nameNode && ts.isStringLiteral(nameNode) && nameNode.text === '';
+    if (nameMissing || nameEmpty) {
+      const idNode = props.get('id');
+      const suggestedName = idNode && ts.isStringLiteral(idNode) && idNode.text ? idToTitle(idNode.text) : null;
+      const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
+      const target = nameEmpty ? nameNode : arg;
+      diagnostics.push(markerAt(target, sf, `${name}() ${nameEmpty ? "name must not be empty" : "missing required 'name' property"}${hint}`, 'error'));
+    }
   }
 
   // Validate entity ID
@@ -287,17 +293,31 @@ function checkComputedCall(
   if (!props.has('id')) {
     diagnostics.push(markerAt(arg, sf, `computed() missing required 'id' property`, 'error'));
   }
-  if (!props.has('name')) {
-    // Find id value for suggestion
-    let suggestedName: string | null = null;
-    for (const prop of arg.properties) {
-      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'id' && ts.isStringLiteral(prop.initializer) && prop.initializer.text) {
-        suggestedName = idToTitle(prop.initializer.text);
-        break;
+  {
+    let nameNode: import('typescript').Node | undefined;
+    let nameMissing = !props.has('name');
+    let nameEmpty = false;
+    if (!nameMissing) {
+      for (const prop of arg.properties) {
+        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) && prop.initializer.text === '') {
+          nameEmpty = true;
+          nameNode = prop.initializer;
+          break;
+        }
       }
     }
-    const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
-    diagnostics.push(markerAt(arg, sf, `computed() missing required 'name' property${hint}`, 'error'));
+    if (nameMissing || nameEmpty) {
+      let suggestedName: string | null = null;
+      for (const prop of arg.properties) {
+        if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) && prop.name.text === 'id' && ts.isStringLiteral(prop.initializer) && prop.initializer.text) {
+          suggestedName = idToTitle(prop.initializer.text);
+          break;
+        }
+      }
+      const hint = suggestedName ? ` (suggested: '${suggestedName}')` : '';
+      const target = nameEmpty && nameNode ? nameNode : arg;
+      diagnostics.push(markerAt(target, sf, `computed() ${nameEmpty ? "name must not be empty" : "missing required 'name' property"}${hint}`, 'error'));
+    }
   }
   if (!props.has('watch')) {
     diagnostics.push(markerAt(arg, sf, `computed() missing required 'watch' property — array of entity IDs to observe`, 'error'));
