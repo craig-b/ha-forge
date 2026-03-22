@@ -17,10 +17,17 @@ export interface TextOptions<TAttrs extends Record<string, unknown> = Record<str
   /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
   attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
-   * Called when HA sends new text to this text entity.
-   * @param command - The new text value.
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
    */
-  onCommand(this: EntityContext<string, TAttrs>, command: string): void | Promise<void>;
+  optimistic?: boolean;
+  /**
+   * Called when HA sends new text to this text entity.
+   * Optional when `optimistic` is `true` (default) — the text simply echoes commands as state.
+   * @param command - The new text value.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
+   */
+  onCommand?(this: EntityContext<string, TAttrs>, command: string): void | boolean | Promise<void | boolean>;
   /**
    * Called once when the entity is deployed. Return the initial text value.
    */
@@ -37,17 +44,12 @@ export interface TextOptions<TAttrs extends Record<string, unknown> = Record<str
  *
  * @example
  * ```ts
+ * // Optimistic by default — echoes commands as state
  * text({
  *   id: 'display_message',
  *   name: 'Display Message',
  *   config: { max: 32 },
- *   onCommand(value) {
- *     // Send text to display
- *     this.update(value);
- *   },
- *   init() {
- *     return 'Hello';
- *   },
+ *   init() { return 'Hello'; },
  * });
  * ```
  */

@@ -17,10 +17,17 @@ export interface SwitchOptions<TAttrs extends Record<string, unknown> = Record<s
   /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
   attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
-   * Called when HA sends a command to this switch (user toggles it in the UI).
-   * @param command - `'ON'` or `'OFF'`.
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
    */
-  onCommand(this: EntityContext<'on' | 'off', TAttrs>, command: 'ON' | 'OFF'): void | Promise<void>;
+  optimistic?: boolean;
+  /**
+   * Called when HA sends a command to this switch (user toggles it in the UI).
+   * Optional when `optimistic` is `true` (default) — the switch simply echoes commands as state.
+   * @param command - `'ON'` or `'OFF'`.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
+   */
+  onCommand?(this: EntityContext<'on' | 'off', TAttrs>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
   /**
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
    */
@@ -37,20 +44,29 @@ export interface SwitchOptions<TAttrs extends Record<string, unknown> = Record<s
  *
  * @example
  * ```ts
+ * // Minimal — optimistic by default, no handler needed
  * defineSwitch({
  *   id: 'pump',
  *   name: 'Irrigation Pump',
- *   config: { device_class: 'switch' },
+ *   init() { return 'off'; },
+ * });
+ *
+ * // With side effects — auto-confirms after handler runs
+ * defineSwitch({
+ *   id: 'pump',
+ *   name: 'Irrigation Pump',
  *   onCommand(command) {
- *     if (command === 'ON') {
- *       // Start pump
- *     } else {
- *       // Stop pump
- *     }
- *     this.update(command === 'ON' ? 'on' : 'off');
+ *     gpio.write(PUMP_PIN, command === 'ON' ? 1 : 0);
  *   },
- *   init() {
- *     return 'off';
+ * });
+ *
+ * // Conditional — reject if not ready
+ * defineSwitch({
+ *   id: 'pump',
+ *   name: 'Irrigation Pump',
+ *   onCommand(command) {
+ *     if (!systemReady) return false; // rejected, no state change
+ *     gpio.write(PUMP_PIN, command === 'ON' ? 1 : 0);
  *   },
  * });
  * ```

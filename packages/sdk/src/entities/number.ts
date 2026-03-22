@@ -17,10 +17,17 @@ export interface NumberOptions<TAttrs extends Record<string, unknown> = Record<s
   /** Declarative attributes published alongside the entity state. Values can be static or reactive via `computed()`. */
   attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
-   * Called when HA sends a new value to this number entity.
-   * @param command - The new numeric value.
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
    */
-  onCommand(this: EntityContext<number, TAttrs>, command: number): void | Promise<void>;
+  optimistic?: boolean;
+  /**
+   * Called when HA sends a new value to this number entity.
+   * Optional when `optimistic` is `true` (default) — the number simply echoes commands as state.
+   * @param command - The new numeric value.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
+   */
+  onCommand?(this: EntityContext<number, TAttrs>, command: number): void | boolean | Promise<void | boolean>;
   /**
    * Called once when the entity is deployed. Return the initial value.
    */
@@ -37,16 +44,21 @@ export interface NumberOptions<TAttrs extends Record<string, unknown> = Record<s
  *
  * @example
  * ```ts
+ * // Optimistic by default — echoes commands as state
  * number({
  *   id: 'fan_speed',
  *   name: 'Fan Speed',
  *   config: { min: 0, max: 100, step: 10, unit_of_measurement: '%' },
+ *   init() { return 50; },
+ * });
+ *
+ * // With validation — reject out-of-range values
+ * number({
+ *   id: 'fan_speed',
+ *   name: 'Fan Speed',
+ *   config: { min: 0, max: 100, step: 10 },
  *   onCommand(value) {
- *     // Set hardware fan speed
- *     this.update(value);
- *   },
- *   init() {
- *     return 50;
+ *     if (value > 80 && !overrideEnabled) return false;
  *   },
  * });
  * ```

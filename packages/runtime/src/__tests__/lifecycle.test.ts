@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EntityLifecycleManager } from '../lifecycle.js';
 import type { Transport } from '../transport.js';
 import type { ResolvedDevice } from '../loader.js';
-import type { DeviceDefinition, SensorDefinition, SwitchDefinition } from '@ha-forge/sdk';
+import type { DeviceDefinition, NumberDefinition, SelectDefinition, SensorDefinition, SwitchDefinition, TextDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 
 
@@ -681,6 +681,188 @@ describe('EntityLifecycleManager', () => {
 
       // poll uses chained timeouts — clearTimeout should be called for the poll ref
       expect(clearTimeoutSpy).toHaveBeenCalled();
+    });
+  });
+
+  // -----------------------------------------------------------------------
+  // Optimistic command handling
+  // -----------------------------------------------------------------------
+  describe('optimistic commands', () => {
+    it('switch auto-confirms ON → on when no onCommand is defined', async () => {
+      const entity = makeSwitchEntity('lamp', { onCommand: undefined as any });
+      // Remove onCommand entirely to test the no-handler path
+      delete (entity.definition as any).onCommand;
+      await manager.deploy([entity]);
+
+      // Get the registered command handler
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      expect(onCommandCall).toBeDefined();
+      const handler = onCommandCall![1] as (command: unknown) => void;
+
+      await handler('ON');
+      expect(transport.publishState).toHaveBeenCalledWith('lamp', 'on', undefined);
+    });
+
+    it('switch auto-confirms OFF → off when onCommand does not call update', async () => {
+      const onCommand = vi.fn(); // does nothing, no update, no return
+      const entity = makeSwitchEntity('lamp', { onCommand });
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => Promise<void>;
+
+      await handler('OFF');
+      expect(onCommand).toHaveBeenCalledWith('OFF');
+      expect(transport.publishState).toHaveBeenCalledWith('lamp', 'off', undefined);
+    });
+
+    it('switch does NOT auto-confirm when onCommand returns false', async () => {
+      const onCommand = vi.fn(() => false);
+      const entity = makeSwitchEntity('lamp', { onCommand });
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => Promise<void>;
+
+      await handler('ON');
+      expect(onCommand).toHaveBeenCalledWith('ON');
+      // publishState should NOT be called (only init could call it, but there's no init)
+      expect(transport.publishState).not.toHaveBeenCalled();
+    });
+
+    it('switch does NOT auto-confirm when onCommand calls this.update()', async () => {
+      const entity = makeSwitchEntity('lamp', {
+        onCommand(command) {
+          this.update(command === 'ON' ? 'on' : 'off');
+        },
+      });
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => Promise<void>;
+
+      await handler('ON');
+      // publishState called exactly once (from the explicit this.update, not auto-confirm)
+      expect(transport.publishState).toHaveBeenCalledTimes(1);
+      expect(transport.publishState).toHaveBeenCalledWith('lamp', 'on', undefined);
+    });
+
+    it('switch with optimistic: false does NOT auto-confirm', async () => {
+      const onCommand = vi.fn();
+      const entity = makeSwitchEntity('lamp', {
+        onCommand,
+        optimistic: false,
+      } as Partial<SwitchDefinition>);
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => Promise<void>;
+
+      await handler('ON');
+      expect(onCommand).toHaveBeenCalledWith('ON');
+      // No auto-confirm because optimistic is false
+      expect(transport.publishState).not.toHaveBeenCalled();
+    });
+
+    it('number entity auto-confirms with identity mapping', async () => {
+      const definition: NumberDefinition = {
+        id: 'volume',
+        name: 'Volume',
+        type: 'number',
+        config: { min: 0, max: 100 },
+      };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'volume',
+      );
+      expect(onCommandCall).toBeDefined();
+      const handler = onCommandCall![1] as (command: unknown) => void;
+
+      await handler(75);
+      expect(transport.publishState).toHaveBeenCalledWith('volume', 75, undefined);
+    });
+
+    it('select entity auto-confirms with identity mapping', async () => {
+      const definition: SelectDefinition = {
+        id: 'mode',
+        name: 'Mode',
+        type: 'select',
+        config: { options: ['eco', 'comfort', 'boost'] },
+      };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'mode',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => void;
+
+      await handler('eco');
+      expect(transport.publishState).toHaveBeenCalledWith('mode', 'eco', undefined);
+    });
+
+    it('text entity auto-confirms with identity mapping', async () => {
+      const definition: TextDefinition = {
+        id: 'msg',
+        name: 'Message',
+        type: 'text',
+      };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'msg',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => void;
+
+      await handler('hello world');
+      expect(transport.publishState).toHaveBeenCalledWith('msg', 'hello world', undefined);
+    });
+
+    it('async onCommand returning false rejects the command', async () => {
+      const entity = makeSwitchEntity('lamp', {
+        async onCommand() {
+          await Promise.resolve();
+          return false;
+        },
+      });
+      await manager.deploy([entity]);
+
+      const onCommandCall = transport.onCommand.mock.calls.find(
+        (c: unknown[]) => c[0] === 'lamp',
+      );
+      const handler = onCommandCall![1] as (command: unknown) => Promise<void>;
+
+      await handler('ON');
+      expect(transport.publishState).not.toHaveBeenCalled();
+    });
+
+    it('warns when optimistic: false and no onCommand handler', async () => {
+      const definition: SwitchDefinition = {
+        id: 'dead_switch',
+        name: 'Dead Switch',
+        type: 'switch',
+        optimistic: false,
+      };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      await manager.deploy([entity]);
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('optimistic: false but no onCommand'),
+        expect.any(Object),
+      );
     });
   });
 });

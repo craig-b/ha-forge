@@ -980,10 +980,16 @@ export interface SwitchConfig {
 export interface SwitchDefinition extends BaseEntity<'on' | 'off', SwitchConfig> {
   type: 'switch';
   /**
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
+   */
+  optimistic?: boolean;
+  /**
    * Called when HA sends a command to this switch.
    * @param command - `'ON'` or `'OFF'`.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand(this: EntityContext<'on' | 'off'>, command: 'ON' | 'OFF'): void | Promise<void>;
+  onCommand?(this: EntityContext<'on' | 'off'>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
 }
 
 // ---- Light ----
@@ -1403,10 +1409,16 @@ export interface NumberConfig {
 export interface NumberDefinition extends BaseEntity<number, NumberConfig> {
   type: 'number';
   /**
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
+   */
+  optimistic?: boolean;
+  /**
    * Called when HA sends a new value to this number entity.
    * @param command - The new numeric value.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand(this: EntityContext<number>, command: number): void | Promise<void>;
+  onCommand?(this: EntityContext<number>, command: number): void | boolean | Promise<void | boolean>;
 }
 
 // ---- Select ----
@@ -1421,10 +1433,16 @@ export interface SelectConfig {
 export interface SelectDefinition extends BaseEntity<string, SelectConfig> {
   type: 'select';
   /**
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
+   */
+  optimistic?: boolean;
+  /**
    * Called when HA sends a new selection to this select entity.
    * @param command - The selected option string.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand(this: EntityContext<string>, command: string): void | Promise<void>;
+  onCommand?(this: EntityContext<string>, command: string): void | boolean | Promise<void | boolean>;
 }
 
 // ---- Text ----
@@ -1445,10 +1463,16 @@ export interface TextConfig {
 export interface TextDefinition extends BaseEntity<string, TextConfig> {
   type: 'text';
   /**
+   * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
+   * (unless it returns `false` to reject). Set to `false` to require manual `this.update()` calls.
+   */
+  optimistic?: boolean;
+  /**
    * Called when HA sends new text to this text entity.
    * @param command - The new text value.
+   * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand(this: EntityContext<string>, command: string): void | Promise<void>;
+  onCommand?(this: EntityContext<string>, command: string): void | boolean | Promise<void | boolean>;
 }
 
 // ---- Button ----

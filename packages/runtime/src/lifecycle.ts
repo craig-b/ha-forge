@@ -317,20 +317,73 @@ export class EntityLifecycleManager {
 
     // Set up command handler for bidirectional entities
     if ('onCommand' in entity.definition && typeof entity.definition.onCommand === 'function') {
+      const entityType = entity.definition.type;
+      const isOptimisticType = entityType === 'switch' || entityType === 'number' || entityType === 'select' || entityType === 'text';
+      const optimistic = (entity.definition as EntityDefinition & { optimistic?: boolean }).optimistic ?? isOptimisticType;
       const def = entity.definition as EntityDefinition & {
-        onCommand: (this: EntityContext, command: unknown) => void | Promise<void>;
+        onCommand: (this: EntityContext, command: unknown) => unknown;
       };
       const context = this.createContext(instance);
-      this.transport.onCommand(entity.definition.id, (command) => {
+      const entityId = entity.definition.id;
+
+      this.transport.onCommand(entityId, async (command) => {
+        // Track whether this.update() was called during the handler
+        let updateCalled = false;
+        const origUpdate = context.update;
+        if (optimistic) {
+          context.update = (value: unknown, attributes?: Record<string, unknown>) => {
+            updateCalled = true;
+            origUpdate.call(context, value, attributes);
+          };
+        }
+
         try {
-          def.onCommand.call(context, command);
+          let result: unknown = def.onCommand.call(context, command);
+          if (result instanceof Promise) {
+            result = await result;
+          }
+
+          // Optimistic auto-confirm: publish command as state unless rejected or already updated
+          if (optimistic && result !== false && !updateCalled) {
+            const mappedState = entityType === 'switch'
+              ? (String(command).toLowerCase() as 'on' | 'off')
+              : command;
+            context.update = origUpdate;
+            context.update(mappedState);
+          }
         } catch (err) {
-          this.logger.error(`Command handler error for ${entity.definition.id}`, {
+          this.logger.error(`Command handler error for ${entityId}`, {
             error: err instanceof Error ? err.message : String(err),
             command,
           });
+        } finally {
+          if (optimistic) {
+            context.update = origUpdate;
+          }
         }
       });
+    } else {
+      // No onCommand defined — register optimistic-only handler for simple types
+      const entityType = entity.definition.type;
+      const isOptimisticType = entityType === 'switch' || entityType === 'number' || entityType === 'select' || entityType === 'text';
+      const optimistic = (entity.definition as EntityDefinition & { optimistic?: boolean }).optimistic ?? isOptimisticType;
+
+      if (optimistic && isOptimisticType) {
+        const context = this.createContext(instance);
+        const entityId = entity.definition.id;
+
+        this.transport.onCommand(entityId, (command) => {
+          const mappedState = entityType === 'switch'
+            ? (String(command).toLowerCase() as 'on' | 'off')
+            : command;
+          context.update(mappedState);
+        });
+      } else if (!optimistic && isOptimisticType) {
+        // optimistic explicitly set to false, but no onCommand — entity will never respond to commands
+        this.logger.warn(`Entity ${entity.definition.id} has optimistic: false but no onCommand handler — commands will be ignored`, {
+          sourceFile: entity.sourceFile,
+        });
+      }
     }
 
     // Set up press handler for button entities
@@ -657,32 +710,60 @@ export class EntityLifecycleManager {
         };
 
         // Add onCommand for bidirectional entity types (onCommand, onPress, onNotify, onInstall)
+        const memberEntityType = memberDef.type;
+        const isMemberOptimisticType = memberEntityType === 'switch' || memberEntityType === 'number' || memberEntityType === 'select' || memberEntityType === 'text';
+        const memberOptimistic = (memberDef as EntityDefinition & { optimistic?: boolean }).optimistic ?? isMemberOptimisticType;
         const isBidirectional = 'onCommand' in memberDef || 'onPress' in memberDef || 'onNotify' in memberDef || 'onInstall' in memberDef;
-        if (isBidirectional) {
+
+        if (isBidirectional || (memberOptimistic && isMemberOptimisticType)) {
           handle.onCommand = (handler: (command: unknown) => void | Promise<void>) => {
             commandHandlers.set(entityId, handler);
           };
 
           // Register transport command listener that delegates to the device's handler
-          this.transport.onCommand(entityId, (command) => {
+          this.transport.onCommand(entityId, async (command) => {
             const h = commandHandlers.get(entityId);
             if (h) {
+              // Track whether handle.update() was called during the handler
+              let updateCalled = false;
+              const origUpdate = handle.update;
+              if (memberOptimistic) {
+                handle.update = (value: unknown, attributes?: Record<string, unknown>) => {
+                  updateCalled = true;
+                  origUpdate.call(handle, value, attributes);
+                };
+              }
+
               try {
-                const result = h(command);
+                let result: unknown = h(command);
                 if (result instanceof Promise) {
-                  result.catch((err) => {
-                    this.logger.error(`Command handler error for ${entityId}`, {
-                      error: err instanceof Error ? err.message : String(err),
-                      command,
-                    });
-                  });
+                  result = await result;
+                }
+
+                // Optimistic auto-confirm for simple types
+                if (memberOptimistic && result !== false && !updateCalled) {
+                  const mappedState = memberEntityType === 'switch'
+                    ? (String(command).toLowerCase() as 'on' | 'off')
+                    : command;
+                  handle.update = origUpdate;
+                  handle.update(mappedState);
                 }
               } catch (err) {
                 this.logger.error(`Command handler error for ${entityId}`, {
                   error: err instanceof Error ? err.message : String(err),
                   command,
                 });
+              } finally {
+                if (memberOptimistic) {
+                  handle.update = origUpdate;
+                }
               }
+            } else if (memberOptimistic && isMemberOptimisticType) {
+              // No handler registered — auto-confirm for optimistic types
+              const mappedState = memberEntityType === 'switch'
+                ? (String(command).toLowerCase() as 'on' | 'off')
+                : command;
+              handle.update(mappedState);
             } else {
               this.logger.warn(`No command handler registered for ${entityId} in device ${dev.id}`);
             }
