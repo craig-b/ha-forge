@@ -2204,8 +2204,8 @@ export interface DeviceOptions<TEntities extends Record<string, DeviceMemberDefi
   suggested_area?: string;
   /** Map of entity keys to entity definitions. */
   entities: TEntities;
-  /** Called once when the device is deployed. Set up polling, subscriptions, and command handlers. */
-  init(this: DeviceContext<TEntities>): void | Promise<void>;
+  /** Called once when the device is deployed. Set up polling, subscriptions, and command handlers. Optional for pure grouping devices where all members have their own init. */
+  init?(this: DeviceContext<TEntities>): void | Promise<void>;
   /** Called when the device is torn down. Use for cleanup beyond auto-tracked handles. */
   destroy?(this: DeviceContext<TEntities>): void | Promise<void>;
 }
@@ -2231,8 +2231,8 @@ export interface DeviceDefinition<TEntities extends Record<string, DeviceMemberD
   suggested_area?: string;
   /** Map of entity keys to entity definitions. */
   entities: TEntities;
-  /** Called once when the device is deployed. */
-  init(this: DeviceContext<TEntities>): void | Promise<void>;
+  /** Called once when the device is deployed. Optional for pure grouping devices. */
+  init?(this: DeviceContext<TEntities>): void | Promise<void>;
   /** Called when the device is torn down. */
   destroy?(this: DeviceContext<TEntities>): void | Promise<void>;
 }

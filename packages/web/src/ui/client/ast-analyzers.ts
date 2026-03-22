@@ -793,12 +793,6 @@ interface StandaloneEntity {
   factoryName: string;
   /** Full source text of the initializer expression (e.g. `sensor({ ... })`) */
   exprText: string;
-  /** Source text of the init() body if present, null otherwise */
-  initText: string | null;
-  /** Source text of the destroy() body if present, null otherwise */
-  destroyText: string | null;
-  /** Whether init uses only simple this.update/this.attr (safe to auto-rewrite) */
-  simpleInit: boolean;
   /** The statement node for range info */
   startLine: number;
   endLine: number;
@@ -835,33 +829,22 @@ function collectStandaloneEntities(
       const varName = ts.isIdentifier(decl.name) ? decl.name.text : null;
       if (!varName) continue;
 
-      // Extract init/destroy from the factory call's object literal
+      // Check if the entity has a device prop that needs stripping
+      // (device grouping moves to device level).
+      // init/destroy are preserved — autonomous members keep their own lifecycle.
       const arg = factory.arguments[0];
-      let initText: string | null = null;
-      let destroyText: string | null = null;
-      let simpleInit = true;
-
       let hasDevice = false;
       if (arg && ts.isObjectLiteralExpression(arg)) {
         for (const prop of arg.properties) {
-          const propName = getPropName(prop);
-          if (propName === 'init') {
-            initText = extractFunctionBodyText(prop, sourceText);
-            simpleInit = checkSimpleInit(prop);
-          }
-          if (propName === 'destroy') {
-            destroyText = extractFunctionBodyText(prop, sourceText);
-          }
-          if (propName === 'device') {
+          if (getPropName(prop) === 'device') {
             hasDevice = true;
+            break;
           }
         }
       }
 
-      // Build expression text without init/destroy/device (they move to device level)
-      const needsStrip = initText || destroyText || hasDevice;
-      const exprText = needsStrip
-        ? removePropsFromExpr(decl.initializer, sourceText, sf, ['init', 'destroy', 'device'])
+      const exprText = hasDevice
+        ? removePropsFromExpr(decl.initializer, sourceText, sf, ['device'])
         : sourceText.slice(decl.initializer.getStart(sf), decl.initializer.getEnd());
 
       const { line: sl } = sf.getLineAndCharacterOfPosition(stmt.getStart(sf));
@@ -872,9 +855,6 @@ function collectStandaloneEntities(
         memberKey: varName,
         factoryName,
         exprText,
-        initText,
-        destroyText,
-        simpleInit,
         startLine: sl + 1,
         endLine: el + 1,
       });
@@ -891,63 +871,6 @@ function getPropName(prop: import('typescript').ObjectLiteralElementLike): strin
     return prop.name.text;
   }
   return null;
-}
-
-function extractFunctionBodyText(
-  prop: import('typescript').ObjectLiteralElementLike,
-  sourceText: string,
-): string | null {
-  if (!ts) return null;
-  // Get the full text of the property (e.g. `init() { ... }` or `init: () => { ... }`)
-  return sourceText.slice(prop.getStart(), prop.getEnd());
-}
-
-/**
- * Check if an init function only uses this.update() and this.attr()
- * (i.e. no this.poll, this.setTimeout, this.setInterval, this.events, etc.)
- */
-function checkSimpleInit(prop: import('typescript').ObjectLiteralElementLike): boolean {
-  if (!ts) return false;
-
-  // async init can't be trivially moved
-  if ((ts.isMethodDeclaration(prop) || ts.isFunctionExpression(prop) || ts.isArrowFunction(prop)) &&
-      prop.modifiers?.some(m => m.kind === ts!.SyntaxKind.AsyncKeyword)) {
-    return false;
-  }
-
-  let simple = true;
-
-  function walk(node: import('typescript').Node) {
-    if (!ts || !simple) return;
-
-    // Return statements mean the init produces initial state — can't move to device
-    if (ts.isReturnStatement(node)) {
-      simple = false;
-      return;
-    }
-
-    // Bare setTimeout/setInterval — not auto-cleaned in device context
-    if (ts.isCallExpression(node) && ts.isIdentifier(node.expression)) {
-      const name = node.expression.text;
-      if (name === 'setTimeout' || name === 'setInterval') {
-        simple = false;
-        return;
-      }
-    }
-
-    // this.poll() has different semantics on device context
-    if (ts.isPropertyAccessExpression(node) &&
-        node.expression.kind === ts.SyntaxKind.ThisKeyword &&
-        node.name.text === 'poll') {
-      simple = false;
-      return;
-    }
-
-    ts.forEachChild(node, walk);
-  }
-
-  walk(prop);
-  return simple;
 }
 
 /**
@@ -1057,53 +980,19 @@ export function generateDeviceRefactor(sourceText: string, fileName: string): st
   const deviceVarName = toCamelCase(baseName) ?? 'myDevice';
   const deviceDisplayName = deviceId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
-  // Collect init/destroy from entities
-  const inits: Array<{ memberKey: string; text: string; simple: boolean }> = [];
-  const destroys: Array<{ memberKey: string; text: string }> = [];
-  for (const ent of entities) {
-    if (ent.initText) inits.push({ memberKey: ent.memberKey, text: ent.initText, simple: ent.simpleInit });
-    if (ent.destroyText) destroys.push({ memberKey: ent.memberKey, text: ent.destroyText });
-  }
-
   // Build the members block — re-indent each expression to 6 spaces
+  // init/destroy are preserved on each entity (autonomous members keep their own lifecycle)
   const membersLines = entities.map(ent => {
     const indented = reindent(ent.exprText, 6);
     return `    ${ent.memberKey}: ${indented},`;
   }).join('\n');
-
-  // Build init block
-  let initBlock = '';
-  if (inits.length > 0) {
-    if (inits.length === 1 && inits[0].simple) {
-      // Single simple init — rewrite this.update → this.entities.<key>.update
-      const rewritten = rewriteInitForDevice(inits[0].text, inits[0].memberKey);
-      initBlock = `\n  ${rewritten},`;
-    } else {
-      // Multiple inits or complex init — comment out with TODO
-      const commentedInits = inits.map(i => {
-        const lines = i.text.split('\n').map(l => `  // ${l}`).join('\n');
-        return `  // --- from ${i.memberKey} ---\n${lines}`;
-      }).join('\n');
-      initBlock = `\n  // TODO: Migrate init() — replace this.update() with this.entities.<key>.update()\n${commentedInits}\n  // init() {\n  // },`;
-    }
-  }
-
-  // Build destroy block
-  let destroyBlock = '';
-  if (destroys.length > 0) {
-    const commentedDestroys = destroys.map(d => {
-      const lines = d.text.split('\n').map(l => `  // ${l}`).join('\n');
-      return `  // --- from ${d.memberKey} ---\n${lines}`;
-    }).join('\n');
-    destroyBlock = `\n  // TODO: Migrate destroy()\n${commentedDestroys}\n  // destroy() {\n  // },`;
-  }
 
   const deviceDecl = `export const ${deviceVarName} = device({
   id: '${deviceId}',
   name: '${deviceDisplayName}',
   entities: {
 ${membersLines}
-  },${initBlock}${destroyBlock}
+  },
 });`;
 
   // Replace the entity declarations in the source with the device declaration
@@ -1117,16 +1006,6 @@ ${membersLines}
 
   const parts = [before, deviceDecl, after].filter(p => p.length > 0);
   return parts.join('\n\n');
-}
-
-/**
- * Rewrite an init property text, replacing this.update/this.attr
- * with this.entities.<key>.update/this.entities.<key>.attr.
- */
-function rewriteInitForDevice(initText: string, memberKey: string): string {
-  return initText
-    .replace(/this\.update\b/g, `this.entities.${memberKey}.update`)
-    .replace(/this\.attr\b/g, `this.entities.${memberKey}.attr`);
 }
 
 // ---- Fill in device info ----

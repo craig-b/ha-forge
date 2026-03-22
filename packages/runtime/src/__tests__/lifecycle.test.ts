@@ -405,7 +405,7 @@ describe('EntityLifecycleManager', () => {
       expect(manager.getEntityIds()).toEqual(expect.arrayContaining(['ws_temp', 'ws_humidity']));
     });
 
-    it('does not call individual entity init() for device-owned entities', async () => {
+    it('calls individual entity init() for device-owned entities that have init', async () => {
       const entityInit = vi.fn(() => '42');
       const tempDef: SensorDefinition = {
         id: 'ws_temp', name: 'Temperature', type: 'sensor',
@@ -426,8 +426,33 @@ describe('EntityLifecycleManager', () => {
 
       await manager.deploy(entities, devices);
 
-      // The entity's own init should NOT be called
-      expect(entityInit).not.toHaveBeenCalled();
+      // Autonomous member: entity's own init SHOULD be called
+      expect(entityInit).toHaveBeenCalledTimes(1);
+    });
+
+    it('skips init for device-owned entities without init', async () => {
+      const tempDef: SensorDefinition = {
+        id: 'ws_temp', name: 'Temperature', type: 'sensor',
+      } as SensorDefinition;
+
+      const deviceInit = vi.fn();
+      const deviceDef: DeviceDefinition = {
+        __kind: 'device', id: 'dev1', name: 'Dev', entities: { temperature: tempDef },
+        init: deviceInit,
+      };
+
+      const entities: ResolvedEntity[] = [
+        { definition: tempDef, sourceFile: 'test.ts', deviceId: 'dev1' },
+      ];
+      const devices: ResolvedDevice[] = [{
+        definition: deviceDef, sourceFile: 'test.ts', entityIds: ['ws_temp'],
+      }];
+
+      await manager.deploy(entities, devices);
+
+      // Managed member: device init handles it
+      expect(deviceInit).toHaveBeenCalledTimes(1);
+      expect(manager.getEntityIds()).toContain('ws_temp');
     });
 
     it('provides entity handles with update() in device context', async () => {

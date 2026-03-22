@@ -284,21 +284,29 @@ export class EntityLifecycleManager {
     // Register with transport (publishes MQTT discovery)
     await this.transport.register(entity);
 
-    // Device-owned entities: skip individual init and command registration.
-    // The device's init() will set up command handlers via entity handles.
-    // Exception: computed entities still need their reactive subscriptions,
-    // and computed attributes still need their watchers wired up.
+    // Device-owned entities without their own init(): skip individual init
+    // and command registration — the device's init() will drive them via entity handles.
+    // Device-owned entities WITH init(): run their own lifecycle (autonomous members).
+    // Exception: computed entities always need their reactive subscriptions,
+    // and computed attributes always need their watchers wired up.
     if (ownedByDevice) {
-      if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
-        await this.initComputed(instance, entity.definition as ComputedDefinition);
-      } else {
-        instance.initialized = true;
+      const hasOwnInit = 'init' in entity.definition && typeof entity.definition.init === 'function';
+      if (!hasOwnInit) {
+        if ('__computed' in entity.definition && (entity.definition as ComputedDefinition).__computed === true) {
+          await this.initComputed(instance, entity.definition as ComputedDefinition);
+        } else {
+          instance.initialized = true;
+        }
+        this.initComputedAttributes(instance);
+        this.logger.info(`Entity registered (device ${ownedByDevice}): ${entity.definition.id}`, {
+          sourceFile: entity.sourceFile,
+        });
+        return;
       }
-      this.initComputedAttributes(instance);
-      this.logger.info(`Entity registered (device ${ownedByDevice}): ${entity.definition.id}`, {
+      // Autonomous device member — fall through to normal init flow
+      this.logger.info(`Entity has own init (device ${ownedByDevice}): ${entity.definition.id}`, {
         sourceFile: entity.sourceFile,
       });
-      return;
     }
 
     // Computed entities: auto-subscribe to watched entities, no user init
@@ -805,9 +813,11 @@ export class EntityLifecycleManager {
     // Store context for destroy()
     deviceInstance.context = context;
 
-    // Call device init()
+    // Call device init() (optional for pure grouping devices)
     try {
-      await dev.init.call(context);
+      if (dev.init) {
+        await dev.init.call(context);
+      }
       deviceInstance.initialized = true;
       this.logger.info(`Device initialized: ${dev.id}`, {
         sourceFile: resolvedDevice.sourceFile,
