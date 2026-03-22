@@ -163,7 +163,7 @@ All MQTT communication uses the `ha-forge/` prefix for entity state/command topi
 | `ha-forge/availability` | Publish | Yes | Add-on availability. LWT set to `offline` on connect. Publishes `online` on startup, `offline` on shutdown/crash. All entities reference this as their availability topic. |
 | `ha-forge/<entity_id>/state` | Publish | Yes | Entity state. Published on `this.update()`. Payload format depends on entity type (string, JSON object for complex entities like climate/light). |
 | `ha-forge/<entity_id>/set` | Subscribe | No | Entity command topic. HA publishes commands here when users interact with bidirectional entities. |
-| `homeassistant/<component>/<entity_id>/config` | Publish | Yes | MQTT discovery config. Published on entity registration. Empty payload published on deregistration to remove the entity. Uses `device` format: `homeassistant/device/<node_id>/config`. |
+| `homeassistant/device/<device_id>/config` | Publish | Yes | MQTT discovery config (device-based format). Published on entity registration. Empty payload published on deregistration to remove the entity. |
 | `homeassistant/status` | Subscribe | No | HA birth/will topic. When HA restarts (publishes `online`), the runtime re-publishes all discovery configs and current states to re-register entities. |
 
 ### Discovery payload format
@@ -174,7 +174,7 @@ Discovery payloads use the device-based MQTT discovery format. Each entity inclu
 - `availability` referencing `ha-forge/availability`.
 - `state_topic` and optionally `command_topic`.
 - Platform-specific fields (e.g., `device_class`, `unit_of_measurement`, `options`).
-- `unique_id` and `default_entity_id` (not the deprecated `object_id`).
+- `uniq_id` and `def_ent_id` (abbreviated MQTT discovery keys, not the long-form `unique_id`/`default_entity_id`).
 
 ### HA status topic
 
@@ -378,7 +378,8 @@ CREATE TABLE logs (
   source_file TEXT NOT NULL,           -- user .ts filename or '_runtime'
   entity_id TEXT,                      -- null for file-level or system logs
   message TEXT NOT NULL,
-  data TEXT                            -- JSON blob for structured context
+  data TEXT,                           -- JSON blob for structured context
+  caller TEXT                          -- caller location, e.g. "weather.ts:15"
 );
 
 CREATE INDEX idx_logs_time ON logs(timestamp);
@@ -397,7 +398,7 @@ The runtime registers its own health entities (dogfooding the system):
 
 | Entity | Type | States | Description |
 |---|---|---|---|
-| `binary_sensor.ha_forge_build_healthy` | `binary_sensor` | `on` / `off` | `on` = all scripts compile cleanly against the current HA registry. `off` = type errors found. |
+| `binary_sensor.ha_forge_build_healthy` | `binary_sensor` | `on` / `off` | `device_class: problem` — `on` = build errors found, `off` = all scripts compile cleanly. |
 | `sensor.ha_forge_type_errors` | `sensor` | error count | Number of type errors in user scripts. Attributes include error details, last checked timestamp, and check trigger. |
 
 **`sensor.ha_forge_type_errors` attributes:**
@@ -406,7 +407,7 @@ The runtime registers its own health entities (dogfooding the system):
 |---|---|---|
 | `errors` | `Array<{ file, line, column, message }>` | Detailed error list. |
 | `last_checked` | `string` | ISO 8601 timestamp of the last validation run. |
-| `check_trigger` | `'scheduled' \| 'registry_change'` | What triggered the validation. |
+| `check_trigger` | `'scheduled' \| 'registry_change' \| 'build'` | What triggered the validation. |
 
 ---
 

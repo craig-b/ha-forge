@@ -6,7 +6,7 @@ The add-on container, persistent storage, MQTT connection management, SQLite log
 
 ### Dockerfile
 
-Node.js LTS runtime in a Docker container. Multi-arch build for `amd64`, `aarch64`, and `armv7`.
+Node.js LTS runtime in a Docker container. Currently built for `amd64` only.
 
 Key layers:
 - Base image: Node.js LTS Alpine.
@@ -19,19 +19,16 @@ Key layers:
 ```yaml
 name: HA Forge
 description: Define Home Assistant entities in TypeScript
-version: 0.1.0
 slug: ha_forge
-url: https://github.com/<repo>
+url: https://github.com/craig-b/ha-forge
 arch:
   - amd64
-  - aarch64
-  - armv7
 init: false
 homeassistant_api: true
 map:
   - addon_config:rw
 services:
-  - mqtt:need
+  - mqtt:want
 ingress: true
 ingress_port: 8099
 ingress_entry: /
@@ -43,19 +40,27 @@ options:
   validation_schedule_minutes: 60
   auto_build_on_save: false
   auto_rebuild_on_registry_change: false
+  mqtt_host: ""
+  mqtt_port: 1883
+  mqtt_username: ""
+  mqtt_password: ""
 schema:
   log_level: list(debug|info|warn|error)
   log_retention_days: int
   validation_schedule_minutes: int
   auto_build_on_save: bool
   auto_rebuild_on_registry_change: bool
+  mqtt_host: str?
+  mqtt_port: port?
+  mqtt_username: str?
+  mqtt_password: str?
 ```
 
 Key configuration choices:
 
 - **`homeassistant_api: true`**: Grants access to HA's WebSocket API via `ws://supervisor/core/websocket` and REST API via `http://supervisor/core/api/`, authenticated with the `SUPERVISOR_TOKEN` environment variable.
 - **`map: [addon_config:rw]`**: Maps `/addon_configs/ha_forge/` on the host to `/config/` in the container. This is where user scripts, `package.json`, `node_modules/`, and `.generated/` live. Automatically included in HA backups.
-- **`services: [mqtt:need]`**: Declares MQTT as a required service. The Supervisor ensures Mosquitto is running before starting this add-on. MQTT credentials obtained via `GET http://supervisor/services/mqtt`.
+- **`services: [mqtt:want]`**: Declares MQTT as an optional (but expected) service. The add-on starts even if Mosquitto is unavailable and will connect when the broker becomes reachable. MQTT credentials obtained via `GET http://supervisor/services/mqtt` or manual config options.
 - **`ingress: true`**: Web UI proxied through HA's ingress gateway. No exposed ports.
 - **`init: false`**: We manage our own process lifecycle (no s6-overlay).
 
@@ -71,7 +76,9 @@ Container:
 └── .generated/             ← Generated types + validators
     ├── ha-registry.d.ts
     ├── ha-validators.ts
-    └── ha-registry-meta.json
+    ├── ha-registry-meta.json
+    ├── ha-completion-registry.json
+    └── sdk/                ← SDK type declarations (symlinked)
 
 /data/                      ← Persistent add-on storage
 ├── logs.db                 ← SQLite log database
@@ -104,7 +111,7 @@ Container:
 
 ### Credential Retrieval
 
-MQTT credentials are obtained from the Supervisor API, not stored in config:
+MQTT credentials are obtained from the Supervisor API by default, or from the manual `mqtt_host`/`mqtt_port`/`mqtt_username`/`mqtt_password` add-on options when set:
 
 ```
 GET http://supervisor/services/mqtt
@@ -127,7 +134,7 @@ Response:
 2. Subscribe to `homeassistant/status` (HA birth topic).
 3. Publish `online` to `ha-forge/availability` (retained).
 4. On unexpected disconnect: LWT fires, HA marks entities unavailable.
-5. Reconnect with exponential backoff (1s, 2s, 4s, 8s, ... max 60s).
+5. Reconnect with a fixed 1-second interval (`reconnectPeriod: 1000`).
 6. On reconnect: re-publish `online` to availability topic. Re-publish all discovery messages. Re-publish current state for all entities.
 7. On `homeassistant/status` = `online`: HA has restarted. Re-publish all discovery messages (HA lost them).
 
@@ -155,7 +162,8 @@ CREATE TABLE logs (
   source_file TEXT NOT NULL,            -- user .ts filename or '_runtime'
   entity_id TEXT,                       -- null for file-level or system logs
   message TEXT NOT NULL,
-  data TEXT                             -- JSON blob for structured context
+  data TEXT,                            -- JSON blob for structured context
+  caller TEXT                           -- caller location, e.g. "weather.ts:15"
 );
 
 CREATE INDEX idx_logs_time ON logs(timestamp);
@@ -203,9 +211,9 @@ The runtime dogfoods its own system by registering health entities via MQTT disc
 ### binary_sensor.ha_forge_build_healthy
 
 ```
-state: on | off
-  on  = all scripts compile cleanly against current HA registry types
-  off = type errors found during scheduled validation
+state: on | off     (device_class: problem)
+  on  = build errors found (problem detected)
+  off = all scripts compile cleanly (no problem)
 ```
 
 ### sensor.ha_forge_type_errors
@@ -222,7 +230,7 @@ attributes:
     }
   ]
   last_checked: ISO timestamp
-  check_trigger: 'scheduled' | 'registry_change'
+  check_trigger: 'scheduled' | 'registry_change' | 'build'
 ```
 
 ### HA Automation Example
