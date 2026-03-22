@@ -994,6 +994,26 @@ function checkUnexportedEntities(
 ) {
   if (!ts) return;
 
+  // Collect all names in scope (variables, imports, factory/wrapper function names)
+  const usedNames = new Set<string>(
+    [...FACTORY_NAMES, ...WRAPPER_NAMES],
+  );
+  for (const stmt of sf.statements) {
+    if (ts.isVariableStatement(stmt)) {
+      for (const decl of stmt.declarationList.declarations) {
+        if (ts.isIdentifier(decl.name)) usedNames.add(decl.name.text);
+      }
+    }
+    if (ts.isImportDeclaration(stmt) && stmt.importClause) {
+      if (stmt.importClause.name) usedNames.add(stmt.importClause.name.text);
+      const bindings = stmt.importClause.namedBindings;
+      if (bindings && ts.isNamedImports(bindings)) {
+        for (const spec of bindings.elements) usedNames.add(spec.name.text);
+      }
+    }
+    if (ts.isFunctionDeclaration(stmt) && stmt.name) usedNames.add(stmt.name.text);
+  }
+
   // Collect names that are re-exported via `export { name }` statements
   const reExported = new Set<string>();
   for (const stmt of sf.statements) {
@@ -1010,7 +1030,8 @@ function checkUnexportedEntities(
       const factory = findFactoryCall(stmt.expression);
       if (factory) {
         const factoryName = getCalledName(factory);
-        const varName = suggestVarName(factory) ?? factoryName;
+        const varName = suggestVarName(factory, factoryName, usedNames, sf.fileName);
+        if (varName) usedNames.add(varName); // prevent duplicates across multiple bare calls
         const hint = varName ? ` [export const ${varName}]` : '';
         diagnostics.push(markerAt(stmt.expression, sf,
           `${factoryName}() result is not assigned or exported — it will not be deployed${hint}`,
@@ -1506,16 +1527,44 @@ export function toCamelCase(input: string): string | null {
 }
 
 /** Extract the entity ID from a factory call and suggest a camelCase variable name. */
-function suggestVarName(factory: import('typescript').CallExpression): string | null {
+function suggestVarName(
+  factory: import('typescript').CallExpression,
+  factoryName: string | null,
+  usedNames: Set<string>,
+  fileName: string,
+): string | null {
   if (!ts) return null;
+
+  // 1. Try id-based camelCase name
   const arg = factory.arguments[0];
-  if (!arg || !ts.isObjectLiteralExpression(arg)) return null;
-  for (const prop of arg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
-        prop.name.text === 'id' && ts.isStringLiteral(prop.initializer)) {
-      return toCamelCase(prop.initializer.text);
+  if (arg && ts.isObjectLiteralExpression(arg)) {
+    for (const prop of arg.properties) {
+      if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name) &&
+          prop.name.text === 'id' && ts.isStringLiteral(prop.initializer) && prop.initializer.text) {
+        const candidate = toCamelCase(prop.initializer.text);
+        if (candidate && !usedNames.has(candidate)) return candidate;
+      }
     }
   }
+
+  // 2. Try filename + factory: washer.ts + sensor → washerSensor
+  if (factoryName) {
+    const baseName = fileName.replace(/^.*\//, '').replace(/\.\w+$/, '');
+    const baseCC = toCamelCase(baseName);
+    if (baseCC) {
+      const candidate = baseCC + factoryName.charAt(0).toUpperCase() + factoryName.slice(1);
+      if (!usedNames.has(candidate)) return candidate;
+    }
+  }
+
+  // 3. Factory name with number suffix: sensor1, sensor2, ...
+  if (factoryName) {
+    for (let n = 1; n <= 99; n++) {
+      const candidate = `${factoryName}${n}`;
+      if (!usedNames.has(candidate)) return candidate;
+    }
+  }
+
   return null;
 }
 
