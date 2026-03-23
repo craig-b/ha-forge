@@ -234,7 +234,7 @@ async function main(): Promise<void> {
             success: result.success, timestamp: result.timestamp, totalDuration: result.totalDuration,
             steps: stepsWithDiagnostics,
             typeErrors: result.tscCheck?.diagnostics.filter((d) => d.severity === 'error').length ?? 0,
-            bundleErrors: result.bundle?.errors.length ?? 0, entityCount,
+            bundleErrors: (result.bundle ? result.bundle.errors.length + result.bundle.files.filter((f) => !f.success).length : 0), entityCount,
           };
           logger.info('Build complete', { success: result.success, entityCount, duration: result.totalDuration });
         } catch (err) {

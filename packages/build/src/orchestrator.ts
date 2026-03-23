@@ -156,7 +156,7 @@ export async function runBuild(opts: OrchestratorOptions): Promise<BuildResult> 
       step: 'bundle',
       success: bundleResult.success,
       duration: Date.now() - bundleStart,
-      error: bundleResult.errors.length > 0 ? bundleResult.errors.join('; ') : undefined,
+      error: allBundleErrors(bundleResult) || undefined,
     };
     steps.push(step);
     opts.onStep?.(step);
@@ -185,6 +185,15 @@ export async function runBuild(opts: OrchestratorOptions): Promise<BuildResult> 
     totalDuration: Date.now() - totalStart,
     timestamp: new Date().toISOString(),
   };
+}
+
+/** Collect all bundle errors — both global and per-file. */
+export function allBundleErrors(result: BundleResult): string | null {
+  const errors = [
+    ...result.errors,
+    ...result.files.flatMap((f) => f.errors),
+  ];
+  return errors.length > 0 ? errors.join('; ') : null;
 }
 
 // ---- Scheduled validation ----

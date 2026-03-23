@@ -25,7 +25,7 @@ export type { TscDiagnostic, TscCheckResult } from './tsc-checker.js';
 export { npmInstall } from './npm-install.js';
 export type { NpmInstallResult } from './npm-install.js';
 
-export { runBuild, runValidation } from './orchestrator.js';
+export { runBuild, runValidation, allBundleErrors } from './orchestrator.js';
 export type {
   BuildResult,
   BuildStepResult,
