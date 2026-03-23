@@ -1483,6 +1483,27 @@ export class TseApp extends LitElement {
     // AST-based analyzers (if TypeScript API loaded)
     if (isAstReady()) {
       const result = analyzeWithAst(sourceText, model.uri.path || 'file.ts');
+
+      // Cross-file duplicate ID detection: check against deployed entities from other files
+      const currentFile = this._activeFile;
+      if (currentFile && this._entities.length > 0) {
+        for (const entity of result.entities) {
+          const deployed = this._entities.find(
+            (e) => e.id === entity.id && e.sourceFile && e.sourceFile !== currentFile,
+          );
+          if (deployed) {
+            result.diagnostics.push({
+              startLine: entity.line,
+              startCol: entity.startCol,
+              endLine: entity.line,
+              endCol: entity.endCol,
+              message: `Duplicate entity ID '${entity.id}' (already deployed from ${deployed.sourceFile})`,
+              severity: 'error',
+            });
+          }
+        }
+      }
+
       const astMarkers: MonacoMarkerData[] = result.diagnostics.map((d) => this._toMarker(d, TseApp.AST_DIAG_OWNER));
       monaco.editor.setModelMarkers(model, TseApp.AST_DIAG_OWNER, astMarkers);
 
