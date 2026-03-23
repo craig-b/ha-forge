@@ -42,6 +42,40 @@ export type EntityType =
   | 'update'
   | 'image';
 
+// ---- Simulation types ----
+
+/** A single event in a simulated signal. */
+export interface SignalEvent {
+  /** Timestamp in milliseconds. */
+  t: number;
+  /** The value at this point in time. */
+  value: string | number;
+}
+
+/** Time range and resolution for signal generation. */
+export interface TimeRange {
+  /** Start time in milliseconds. */
+  start: number;
+  /** End time in milliseconds. */
+  end: number;
+  /** Step size in milliseconds between generated events. */
+  stepMs: number;
+}
+
+/** A pure function that generates signal events for a given time range. */
+export type SignalGenerator = (range: TimeRange) => SignalEvent[];
+
+/** A simulation definition — source-only, never deployed to HA. */
+export interface SimulationDefinition {
+  __kind: 'simulate';
+  /** Unique simulation identifier. */
+  id: string;
+  /** The real HA entity_id this simulation stands in for. */
+  shadows: string;
+  /** Signal generator that produces synthetic events. */
+  signal: SignalGenerator;
+}
+
 /**
  * Device metadata for grouping entities under a single HA device.
  * Entities sharing the same `id` appear together in the HA device registry.

@@ -29,6 +29,7 @@ export { automation } from './entities/automation.js';
 export { task } from './entities/task.js';
 export { mode } from './entities/mode.js';
 export { cron } from './entities/cron.js';
+export { simulate } from './entities/simulate.js';
 
 export type { SensorOptions } from './entities/sensor.js';
 export type { BinarySensorOptions } from './entities/binary_sensor.js';
@@ -57,6 +58,7 @@ export type { AutomationOptions } from './entities/automation.js';
 export type { TaskOptions } from './entities/task.js';
 export type { ModeOptions } from './entities/mode.js';
 export type { CronOptions } from './entities/cron.js';
+export type { SimulateOptions } from './entities/simulate.js';
 
 export type {
   NumberInRange,
@@ -185,4 +187,8 @@ export type {
   DeviceContext,
   DeviceOptions,
   DeviceDefinition,
+  SignalEvent,
+  TimeRange,
+  SignalGenerator,
+  SimulationDefinition,
 } from './types.js';
