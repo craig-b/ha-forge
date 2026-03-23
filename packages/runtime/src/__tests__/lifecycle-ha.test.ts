@@ -256,11 +256,11 @@ describe('EntityLifecycleManager — this.ha and this.events', () => {
     expect(manager.getEntityState('state-test')).toBe('22');
   });
 
-  it('this.events.on() works from init()', async () => {
+  it('this.events.stream().subscribe() works from init()', async () => {
     const cb = vi.fn();
     const entity = makeSensorEntity('events-test', {
       init() {
-        this.events.on('light.kitchen', cb);
+        this.events.stream('light.kitchen').subscribe(cb);
         return '0';
       },
     });
@@ -271,11 +271,11 @@ describe('EntityLifecycleManager — this.ha and this.events', () => {
     expect(cb).toHaveBeenCalledTimes(1);
   });
 
-  it('this.events.on() subscriptions are cleaned up on teardown', async () => {
+  it('this.events.stream().subscribe() subscriptions are cleaned up on teardown', async () => {
     const cb = vi.fn();
     const entity = makeSensorEntity('cleanup-test', {
       init() {
-        this.events.on('light.kitchen', cb);
+        this.events.stream('light.kitchen').subscribe(cb);
         return '0';
       },
     });
@@ -317,7 +317,7 @@ describe('EntityLifecycleManager — this.ha and this.events', () => {
       init() {
         // These should not throw, just log warnings
         this.ha.callService('light.test', 'turn_on');
-        this.events.on('light.test', () => {});
+        this.events.stream('light.test').subscribe(() => {});
         return '0';
       },
     });

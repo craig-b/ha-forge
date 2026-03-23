@@ -491,11 +491,11 @@ describe('HAApiImpl', () => {
   });
 
   describe('createScopedEvents()', () => {
-    it('tracks on() unsubscribers in handles', () => {
+    it('tracks stream().subscribe() unsubscribers in handles', () => {
       const handles = { eventSubscriptions: [] as Array<() => void> };
       const events = api.createScopedEvents(handles);
 
-      events.on('light.living_room', vi.fn());
+      events.stream('light.living_room').subscribe(vi.fn());
 
       expect(handles.eventSubscriptions).toHaveLength(1);
       expect(typeof handles.eventSubscriptions[0]).toBe('function');
@@ -510,12 +510,12 @@ describe('HAApiImpl', () => {
       expect(handles.eventSubscriptions).toHaveLength(1);
     });
 
-    it('unsubscribes on() callbacks when handle cleanup is called', () => {
+    it('unsubscribes stream().subscribe() callbacks when handle cleanup is called', () => {
       const handles = { eventSubscriptions: [] as Array<() => void> };
       const events = api.createScopedEvents(handles);
       const cb = vi.fn();
 
-      events.on('light.living_room', cb);
+      events.stream('light.living_room').subscribe(cb);
 
       // Clean up
       for (const unsub of handles.eventSubscriptions) unsub();
