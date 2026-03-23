@@ -3,6 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, type SimulationLocation, type StreamSubscriptionLocation } from './ast-analyzers.js';
+import { signals as clientSignals, runSimulation as clientRunSimulation } from './simulation.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -2412,61 +2413,49 @@ export class TseApp extends LitElement {
       return;
     }
 
-    // Dynamically import the simulation engine and signals
-    // These are bundled into the client from the SDK package
-    Promise.all([
-      import(/* @vite-ignore */ '@ha-forge/sdk/simulate-engine'),
-      import(/* @vite-ignore */ '@ha-forge/sdk/signals'),
-    ]).then(([engineMod, signalsMod]) => {
-      const { runSimulation } = engineMod;
-      const { signals } = signalsMod;
-      const results = new Map<string, unknown>();
-      const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
+    const results = new Map<string, unknown>();
+    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
 
-      for (const sim of this._simulations) {
-        // Generate signal events using a default generator based on signal type
-        let inputEvents: Array<{ t: number; value: string | number }>;
-        switch (sim.signalType) {
-          case 'numeric':
-            inputEvents = signals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
-            break;
-          case 'binary':
-            inputEvents = signals.binary({ onDuration: [3000, 8000], offDuration: [2000, 5000], seed: 42 })(timeRange);
-            break;
-          case 'enum':
-            inputEvents = signals.enum({ states: ['idle', 'active', 'standby'], dwellRange: [3000, 8000], seed: 42 })(timeRange);
-            break;
-          default:
-            inputEvents = signals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
-        }
-
-        // Find matching stream subscriptions for this simulation's shadowed entity
-        const matchingStreams = this._streams.filter(s => s.entityId === sim.shadows);
-
-        // Extract operator descriptors from AST data
-        const operators = matchingStreams.flatMap(stream =>
-          stream.operators.map(op => {
-            switch (op.name) {
-              case 'debounce': return { type: 'debounce' as const, ms: (op.args[0] as number) || 1000 };
-              case 'throttle': return { type: 'throttle' as const, ms: (op.args[0] as number) || 1000 };
-              case 'distinctUntilChanged': return { type: 'distinctUntilChanged' as const };
-              case 'onTransition': return { type: 'onTransition' as const, from: String(op.args[0] || '*'), to: String(op.args[1] || '*') };
-              case 'filter': return { type: 'filter' as const };
-              case 'map': return { type: 'map' as const };
-              default: return null;
-            }
-          }).filter((op): op is NonNullable<typeof op> => op !== null)
-        );
-
-        const result = runSimulation(inputEvents, operators);
-        results.set(sim.id, result);
+    for (const sim of this._simulations) {
+      // Generate signal events using a default generator based on signal type
+      let inputEvents: Array<{ t: number; value: string | number }>;
+      switch (sim.signalType) {
+        case 'numeric':
+          inputEvents = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
+          break;
+        case 'binary':
+          inputEvents = clientSignals.binary({ onDuration: [3000, 8000], offDuration: [2000, 5000], seed: 42 })(timeRange);
+          break;
+        case 'enum':
+          inputEvents = clientSignals.enum({ states: ['idle', 'active', 'standby'], dwellRange: [3000, 8000], seed: 42 })(timeRange);
+          break;
+        default:
+          inputEvents = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
       }
 
-      this._simulationResults = results;
-    }).catch(err => {
-      // SDK modules may not be available in all environments
-      console.debug('[ha-forge] Simulation engine not available:', err);
-    });
+      // Find matching stream subscriptions for this simulation's shadowed entity
+      const matchingStreams = this._streams.filter(s => s.entityId === sim.shadows);
+
+      // Extract operator descriptors from AST data
+      const operators = matchingStreams.flatMap(stream =>
+        stream.operators.map(op => {
+          switch (op.name) {
+            case 'debounce': return { type: 'debounce' as const, ms: (op.args[0] as number) || 1000 };
+            case 'throttle': return { type: 'throttle' as const, ms: (op.args[0] as number) || 1000 };
+            case 'distinctUntilChanged': return { type: 'distinctUntilChanged' as const };
+            case 'onTransition': return { type: 'onTransition' as const, from: String(op.args[0] || '*'), to: String(op.args[1] || '*') };
+            case 'filter': return { type: 'filter' as const };
+            case 'map': return { type: 'map' as const };
+            default: return null;
+          }
+        }).filter((op): op is NonNullable<typeof op> => op !== null)
+      );
+
+      const result = clientRunSimulation(inputEvents, operators);
+      results.set(sim.id, result);
+    }
+
+    this._simulationResults = results;
   }
 
   // ---- Keyboard shortcuts ----
