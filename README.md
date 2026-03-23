@@ -1,6 +1,6 @@
 # HA Forge
 
-Define Home Assistant entities in TypeScript. Type-safe, reactive, deployed as an HA add-on.
+A TypeScript runtime for Home Assistant. Define entities, compose reactive behaviors, and simulate them in the browser — deployed as an add-on with full type safety generated from your live HA instance.
 
 ```ts
 export default device({
@@ -26,26 +26,57 @@ export default device({
       this.entities.humidity.update(data.humidity);
     }, { interval: 30_000 });
 
-    // Auto-toggle the fan when climate status changes
-    this.events.on('sensor.climate', (e) => {
-      const fan = e.new_state === 'Ventilate' ? 'on' : 'off';
-      this.entities.fan.update(fan);
-    });
+    this.events.stream('sensor.climate')
+      .subscribe((e) => {
+        this.entities.fan.update(e.new_state === 'Ventilate' ? 'on' : 'off');
+      });
   },
 });
 ```
 
-Every entity ID, service, and parameter is typed from your live HA instance. The compiler catches mistakes. Runtime validators stop bad values before they reach HA.
+## What this gives you
 
-## Why HA Forge
+**Types generated from your HA instance** — Entity IDs, service calls, and parameter constraints are pulled from your live registry. Misspell an entity ID and the compiler tells you. Pass `brightness: 999` to a light and a `RangeError` is thrown before the call leaves the add-on.
 
-**Type safety from your HA instance** — Types are generated from your entity registry. Misspell an entity ID and the compiler tells you. Pass `brightness: 999` and a `RangeError` is thrown before the call leaves the add-on.
+**24 entity platforms** — sensor, switch, light, climate, cover, and 19 more via MQTT discovery. Plus higher-level constructs: `computed()` derived sensors, `mode()` state machines, `cron()` schedules, `automation()` reactive flows, `task()` one-shot actions, and `entityFactory()` for dynamic generation.
 
-**Monaco editor in your browser** — IntelliSense, error squiggles, entity dashboard, and log viewer, accessible from the HA sidebar.
+**Composable behaviors** — Wrap any entity with `debounced()`, `filtered()`, `sampled()`, or `buffered()` to control how state reaches HA. Compose them — order matters:
 
-**24 entity platforms** — sensor, switch, light, climate, cover, and 19 more via MQTT discovery. Plus higher-level constructs: computed sensors, state machines, cron schedules, and automations.
+```ts
+// Filter out jitter, then debounce the rest
+export default debounced(
+  filtered(
+    sensor({ id: 'motion', name: 'Motion', config: { device_class: 'motion' } }),
+    (value) => value !== 'unavailable',
+  ),
+  { wait: 5000 },
+);
+```
 
-**Composable behaviors** — Wrap any entity with `debounced()`, `filtered()`, `sampled()`, or `buffered()` to shape how state reaches HA.
+**Reactive event streams** — Chain operators on entity state changes with automatic lifecycle cleanup:
+
+```ts
+this.events.stream('sensor.temperature')
+  .filter((e) => Number(e.new_state) > 30)
+  .debounce(60_000)
+  .subscribe((e) => {
+    ha.callService('notify', 'mobile_app', { message: `Temperature hit ${e.new_state}°C` });
+  });
+```
+
+**Simulate without hardware** — Define signal generators, run them against your behavior chains in the browser, and see exactly what gets through:
+
+```ts
+export const tempSim = simulate({
+  id: 'temp_sim',
+  shadows: 'sensor.living_room_temp',
+  signal: signals.numeric({ base: 22, noise: 1.5, spikeTo: 35, spikeChance: 0.05, interval: 10_000, seed: 42 }),
+});
+```
+
+The simulate panel shows raw signal vs. post-operator output side by side. CodeLens annotations show pass rates inline — tune your debounce timings and filter thresholds before deploying.
+
+**Monaco editor in your browser** — IntelliSense, error squiggles, entity dashboard, dependency management, and log viewer — accessible from the HA sidebar with no setup.
 
 ## Installation
 
