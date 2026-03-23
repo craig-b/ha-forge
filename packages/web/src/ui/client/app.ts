@@ -2417,17 +2417,35 @@ export class TseApp extends LitElement {
     const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
 
     for (const sim of this._simulations) {
-      // Generate signal events using a default generator based on signal type
+      // Generate signal events using the params extracted from the user's signals.*() call
+      const p = sim.signalParams;
       let inputEvents: Array<{ t: number; value: string | number }>;
       switch (sim.signalType) {
         case 'numeric':
-          inputEvents = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
+          inputEvents = clientSignals.numeric({
+            base: typeof p.base === 'number' ? p.base : 20,
+            noise: typeof p.noise === 'number' ? p.noise : 3,
+            spikeTo: typeof p.spikeTo === 'number' ? p.spikeTo : undefined,
+            spikeChance: typeof p.spikeChance === 'number' ? p.spikeChance : undefined,
+            dropoutEvery: typeof p.dropoutEvery === 'number' ? p.dropoutEvery : undefined,
+            interval: typeof p.interval === 'number' ? p.interval : 1000,
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
           break;
         case 'binary':
-          inputEvents = clientSignals.binary({ onDuration: [3000, 8000], offDuration: [2000, 5000], seed: 42 })(timeRange);
+          inputEvents = clientSignals.binary({
+            onDuration: Array.isArray(p.onDuration) ? p.onDuration as [number, number] : [3000, 8000],
+            offDuration: Array.isArray(p.offDuration) ? p.offDuration as [number, number] : [2000, 5000],
+            falseRetrigger: typeof p.falseRetrigger === 'number' ? p.falseRetrigger : undefined,
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
           break;
         case 'enum':
-          inputEvents = clientSignals.enum({ states: ['idle', 'active', 'standby'], dwellRange: [3000, 8000], seed: 42 })(timeRange);
+          inputEvents = clientSignals.enum({
+            states: Array.isArray(p.states) ? p.states as string[] : ['idle', 'active', 'standby'],
+            dwellRange: Array.isArray(p.dwellRange) ? p.dwellRange as [number, number] : [3000, 8000],
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
           break;
         default:
           inputEvents = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);

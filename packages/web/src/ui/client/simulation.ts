@@ -64,11 +64,24 @@ function xoshiro128ss(seed: number): () => number {
 type SignalGenerator = (range: TimeRange) => SignalEvent[];
 
 export const signals = {
-  numeric(opts: { base: number; noise: number; interval: number; seed: number }): SignalGenerator {
+  numeric(opts: {
+    base: number; noise: number; interval: number; seed: number;
+    spikeTo?: number; spikeChance?: number; dropoutEvery?: number;
+  }): SignalGenerator {
     return (range: TimeRange) => {
       const rng = xoshiro128ss(opts.seed);
       const events: SignalEvent[] = [];
+      let eventIndex = 0;
       for (let t = range.start; t <= range.end; t += opts.interval) {
+        eventIndex++;
+        if (opts.dropoutEvery && opts.dropoutEvery > 0 && eventIndex % opts.dropoutEvery === 0) {
+          events.push({ t, value: 'unavailable' });
+          continue;
+        }
+        if (opts.spikeTo !== undefined && opts.spikeChance && rng() < opts.spikeChance) {
+          events.push({ t, value: opts.spikeTo });
+          continue;
+        }
         const noise = (rng() * 2 - 1) * opts.noise;
         events.push({ t, value: Math.round((opts.base + noise) * 100) / 100 });
       }
@@ -76,7 +89,10 @@ export const signals = {
     };
   },
 
-  binary(opts: { onDuration: [number, number]; offDuration: [number, number]; seed: number }): SignalGenerator {
+  binary(opts: {
+    onDuration: [number, number]; offDuration: [number, number]; seed: number;
+    falseRetrigger?: number;
+  }): SignalGenerator {
     return (range: TimeRange) => {
       const rng = xoshiro128ss(opts.seed);
       const events: SignalEvent[] = [];
@@ -86,7 +102,18 @@ export const signals = {
         isOn = !isOn;
         events.push({ t, value: isOn ? 'on' : 'off' });
         const dur = isOn ? opts.onDuration : opts.offDuration;
-        t += dur[0] + rng() * (dur[1] - dur[0]);
+        const dwell = dur[0] + rng() * (dur[1] - dur[0]);
+        if (isOn && opts.falseRetrigger && rng() < opts.falseRetrigger) {
+          const bounceDelay = 100 + rng() * 400;
+          if (t + bounceDelay <= range.end) {
+            events.push({ t: t + bounceDelay, value: 'off' });
+            const retriggerDelay = bounceDelay + 50 + rng() * 200;
+            if (t + retriggerDelay <= range.end) {
+              events.push({ t: t + retriggerDelay, value: 'on' });
+            }
+          }
+        }
+        t += dwell;
       }
       return events;
     };

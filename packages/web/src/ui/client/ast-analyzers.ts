@@ -2062,8 +2062,36 @@ export interface SimulationLocation {
   id: string;
   shadows: string;
   signalType: 'numeric' | 'binary' | 'enum' | 'recorded' | 'unknown';
+  /** Literal signal generator params extracted from the AST (e.g. { base: 22, noise: 1.5, ... }). */
+  signalParams: Record<string, unknown>;
   line: number;
   endLine: number;
+}
+
+/** Extract literal values from an AST object literal expression (numbers, strings, arrays of numbers). */
+function extractObjectLiteral(node: import('typescript').Node): Record<string, unknown> {
+  if (!ts || !ts.isObjectLiteralExpression(node)) return {};
+  const result: Record<string, unknown> = {};
+  for (const prop of node.properties) {
+    if (!ts.isPropertyAssignment(prop) || !ts.isIdentifier(prop.name)) continue;
+    const key = prop.name.text;
+    const val = prop.initializer;
+    if (ts.isNumericLiteral(val)) {
+      result[key] = Number(val.text);
+    } else if (ts.isStringLiteral(val)) {
+      result[key] = val.text;
+    } else if (ts.isPrefixUnaryExpression(val) && val.operator === ts.SyntaxKind.MinusToken && ts.isNumericLiteral(val.operand)) {
+      result[key] = -Number(val.operand.text);
+    } else if (ts.isArrayLiteralExpression(val)) {
+      const items: unknown[] = [];
+      for (const el of val.elements) {
+        if (ts.isNumericLiteral(el)) items.push(Number(el.text));
+        else if (ts.isStringLiteral(el)) items.push(el.text);
+      }
+      if (items.length === val.elements.length) result[key] = items;
+    }
+  }
+  return result;
 }
 
 /** Find simulate() calls in source text. */
@@ -2083,6 +2111,7 @@ export function findSimulations(sourceText: string, fileName = 'file.ts'): Simul
       let id = '';
       let shadows = '';
       let signalType: SimulationLocation['signalType'] = 'unknown';
+      let signalParams: Record<string, unknown> = {};
 
       for (const prop of arg.properties) {
         if (!ts!.isPropertyAssignment(prop) || !ts!.isIdentifier(prop.name)) continue;
@@ -2099,6 +2128,11 @@ export function findSimulations(sourceText: string, fileName = 'file.ts'): Simul
             if (method === 'numeric' || method === 'binary' || method === 'enum' || method === 'recorded') {
               signalType = method;
             }
+            // Extract literal params from the signals.*() argument
+            const signalArg = prop.initializer.arguments[0];
+            if (signalArg) {
+              signalParams = extractObjectLiteral(signalArg);
+            }
           }
         }
       }
@@ -2110,6 +2144,7 @@ export function findSimulations(sourceText: string, fileName = 'file.ts'): Simul
           id,
           shadows,
           signalType,
+          signalParams,
           line: startLine + 1,
           endLine: endLine + 1,
         });
