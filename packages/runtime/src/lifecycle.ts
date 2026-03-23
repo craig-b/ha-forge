@@ -176,6 +176,18 @@ export class EntityLifecycleManager {
    * Used by BuildManager which handles teardown separately to support per-file isolation.
    */
   async deployAdditive(entities: ResolvedEntity[], devices?: ResolvedDevice[], automations?: ResolvedAutomation[], tasks?: ResolvedTask[], modes?: ResolvedMode[], crons?: ResolvedCron[]): Promise<void> {
+    // Detect duplicate IDs across all definition types — first wins, duplicates are skipped
+    const seenIds = new Map<string, string>(); // id → sourceFile
+    const isDuplicate = (id: string, sourceFile: string | undefined, kind: string): boolean => {
+      const prev = seenIds.get(id);
+      if (prev) {
+        this.logger.error(`Duplicate ${kind} id '${id}': defined in ${sourceFile ?? 'unknown'} and ${prev} — skipping duplicate`);
+        return true;
+      }
+      seenIds.set(id, sourceFile ?? 'unknown');
+      return false;
+    };
+
     // Collect entity IDs owned by devices so we skip individual init for them
     const deviceOwnedEntityIds = new Set<string>();
     if (devices) {
@@ -188,6 +200,7 @@ export class EntityLifecycleManager {
 
     // Register and init standalone entities (not owned by a device)
     for (const entity of entities) {
+      if (isDuplicate(entity.definition.id, entity.sourceFile, 'entity')) continue;
       try {
         await this.registerAndInit(entity, deviceOwnedEntityIds.has(entity.definition.id) ? entity.deviceId : undefined);
       } catch (err) {
@@ -205,6 +218,7 @@ export class EntityLifecycleManager {
     // Init tasks
     if (tasks) {
       for (const t of tasks) {
+        if (isDuplicate(t.definition.id, t.sourceFile, 'task')) continue;
         try {
           await this.initTask(t);
         } catch (err) {
@@ -219,6 +233,7 @@ export class EntityLifecycleManager {
     // Init modes
     if (modes) {
       for (const m of modes) {
+        if (isDuplicate(m.definition.id, m.sourceFile, 'mode')) continue;
         try {
           await this.initMode(m);
         } catch (err) {
@@ -233,6 +248,7 @@ export class EntityLifecycleManager {
     // Init crons
     if (crons) {
       for (const c of crons) {
+        if (isDuplicate(c.definition.id, c.sourceFile, 'cron')) continue;
         try {
           await this.initCron(c);
         } catch (err) {
@@ -247,6 +263,7 @@ export class EntityLifecycleManager {
     // Init automations
     if (automations) {
       for (const auto of automations) {
+        if (isDuplicate(auto.definition.id, auto.sourceFile, 'automation')) continue;
         try {
           await this.initAutomation(auto);
         } catch (err) {
@@ -261,6 +278,7 @@ export class EntityLifecycleManager {
     // Init devices (their entities, tasks, modes, crons are already registered above)
     if (devices) {
       for (const dev of devices) {
+        if (isDuplicate(dev.definition.id, dev.sourceFile, 'device')) continue;
         try {
           await this.initDevice(dev);
         } catch (err) {

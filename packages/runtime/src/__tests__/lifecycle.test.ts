@@ -935,4 +935,31 @@ describe('EntityLifecycleManager', () => {
       );
     });
   });
+
+  describe('duplicate ID detection', () => {
+    it('skips duplicate entity and logs error', async () => {
+      const first = makeSensorEntity('dup_sensor', { name: 'First' });
+      first.sourceFile = 'first.ts';
+      const second = makeSensorEntity('dup_sensor', { name: 'Second' });
+      second.sourceFile = 'second.ts';
+
+      await manager.deploy([first, second]);
+
+      expect(logger.error).toHaveBeenCalledWith(
+        expect.stringContaining("Duplicate entity id 'dup_sensor'"),
+      );
+      // Only first one registered
+      expect(transport.register).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows different IDs without error', async () => {
+      await manager.deploy([
+        makeSensorEntity('sensor_a'),
+        makeSensorEntity('sensor_b'),
+      ]);
+
+      expect(logger.error).not.toHaveBeenCalled();
+      expect(transport.register).toHaveBeenCalledTimes(2);
+    });
+  });
 });
