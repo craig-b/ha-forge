@@ -584,7 +584,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
     `/** Define a signal simulation that shadows a real entity ID. Source-only — never deployed. */`,
-    `declare const simulate: typeof import('@ha-forge/sdk').simulate;`,
+    `declare function simulate(options: { id: string; shadows: HAEntityId; signal: import('@ha-forge/sdk').SignalGenerator }): import('@ha-forge/sdk').SimulationDefinition;`,
     `/** Library of pure signal generators for use with simulate(). */`,
     `declare const signals: typeof import('@ha-forge/sdk').signals;`,
     ``,

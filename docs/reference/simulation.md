@@ -13,7 +13,7 @@ function simulate(options: SimulateOptions): SimulationDefinition
 | Property | Type | Description |
 |----------|------|-------------|
 | `id` | `string` | Unique simulation identifier |
-| `shadows` | `string` | Real HA entity_id this simulation stands in for |
+| `shadows` | `HAEntityId` | Real HA entity_id this simulation stands in for (typed from your registry; falls back to `string` before type generation) |
 | `signal` | `SignalGenerator` | Function that generates synthetic events |
 
 ### SimulationDefinition
@@ -22,7 +22,7 @@ function simulate(options: SimulateOptions): SimulationDefinition
 interface SimulationDefinition {
   __kind: 'simulate';
   id: string;
-  shadows: string;
+  shadows: HAEntityId; // string before type generation
   signal: SignalGenerator;
 }
 ```

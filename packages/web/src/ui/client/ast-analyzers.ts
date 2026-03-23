@@ -123,6 +123,11 @@ function checkFactoryCall(
     checkComputedCall(node, sf, diagnostics, entities);
     return;
   }
+  // simulate() has different required fields (id, shadows, signal) — not an entity
+  if (name === 'simulate') {
+    checkSimulateCall(node, sf, diagnostics);
+    return;
+  }
   // automation doesn't have a name field
   const requiresName = name !== 'automation';
 
@@ -610,6 +615,49 @@ function checkComputedCall(
         prop.name.text === 'name' && ts.isStringLiteral(prop.initializer) &&
         prop.initializer.text === '') {
       diagnostics.push(markerAt(prop.initializer, sf, `computed() name must not be empty`, 'warning'));
+    }
+  }
+}
+
+// ---- simulate() validation ----
+
+function checkSimulateCall(
+  node: import('typescript').CallExpression,
+  sf: import('typescript').SourceFile,
+  diagnostics: AnalyzerDiagnostic[],
+) {
+  if (!ts) return;
+  const arg = node.arguments[0];
+  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
+
+  const props = new Map<string, import('typescript').Node>();
+  for (const prop of arg.properties) {
+    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
+      props.set(prop.name.text, prop.initializer);
+    } else if (ts.isShorthandPropertyAssignment(prop)) {
+      props.set(prop.name.text, prop);
+    }
+  }
+
+  if (!props.has('id')) {
+    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'id' property`, 'error'));
+  }
+  if (!props.has('shadows')) {
+    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'shadows' property — the real HA entity ID to shadow`, 'error'));
+  }
+  if (!props.has('signal')) {
+    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'signal' property — use signals.numeric(), signals.binary(), etc.`, 'error'));
+  }
+
+  // Validate shadows looks like an entity ID (domain.object_id)
+  const shadowsNode = props.get('shadows');
+  if (shadowsNode && ts.isStringLiteral(shadowsNode)) {
+    const value = shadowsNode.text;
+    if (value && !value.includes('.')) {
+      diagnostics.push(markerAt(shadowsNode, sf,
+        `shadows should be a fully qualified entity ID (e.g. 'sensor.temperature'), got '${value}'`,
+        'error',
+      ));
     }
   }
 }

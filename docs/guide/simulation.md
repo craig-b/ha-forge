@@ -8,7 +8,7 @@ You've written a sensor with `.debounce(5000).distinctUntilChanged()` — but do
 
 ## `simulate()` — Define a Synthetic Signal
 
-`simulate()` creates a source-only definition that the runtime skips during deploy. It shadows a real entity ID so the web editor can match it to stream subscriptions.
+`simulate()` creates a source-only definition that the runtime skips during deploy. It shadows a real entity ID so the web editor can match it to stream subscriptions. The `shadows` field is typed as `HAEntityId` — you get autocomplete for every entity in your HA instance, and the compiler catches typos.
 
 ```ts
 export const tempSim = simulate({
