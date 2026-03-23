@@ -12,9 +12,27 @@ All entity definitions share a common shape:
   category?: 'config' | 'diagnostic';
   icon?: string;       // MDI icon override
   config?: {};         // Platform-specific MQTT discovery fields
+  attributes?: {};     // Static or computed attributes (see below)
   init?(): State;      // Setup function, return value is initial state
   destroy?(): void;    // Cleanup function
 }
+```
+
+The `attributes` field lets you declare attributes that are published alongside the entity state. Values can be static (strings, numbers, objects) or reactive via `computed()`. See [Reactive Computed Attributes](advanced.md#reactive-computed-attributes) for the reactive variant.
+
+```typescript
+export const cpuTemp = sensor({
+  id: 'cpu_temp',
+  name: 'CPU Temperature',
+  attributes: {
+    location: 'server-room',       // static attribute
+    severity: computed(             // reactive — re-evaluated when watched entity changes
+      (states) => Number(states['sensor.cpu_temp']?.state) > 80 ? 'critical' : 'normal',
+      { watch: ['sensor.cpu_temp'] },
+    ),
+  },
+  // ...
+});
 ```
 
 ## Read-Only Entities
@@ -103,6 +121,8 @@ export const heater = defineSwitch({
 ```
 
 State type: `'on' | 'off'`. Command type: `'ON' | 'OFF'`.
+
+**Optimistic mode:** By default, `defineSwitch` is `optimistic: true` -- the runtime auto-publishes the command value as the new state after `onCommand` returns (unless `onCommand` returns `false` to reject). Set `optimistic: false` if you need to confirm the command with the device before publishing state. The `number`, `select`, and `text` entities also support `optimistic` with the same behavior.
 
 ### light
 
@@ -290,6 +310,8 @@ These follow the same pattern -- a typed `config` object and `onCommand()` callb
 | `alarmControlPanel` | Alarm | Arm/disarm with modes (home, away, night) |
 | `notify` | Notify | Write-only notification target |
 | `update` | Update | Firmware update entity with version tracking |
+
+> **Not yet supported:** The `EntityType` union also includes `scene`, `event`, `device_tracker`, and `camera`, but these four platform types do not have SDK factory functions yet. They cannot be used to define entities.
 
 ## Higher-Level Constructs
 

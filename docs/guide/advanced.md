@@ -133,7 +133,7 @@ export const smoothedPower = buffered(
 );
 ```
 
-### Computed Attributes
+### Computed Attributes (from compute return value)
 
 The `compute` function can return attributes alongside the state:
 
@@ -157,6 +157,41 @@ export const hvacStatus = computed({
   },
 });
 ```
+
+### Reactive Computed Attributes
+
+The `computed()` function has a second overload for defining reactive attributes on any entity -- not just computed sensors. Pass a derive function and a `{ watch }` option to create a `ComputedAttribute` that auto-subscribes to watched entities and re-publishes the owning entity's attributes when the derived value changes.
+
+```typescript
+computed(fn: (states) => unknown, opts: { watch: string[]; debounce?: number }): ComputedAttribute
+```
+
+Use it inside any entity's `attributes` field:
+
+```typescript
+export const temp = sensor({
+  id: 'cpu_temp',
+  name: 'CPU Temperature',
+  attributes: {
+    location: 'server-room',                          // static attribute
+    severity: computed(                                // reactive attribute
+      (states) => {
+        const t = Number(states['sensor.cpu_temp']?.state);
+        return t > 80 ? 'critical' : t > 60 ? 'warning' : 'normal';
+      },
+      { watch: ['sensor.cpu_temp'] },
+    ),
+  },
+  init() {
+    this.poll(readCpuTemp, { interval: 5000 });
+    return 0;
+  },
+});
+```
+
+The `debounce` option (default: 100ms) coalesces rapid changes from watched entities, just like on computed sensors. Static and computed attributes can be mixed freely in the same `attributes` object.
+
+This is different from the "computed attributes from compute return value" pattern above -- that approach embeds attributes in the `compute()` return value of a `computed()` sensor. Reactive computed attributes work on *any* entity type (sensor, switch, light, etc.) and are declared in the entity definition's `attributes` field.
 
 ## Cron Schedules
 
@@ -330,3 +365,10 @@ this.poll(async () => {
 ```
 
 This is useful when you need polling aligned to wall-clock time rather than relative intervals.
+
+Both interval and cron polling support `fireImmediately: true` to run the function once immediately before starting the schedule. By default, interval polling waits for the first interval to elapse and cron polling waits for the next matching time.
+
+```typescript
+this.poll(readSensor, { interval: 60_000, fireImmediately: true });
+// readSensor() runs immediately, then every 60 seconds
+```
