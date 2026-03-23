@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EntityLifecycleManager } from '../lifecycle.js';
 import type { Transport } from '../transport.js';
 import type { ResolvedDevice } from '../loader.js';
@@ -851,7 +851,7 @@ describe('EntityLifecycleManager', () => {
         type: 'number',
         config: { min: 0, max: 100 },
       };
-      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts', deviceId: '' };
       await manager.deploy([entity]);
 
       const onCommandCall = transport.onCommand.mock.calls.find(
@@ -871,7 +871,7 @@ describe('EntityLifecycleManager', () => {
         type: 'select',
         config: { options: ['eco', 'comfort', 'boost'] },
       };
-      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts', deviceId: '' };
       await manager.deploy([entity]);
 
       const onCommandCall = transport.onCommand.mock.calls.find(
@@ -889,7 +889,7 @@ describe('EntityLifecycleManager', () => {
         name: 'Message',
         type: 'text',
       };
-      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts', deviceId: '' };
       await manager.deploy([entity]);
 
       const onCommandCall = transport.onCommand.mock.calls.find(
@@ -926,7 +926,7 @@ describe('EntityLifecycleManager', () => {
         type: 'switch',
         optimistic: false,
       };
-      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts' };
+      const entity: ResolvedEntity = { definition, sourceFile: 'test.ts', deviceId: '' };
       await manager.deploy([entity]);
 
       expect(logger.warn).toHaveBeenCalledWith(

@@ -8,6 +8,7 @@ import type { LifecycleLogger } from '../lifecycle.js';
 
 function createMockTransport(): Transport {
   return {
+    supports: vi.fn(() => true),
     register: vi.fn(async () => {}),
     publishState: vi.fn(async () => {}),
     deregister: vi.fn(async () => {}),

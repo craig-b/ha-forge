@@ -41,10 +41,12 @@ function createMockHAClient(): HAClient & {
   return {
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     on: vi.fn(() => () => {}),
-    callService: vi.fn(async () => {}),
+    callService: vi.fn(async () => null),
     getState: vi.fn(async () => null),
     getEntities: vi.fn(async () => []),
     fireEvent: vi.fn(async () => {}),
+    reactions: vi.fn(() => () => {}),
+    friendlyName: vi.fn((id: string) => id),
   };
 }
 
@@ -123,7 +125,7 @@ describe('EntityLifecycleManager — ha global integration', () => {
     const entity = makeSensorEntity('temp', {
       init() {
         // Use global ha instead of this.ha
-        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.on('sensor.outdoor_temp', (e) => {
+        (globalThis as unknown as Record<string, unknown> & { ha: HAClient }).ha.on('sensor.outdoor_temp', (e) => {
           this.update(e.new_state);
         });
         return '22';
@@ -139,7 +141,7 @@ describe('EntityLifecycleManager — ha global integration', () => {
   it('entity init() can use global ha.callService()', async () => {
     const entity = makeSensorEntity('light_ctrl', {
       init() {
-        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.callService('light.living_room', 'turn_on', { brightness: 200 });
+        (globalThis as unknown as Record<string, unknown> & { ha: HAClient }).ha.callService('light.living_room', 'turn_on', { brightness: 200 });
         return '1';
       },
     });
@@ -161,7 +163,7 @@ describe('EntityLifecycleManager — ha global integration', () => {
 
     const entity = makeSensorEntity('mirror', {
       async init() {
-        const state = await (globalThis as Record<string, unknown> & { ha: HAClient }).ha.getState('light.living_room');
+        const state = await (globalThis as unknown as Record<string, unknown> & { ha: HAClient }).ha.getState('light.living_room');
         return state?.state ?? 'unknown';
       },
     });
@@ -177,7 +179,7 @@ describe('EntityLifecycleManager — ha global integration', () => {
 
     const entity = makeSensorEntity('counter', {
       async init() {
-        const lights = await (globalThis as Record<string, unknown> & { ha: HAClient }).ha.getEntities('light');
+        const lights = await (globalThis as unknown as Record<string, unknown> & { ha: HAClient }).ha.getEntities('light');
         return String(lights.length);
       },
     });
@@ -191,7 +193,7 @@ describe('EntityLifecycleManager — ha global integration', () => {
   it('entity init() can use global ha.fireEvent()', async () => {
     const entity = makeSensorEntity('eventer', {
       init() {
-        (globalThis as Record<string, unknown> & { ha: HAClient }).ha.fireEvent('custom_event', { source: 'test' });
+        (globalThis as unknown as Record<string, unknown> & { ha: HAClient }).ha.fireEvent('custom_event', { source: 'test' });
         return '0';
       },
     });

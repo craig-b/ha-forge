@@ -7,6 +7,7 @@ function createMockTransport(): Transport & {
   publishState: ReturnType<typeof vi.fn>;
 } {
   return {
+    supports: vi.fn(() => true),
     register: vi.fn(async () => {}),
     publishState: vi.fn(async () => {}),
     deregister: vi.fn(async () => {}),

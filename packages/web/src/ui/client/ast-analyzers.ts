@@ -364,13 +364,13 @@ export function generateSensorToComputed(
    * Returns the entity ID string or null.
    */
   const findStreamEntityId = (node: import('typescript').Expression): string | null => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+    if (ts!.isCallExpression(node) && ts!.isPropertyAccessExpression(node.expression)) {
       const prop = node.expression;
       if (prop.name.text === 'stream' &&
-          ts.isPropertyAccessExpression(prop.expression) &&
+          ts!.isPropertyAccessExpression(prop.expression) &&
           prop.expression.name.text === 'events' &&
-          prop.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
-        if (node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0])) {
+          prop.expression.expression.kind === ts!.SyntaxKind.ThisKeyword) {
+        if (node.arguments.length >= 1 && ts!.isStringLiteral(node.arguments[0])) {
           return node.arguments[0].text;
         }
         return null;

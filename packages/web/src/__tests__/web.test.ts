@@ -222,7 +222,7 @@ describe('Entities API', () => {
 describe('Logs API', () => {
   it('GET /api/logs queries with filters', async () => {
     const logs: LogEntry[] = [
-      { id: 1, timestamp: Date.now(), level: 'info', entity_id: 'sensor.temp', source_file: 'weather.ts', message: 'Initialized', data: null },
+      { id: 1, timestamp: Date.now(), level: 'info', entity_id: 'sensor.temp', source_file: 'weather.ts', message: 'Initialized', data: null, caller: null },
     ];
     const queryLogs = vi.fn(() => logs);
     const config = createTestConfig({ queryLogs });

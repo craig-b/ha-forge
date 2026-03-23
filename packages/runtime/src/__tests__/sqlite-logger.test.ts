@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { SQLiteLogger } from '../sqlite-logger.js';
+import { SQLiteLogger, type SQLiteLoggerOptions } from '../sqlite-logger.js';
 
 describe('SQLiteLogger', () => {
   let dbPath: string;
@@ -17,12 +17,12 @@ describe('SQLiteLogger', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  function createLogger(opts: Partial<Parameters<typeof SQLiteLogger['prototype']['constructor']>[0]> = {}) {
+  function createLogger(opts: Partial<SQLiteLoggerOptions> = {}) {
     return new SQLiteLogger({
       dbPath,
       flushIntervalMs: 10000, // long interval — we'll flush manually
       ...opts,
-    } as ConstructorParameters<typeof SQLiteLogger>[0]);
+    });
   }
 
   it('creates database and schema', () => {

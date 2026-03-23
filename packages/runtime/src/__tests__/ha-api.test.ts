@@ -474,9 +474,9 @@ describe('HAApiImpl', () => {
       expect(typeof stateless.fireEvent).toBe('function');
       expect(typeof stateless.friendlyName).toBe('function');
       // Should not have on(), reactions(), or log
-      expect((stateless as Record<string, unknown>).on).toBeUndefined();
-      expect((stateless as Record<string, unknown>).reactions).toBeUndefined();
-      expect((stateless as Record<string, unknown>).log).toBeUndefined();
+      expect((stateless as unknown as Record<string, unknown>).on).toBeUndefined();
+      expect((stateless as unknown as Record<string, unknown>).reactions).toBeUndefined();
+      expect((stateless as unknown as Record<string, unknown>).log).toBeUndefined();
     });
 
     it('delegates callService to the underlying API', async () => {
