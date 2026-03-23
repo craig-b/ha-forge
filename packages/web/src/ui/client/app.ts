@@ -1160,8 +1160,8 @@ export class TseApp extends LitElement {
         detail: 'automation({ ... })',
         documentation: 'Create an automation with event subscriptions',
         sortText: '0_automation',
-        topLevelText: "export const ${1:myAutomation} = automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.on('${3:sensor.entity_id}', (event) => {\n      $0\n    });\n  },\n});",
-        memberText: "${1:myAutomation}: automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.on('${3:sensor.entity_id}', (event) => {\n      $0\n    });\n  },\n}),",
+        topLevelText: "export const ${1:myAutomation} = automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.stream('${3:sensor.entity_id}')\n      .subscribe((event) => {\n        $0\n      });\n  },\n});",
+        memberText: "${1:myAutomation}: automation({\n  id: '${2:my_automation}',\n  init() {\n    this.events.stream('${3:sensor.entity_id}')\n      .subscribe((event) => {\n        $0\n      });\n  },\n}),",
       },
       {
         label: 'New computed sensor',

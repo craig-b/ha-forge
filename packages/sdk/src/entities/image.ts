@@ -36,9 +36,10 @@ export interface ImageOptions<TAttrs extends Record<string, unknown> = Record<st
  *   id: 'doorbell_snapshot',
  *   name: 'Doorbell Snapshot',
  *   init() {
- *     this.events.on('binary_sensor.doorbell', () => {
- *       this.update('http://camera.local/snapshot.jpg');
- *     });
+ *     this.events.stream('binary_sensor.doorbell')
+ *       .subscribe(() => {
+ *         this.update('http://camera.local/snapshot.jpg');
+ *       });
  *     return 'http://camera.local/snapshot.jpg';
  *   },
  * });

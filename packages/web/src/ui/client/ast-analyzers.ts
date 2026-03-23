@@ -244,10 +244,10 @@ function checkSuggestComputed(
       }
     }
 
-    // Check for this.events.on() pattern
+    // Check for this.events.stream() pattern
     if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
       const prop = node.expression;
-      if (prop.name.text === 'on' && ts.isPropertyAccessExpression(prop.expression) &&
+      if (prop.name.text === 'stream' && ts.isPropertyAccessExpression(prop.expression) &&
           prop.expression.name.text === 'events' &&
           prop.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
         hasEventsOn = true;
@@ -355,9 +355,31 @@ export function generateSensorToComputed(
   }
   if (!initBody) return null;
 
-  // Extract this.events.on('entityId', callback) patterns
+  // Extract this.events.stream('entityId')...subscribe(callback) patterns
   interface WatchEntry { entityId: string; paramName: string; updateExpr: string }
   const watches: WatchEntry[] = [];
+
+  /**
+   * Walk a chain of method calls to find this.events.stream('entityId') at the root.
+   * Returns the entity ID string or null.
+   */
+  const findStreamEntityId = (node: import('typescript').Expression): string | null => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)) {
+      const prop = node.expression;
+      if (prop.name.text === 'stream' &&
+          ts.isPropertyAccessExpression(prop.expression) &&
+          prop.expression.name.text === 'events' &&
+          prop.expression.expression.kind === ts.SyntaxKind.ThisKeyword) {
+        if (node.arguments.length >= 1 && ts.isStringLiteral(node.arguments[0])) {
+          return node.arguments[0].text;
+        }
+        return null;
+      }
+      // Recurse into the chain (e.g. .filter().debounce() wrapping stream())
+      return findStreamEntityId(prop.expression);
+    }
+    return null;
+  };
 
   for (const s of initBody.statements) {
     if (!ts.isExpressionStatement(s) || !ts.isCallExpression(s.expression)) {
@@ -367,17 +389,16 @@ export function generateSensorToComputed(
     }
     const call = s.expression;
     const callProp = call.expression;
-    if (!ts.isPropertyAccessExpression(callProp) || callProp.name.text !== 'on') return null;
-    if (!ts.isPropertyAccessExpression(callProp.expression) ||
-        callProp.expression.name.text !== 'events' ||
-        callProp.expression.expression.kind !== ts.SyntaxKind.ThisKeyword) return null;
 
-    // First arg: entity ID string
-    if (call.arguments.length < 2 || !ts.isStringLiteral(call.arguments[0])) return null;
-    const entityId = call.arguments[0].text;
+    // Match ...subscribe(callback) at the end of the chain
+    if (!ts.isPropertyAccessExpression(callProp) || callProp.name.text !== 'subscribe') return null;
+    // Walk the chain to find this.events.stream('entityId')
+    const entityId = findStreamEntityId(callProp.expression);
+    if (!entityId) return null;
 
-    // Second arg: callback — extract parameter name and find this.update(expr)
-    const cb = call.arguments[1];
+    // First arg of .subscribe(): callback — extract parameter name and find this.update(expr)
+    if (call.arguments.length < 1) return null;
+    const cb = call.arguments[0];
     let paramName = 'e';
     let cbBody: import('typescript').Node | null = null;
 
@@ -1915,7 +1936,7 @@ export function findEntityDependencies(sourceText: string, fileName = 'file.ts')
           if (ts!.isPropertyAccessExpression(obj) &&
               obj.name.text === 'events' &&
               obj.expression.kind === ts!.SyntaxKind.ThisKeyword) {
-            if ((methodName === 'on' || methodName === 'watchdog') && node.arguments.length > 0) {
+            if ((methodName === 'stream' || methodName === 'watchdog') && node.arguments.length > 0) {
               const ids = extractStringLiterals(node.arguments[0]);
               for (const id of ids) if (!dep.watches.includes(id)) dep.watches.push(id);
             }

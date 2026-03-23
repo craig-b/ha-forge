@@ -18,7 +18,7 @@ export interface BinarySensorOptions<TAttrs extends Record<string, unknown> = Re
   attributes?: { [K in keyof TAttrs]: TAttrs[K] | ComputedAttribute };
   /**
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
-   * Use `this.poll()`, `this.events.on()`, etc. to set up ongoing state updates.
+   * Use `this.poll()`, `this.events.stream()`, etc. to set up ongoing state updates.
    */
   init?(this: EntityContext<'on' | 'off', TAttrs>): 'on' | 'off' | Promise<'on' | 'off'>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
@@ -38,9 +38,10 @@ export interface BinarySensorOptions<TAttrs extends Record<string, unknown> = Re
  *   name: 'Front Door',
  *   config: { device_class: 'door' },
  *   init() {
- *     this.events.on('binary_sensor.zigbee_door', (event) => {
- *       this.update(event.new_state === 'on' ? 'on' : 'off');
- *     });
+ *     this.events.stream('binary_sensor.zigbee_door')
+ *       .subscribe((event) => {
+ *         this.update(event.new_state === 'on' ? 'on' : 'off');
+ *       });
  *     return 'off';
  *   },
  * });

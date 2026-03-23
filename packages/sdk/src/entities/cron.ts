@@ -19,7 +19,7 @@ export interface CronOptions {
  *
  * The runtime evaluates the cron expression every minute and publishes
  * `ON` when the current time matches the schedule, `OFF` otherwise.
- * Usable as a dependency in `computed()`, `this.events.on()`, etc.
+ * Usable as a dependency in `computed()`, `this.events.stream()`, etc.
  *
  * @param options - Cron schedule configuration.
  * @returns A `CronDefinition` detected and managed by the runtime.

@@ -27,11 +27,12 @@ export interface AutomationOptions {
  * export const motionLights = automation({
  *   id: 'motion_lights',
  *   init() {
- *     this.events.on('binary_sensor.hallway_motion', async (event) => {
- *       if (event.new_state === 'on') {
- *         await this.ha.callService('light.hallway', 'turn_on');
- *       }
- *     });
+ *     this.events.stream('binary_sensor.hallway_motion')
+ *       .subscribe(async (event) => {
+ *         if (event.new_state === 'on') {
+ *           await this.ha.callService('light.hallway', 'turn_on');
+ *         }
+ *       });
  *   },
  * });
  * ```

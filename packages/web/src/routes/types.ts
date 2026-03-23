@@ -379,11 +379,12 @@ declare function device<TEntities extends Record<string, EntityDefinition>>(opti
  * export const motionLights = automation({
  *   id: 'motion_lights',
  *   init() {
- *     this.events.on('binary_sensor.hallway_motion', async (event) => {
- *       if (event.new_state === 'on') {
- *         await this.ha.callService('light.hallway', 'turn_on');
- *       }
- *     });
+ *     this.events.stream('binary_sensor.hallway_motion')
+ *       .subscribe(async (event) => {
+ *         if (event.new_state === 'on') {
+ *           await this.ha.callService('light.hallway', 'turn_on');
+ *         }
+ *       });
  *   },
  * });
  * \`\`\`
@@ -442,7 +443,7 @@ declare function mode<TStates extends string>(options: ModeOptions<TStates>): Mo
 /**
  * Define a schedule entity surfaced as a \`binary_sensor\` in HA.
  * ON during matching cron windows, OFF otherwise.
- * Usable as a dependency in \`computed()\`, \`this.events.on()\`, etc.
+ * Usable as a dependency in \`computed()\`, \`this.events.stream()\`, etc.
  * @param options - Cron schedule configuration including id, name, and schedule expression.
  * @returns A cron definition to export from your script.
  * @example
@@ -464,9 +465,10 @@ declare function cron(options: CronOptions): CronDefinition;
  * \`\`\`ts
  * // Inside entity init():
  * // Subscribe to state changes (lifecycle-managed)
- * this.events.on('binary_sensor.front_door', (event) => {
- *   if (event.new_state === 'on') this.ha.callService('light.porch', 'turn_on');
- * });
+ * this.events.stream('binary_sensor.front_door')
+ *   .subscribe((event) => {
+ *     if (event.new_state === 'on') this.ha.callService('light.porch', 'turn_on');
+ *   });
  *
  * // Query current state
  * const state = await this.ha.getState('sensor.temperature');
