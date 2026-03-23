@@ -238,6 +238,90 @@ friendlyName(entityId: string): string
 
 ---
 
+## Global ha.on() and ha.reactions()
+
+The global `ha` object (available at module scope) is an `HAClient`, which extends `StatelessHAApi` with two subscription methods: `on()` and `reactions()`. These are **only** on the global `ha` -- they are NOT available on `this.ha` inside entity callbacks (which is the `StatelessHAApi` interface). Inside entities, use `this.events.on()` and `this.events.reactions()` instead, which are lifecycle-managed.
+
+### ha.on()
+
+Subscribe to state changes for a Home Assistant entity, domain, or array of entities at module scope.
+
+```ts
+ha.on(
+  entityOrDomain: string | string[],
+  callback: (event: StateChangedEvent) => void,
+): () => void
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entityOrDomain` | `string \| string[]` | Yes | Entity ID (e.g. `'light.kitchen'`), domain name (e.g. `'light'`), or array of entity IDs/domains. If the string contains a `.`, it's treated as an entity ID; otherwise as a domain. |
+| `callback` | `(event: StateChangedEvent) => void` | Yes | Called with each state change event. |
+
+**Returns:** `() => void` -- Cleanup function that removes the subscription.
+
+### ha.reactions()
+
+Set up declarative reaction rules at module scope. Maps entity IDs to reaction rules.
+
+```ts
+ha.reactions(rules: Record<string, ReactionRule>): () => void
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `rules` | `Record<string, ReactionRule>` | Yes | Map of entity IDs to reaction rules. See [ReactionRule](#reactionrule) below. |
+
+**Returns:** `() => void` -- Cleanup function that removes all subscriptions and cancels pending timers.
+
+**ReactionRule:**
+
+```ts
+interface ReactionRule {
+  to?: string;
+  when?: (event: StateChangedEvent) => boolean;
+  do: () => void | Promise<void>;
+  after?: number;
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `to` | `string` | No | Fire when entity transitions to this state value. |
+| `when` | `(event: StateChangedEvent) => boolean` | No | Custom condition. Mutually exclusive with `to` (if both set, `to` takes priority). |
+| `do` | `() => void \| Promise<void>` | Yes | Action to execute when the condition is met. |
+| `after` | `number` | No | Delay in ms before executing. Cancelled if the entity's state changes again before the timer fires. |
+
+If neither `to` nor `when` is specified, the rule fires on every state change. When `after` is set and the state changes again before the timer fires, the pending timer is cancelled. If the new state still matches the condition, a new timer is started.
+
+**Example:**
+
+```ts
+// Module-scope subscription — NOT inside init()
+const unsub = ha.on('binary_sensor.front_door', (event) => {
+  if (event.new_state === 'on') {
+    ha.callService('light.porch', 'turn_on');
+  }
+});
+
+// Declarative reactions at module scope
+ha.reactions({
+  'binary_sensor.motion_sensor': {
+    to: 'off',
+    after: 300_000,  // 5 minutes
+    do: () => ha.callService('light.hallway', 'turn_off'),
+  },
+});
+```
+
+> **Prefer `this.events` inside entities.** The global `ha.on()` and `ha.reactions()` subscriptions are not lifecycle-managed -- they persist until explicitly unsubscribed or the runtime shuts down. Inside entity `init()`, always use `this.events.on()` and `this.events.reactions()`, which are automatically cleaned up when the entity is destroyed.
+
+---
+
 ## Error Handling
 
 ### WebSocket disconnection

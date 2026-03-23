@@ -166,6 +166,16 @@ All MQTT communication uses the `ha-forge/` prefix for entity state/command topi
 | `homeassistant/device/<device_id>/config` | Publish | Yes | MQTT discovery config (device-based format). Published on entity registration. Empty payload published on deregistration to remove the entity. |
 | `homeassistant/status` | Subscribe | No | HA birth/will topic. When HA restarts (publishes `online`), the runtime re-publishes all discovery configs and current states to re-register entities. |
 
+### Per-entity availability
+
+In addition to the global `ha-forge/availability` topic, the runtime tracks per-entity failures. When an entity's state publish fails consecutively 3 times (configurable via `maxFailuresBeforeUnavailable`), the entity is marked unavailable via its own availability topic:
+
+| Topic | Direction | Retain | Description |
+|---|---|---|---|
+| `ha-forge/<entity_id>/availability` | Publish | Yes | Per-entity availability. Publishes `offline` after 3 consecutive publish failures. Publishes `online` when a subsequent publish succeeds, clearing the failure counter. |
+
+This is separate from the global availability topic -- individual entities can go offline while the add-on itself remains available. The failure counter resets on any successful state publish for that entity.
+
 ### Discovery payload format
 
 Discovery payloads use the device-based MQTT discovery format. Each entity includes:
@@ -202,6 +212,32 @@ The web server runs on port 8099 (ingress-proxied through HA authentication). Al
 | `DELETE` | `/api/files/:path` | Delete file. Returns 404 if not found. |
 
 All file paths are resolved safely to prevent directory traversal attacks.
+
+**Response shapes:**
+
+```ts
+// GET /api/files
+{ files: FileEntry[] }
+
+interface FileEntry {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: FileEntry[];  // Only for directories
+}
+
+// GET /api/files/:path
+{ path: string, content: string }
+
+// PUT /api/files/:path
+{ success: true, path: string }
+
+// PATCH /api/files/:path
+{ success: true, path: string }
+
+// DELETE /api/files/:path
+{ success: true }
+```
 
 ### Build
 
@@ -248,6 +284,8 @@ interface BuildStatusResponse {
 
 **Entity info:**
 
+**Response:** `{ entities: EntityInfo[] }`
+
 ```ts
 interface EntityInfo {
   id: string;
@@ -257,6 +295,8 @@ interface EntityInfo {
   sourceFile: string;
   status: 'healthy' | 'error' | 'unavailable';
   unit_of_measurement?: string;
+  next_fire?: string;         // Next cron fire time (ISO 8601) — cron entities only
+  cron_description?: string;  // Human-readable cron description — cron entities only
 }
 ```
 
@@ -264,8 +304,8 @@ interface EntityInfo {
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/logs` | Query log entries with filtering and pagination. |
-| `GET` | `/api/logs/entities` | List distinct entity IDs that have log entries. |
+| `GET` | `/api/logs` | Query log entries with filtering and pagination. Returns `{ logs: LogEntry[], count: number }`. |
+| `GET` | `/api/logs/entities` | List distinct entity IDs that have log entries. Returns `{ entityIds: string[] }`. |
 
 ### Packages
 
@@ -275,6 +315,19 @@ interface EntityInfo {
 | `POST` | `/api/packages` | Add a package. Body: `{ name: string, version?: string, dev?: boolean }`. |
 | `DELETE` | `/api/packages/:name` | Remove a package. |
 
+**Response shapes:**
+
+```ts
+// GET /api/packages
+{ dependencies: Record<string, string>, devDependencies: Record<string, string> }
+
+// POST /api/packages
+{ success: true, name: string, version: string }
+
+// DELETE /api/packages/:name
+{ success: true }
+```
+
 ### Types
 
 | Method | Endpoint | Description |
@@ -283,6 +336,22 @@ interface EntityInfo {
 | `GET` | `/api/types/completion-registry` | Get the Monaco completion registry (entity IDs, services for autocomplete). |
 | `GET` | `/api/types/sdk` | Get self-contained SDK type declarations for Monaco `addExtraLib()`. |
 | `POST` | `/api/types/regenerate` | Trigger type regeneration from the current HA registry. Returns `{ success, entityCount, serviceCount, errors }`. |
+
+**Response shapes:**
+
+```ts
+// GET /api/types/status
+{ generated: boolean, meta: object | null }
+
+// GET /api/types/completion-registry
+// Returns the completion registry JSON object, or 404 if not generated.
+
+// GET /api/types/sdk
+{ declaration: string }
+
+// POST /api/types/regenerate
+{ success: boolean, entityCount: number, serviceCount: number, errors: string[] }
+```
 
 ### UI
 
