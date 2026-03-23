@@ -1,59 +1,28 @@
-import type { StateChangedEvent, EventStream } from './types.js';
+import type { StateChangedEvent, EventStream, Subscription } from './types.js';
 
 /** A middleware that receives an event and calls next() to pass it downstream. */
 type Processor = (event: StateChangedEvent, next: (event: StateChangedEvent) => void) => void;
 
+/** Shared mutable ref so operators created before subscribe() can access the timer list. */
+interface TimerRef {
+  timers: Array<ReturnType<typeof setTimeout>>;
+}
+
 /**
- * Creates an EventStream that wraps a base subscription.
+ * Creates a lazy EventStream that defers subscription until `.subscribe()` is called.
  * Operators are applied in reading order (left to right):
- * `.filter().debounce()` means filter first, then debounce the filtered events.
+ * `.filter().debounce().subscribe(cb)` means filter first, then debounce, then invoke cb.
  *
- * @param subscribe - Function that registers a callback and returns an unsubscribe function.
- * @param callback - Optional initial callback to invoke on each event.
+ * @param subscribeFn - Factory that registers a callback and returns an unsubscribe function.
  */
 export function createEventStream(
-  subscribe: (cb: (event: StateChangedEvent) => void) => () => void,
-  callback?: (event: StateChangedEvent) => void,
+  subscribeFn: (cb: (event: StateChangedEvent) => void) => () => void,
 ): EventStream<any> {
-  const timers: Array<ReturnType<typeof setTimeout>> = [];
   const processors: Processor[] = [];
-  const finalHandler = callback ?? (() => {});
-  let disposed = false;
-
-  // Run the processor chain for an incoming event
-  const dispatch = (event: StateChangedEvent) => {
-    if (disposed) return;
-    let idx = 0;
-    const next = (e: StateChangedEvent) => {
-      if (idx < processors.length) {
-        processors[idx++](e, next);
-      } else {
-        finalHandler(e);
-      }
-    };
-    next(event);
-  };
-
-  // Subscribe immediately
-  const baseUnsub = subscribe(dispatch);
-
-  const cleanup = () => {
-    if (disposed) return;
-    disposed = true;
-    for (const t of timers) clearTimeout(t);
-    timers.length = 0;
-    baseUnsub();
-  };
-
-  const trackTimer = (t: ReturnType<typeof setTimeout>) => { timers.push(t); };
-  const untrackTimer = (t: ReturnType<typeof setTimeout>) => {
-    const idx = timers.indexOf(t);
-    if (idx !== -1) timers.splice(idx, 1);
-  };
+  // Shared ref — populated when subscribe() is called
+  const ref: TimerRef = { timers: [] };
 
   const stream: EventStream<any> = {
-    unsubscribe: cleanup,
-
     filter(predicate) {
       processors.push((event, next) => {
         if (predicate(event)) next(event);
@@ -73,13 +42,14 @@ export function createEventStream(
       processors.push((event, next) => {
         if (pending !== null) {
           clearTimeout(pending);
-          untrackTimer(pending);
+          const idx = ref.timers.indexOf(pending);
+          if (idx !== -1) ref.timers.splice(idx, 1);
         }
         pending = setTimeout(() => {
           pending = null;
           next(event);
         }, ms);
-        trackTimer(pending);
+        ref.timers.push(pending);
       });
       return stream;
     },
@@ -116,8 +86,36 @@ export function createEventStream(
       return stream;
     },
 
-    transition(from, to) {
-      return stream.onTransition(from, to);
+    subscribe(callback) {
+      let disposed = false;
+
+      const dispatch = (event: StateChangedEvent) => {
+        if (disposed) return;
+        let idx = 0;
+        const next = (e: StateChangedEvent) => {
+          if (idx < processors.length) {
+            processors[idx++](e, next);
+          } else {
+            callback(e);
+          }
+        };
+        next(event);
+      };
+
+      // Activate — register the HA event listener
+      const baseUnsub = subscribeFn(dispatch);
+
+      const subscription: Subscription = {
+        unsubscribe() {
+          if (disposed) return;
+          disposed = true;
+          for (const t of ref.timers) clearTimeout(t);
+          ref.timers.length = 0;
+          baseUnsub();
+        },
+      };
+
+      return subscription;
     },
   };
 

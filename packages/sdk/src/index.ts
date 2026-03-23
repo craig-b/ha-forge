@@ -66,6 +66,7 @@ export type {
   StateChangedEvent,
   TypedStateChangedEvent,
   StateChangedCallback,
+  Subscription,
   EventStream,
   ReactionRule,
   EntitySnapshot,

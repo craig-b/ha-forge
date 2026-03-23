@@ -139,10 +139,17 @@ export type StateChangedCallback = (event: StateChangedEvent) => void;
  * Call the stream as a function or use `.unsubscribe()` to cancel.
  * All internal timers and subscriptions are cleaned up on unsubscribe.
  */
-export interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
-  /** Unsubscribe from the event stream and clean up all internal timers. */
+/** Handle returned by `.subscribe()` — the only way to stop a live stream. */
+export interface Subscription {
   unsubscribe(): void;
+}
 
+/**
+ * A lazy event stream. Operators chain naturally before the terminal `.subscribe()`.
+ * No HA event listener is registered until `.subscribe()` is called.
+ * All internal timers and subscriptions are cleaned up on unsubscribe.
+ */
+export interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
   /**
    * Skip events that don't match a predicate.
    * @param predicate - Return `true` to keep the event, `false` to skip it.
@@ -185,13 +192,19 @@ export interface EventStream<TEvent extends StateChangedEvent = StateChangedEven
    * @example
    * ```ts
    * // Fire only when a door opens
-   * this.events.on('binary_sensor.front_door')
-   *   .onTransition('off', 'on');
+   * this.events.stream('binary_sensor.front_door')
+   *   .onTransition('off', 'on')
+   *   .subscribe((event) => { ... });
    * ```
    */
   onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>;
-  /** @deprecated Use `onTransition` instead. */
-  transition(from: string | '*', to: string | '*'): EventStream<TEvent>;
+
+  /**
+   * Terminal operator — activates the stream and begins listening for events.
+   * @param callback - Called with each event that passes through the operator chain.
+   * @returns A `Subscription` handle to stop listening.
+   */
+  subscribe(callback: (event: TEvent) => void): Subscription;
 }
 
 /**
@@ -426,28 +439,27 @@ export interface HAClientBase {
  */
 export interface EventsContext {
   /**
-   * Subscribe to state changes for an entity, domain, or array of entities.
+   * Create a lazy event stream for state changes on an entity, domain, or array of entities.
+   * No HA listener is registered until `.subscribe()` is called.
    * The subscription is automatically cleaned up when the owning entity is torn down.
    *
-   * Returns an `EventStream` with chainable operators for filtering and transforming events.
-   *
    * @param entityOrDomain - Entity ID, domain name, or array of entity IDs.
-   * @param callback - Called with a state change event. Optional when using stream operators.
-   * @returns An `EventStream` with `.filter()`, `.debounce()`, `.throttle()`, `.map()`, `.distinctUntilChanged()`, and `.onTransition()` operators.
+   * @returns A lazy `EventStream` — chain operators then call `.subscribe(callback)`.
    *
    * @example
    * ```ts
    * // Simple callback
-   * this.events.on('binary_sensor.motion', (event) => { ... });
+   * this.events.stream('binary_sensor.motion')
+   *   .subscribe((event) => { ... });
    *
    * // With stream operators
-   * this.events.on('binary_sensor.motion')
+   * this.events.stream('binary_sensor.motion')
    *   .filter(e => e.new_state === 'on')
    *   .debounce(5000)
-   *   .map(e => ({ ...e, new_state: 'sustained' }));
+   *   .subscribe((event) => { ... });
    * ```
    */
-  on(entityOrDomain: string | string[], callback?: StateChangedCallback): EventStream;
+  stream(entityOrDomain: string | string[]): EventStream;
   /**
    * Set up declarative reaction rules. Subscriptions and pending timers are
    * automatically cleaned up when the owning entity is torn down.
@@ -483,7 +495,7 @@ export interface EventsContext {
 
   /**
    * Subscribe to an entity's state changes with access to the current state of other entities.
-   * Like `on()`, but the callback receives a second argument with a snapshot
+   * Like `stream()`, but the callback receives a second argument with a snapshot
    * of specified context entities' states.
    *
    * The callback is **only invoked when all context entities are available** —
@@ -493,7 +505,7 @@ export interface EventsContext {
    * @param entityOrDomain - Entity ID, domain, or array to watch for changes.
    * @param context - Array of entity IDs whose current state must be available.
    * @param callback - Called with the event and a guaranteed-present state snapshot of all context entities.
-   * @returns An `EventStream`.
+   * @returns A `Subscription` handle.
    *
    * @example
    * ```ts
@@ -513,7 +525,7 @@ export interface EventsContext {
     entityOrDomain: string | string[],
     context: C[],
     callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void,
-  ): EventStream;
+  ): Subscription;
 
   /**
    * Set up watchdog timers that fire when entities go silent.
