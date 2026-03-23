@@ -460,6 +460,100 @@ tse-bottom-panel {
   font-size: 13px;
 }
 
+/* Simulate panel */
+.simulate-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+}
+.simulate-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.simulate-time-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.scenario-picker {
+  padding: 4px 8px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  font-size: 12px;
+  border-radius: 3px;
+}
+.simulate-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+.simulation-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 11px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.operator-stat {
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 3px;
+}
+.sim-warning {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--warning);
+  background: rgba(204, 167, 0, 0.08);
+  border-radius: 3px;
+}
+.sim-warning code {
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+/* Signal chart */
+.signal-chart {
+  position: relative;
+}
+.signal-chart svg {
+  width: 100%;
+  height: auto;
+  max-height: 140px;
+}
+.chart-label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px;
+}
+.chart-axis-label {
+  font-size: 9px;
+  fill: var(--text-secondary);
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+.chart-crosshair {
+  pointer-events: none;
+}
+.chart-tooltip {
+  pointer-events: none;
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+}
+
 /* Scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
