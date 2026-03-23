@@ -457,6 +457,19 @@ declare function mode<TStates extends string>(options: ModeOptions<TStates>): Mo
  */
 declare function cron(options: CronOptions): CronDefinition;
 /**
+ * Define a signal simulation that shadows a real entity ID.
+ * Simulations are source-only — the runtime skips them during deploy.
+ * Use with \`signals.*\` generators to test behavior chains in the web editor.
+ * @param options - Simulation configuration including id, shadows target, and signal generator.
+ * @returns A \`SimulationDefinition\` (never deployed).
+ */
+declare const simulate: typeof import('@ha-forge/sdk').simulate;
+/**
+ * Library of pure signal generators for use with \`simulate()\`.
+ * Includes \`signals.numeric()\`, \`signals.binary()\`, \`signals.enum()\`, and \`signals.recorded()\`.
+ */
+declare const signals: typeof import('@ha-forge/sdk').signals;
+/**
  * Global stateless Home Assistant client API.
  * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
