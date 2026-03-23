@@ -591,6 +591,29 @@ export class TseApp extends LitElement {
           });
         }
 
+        // Simulation lenses
+        const sourceText = model.getValue();
+        const sims = findSimulations(sourceText, model.uri.path || 'file.ts');
+        for (const sim of sims) {
+          lenses.push({
+            range: new monaco.Range(sim.line, 1, sim.line, 1),
+            command: { id: '', title: `\u{1F4CA} simulate: ${sim.signalType} \u2192 ${sim.shadows} \u25B6 Preview` },
+          });
+        }
+
+        // Stream subscription simulation availability lenses
+        const streams = findStreamSubscriptions(sourceText, model.uri.path || 'file.ts');
+        const shadowedEntities = new Set(this._simulations.map(s => s.shadows));
+        for (const stream of streams) {
+          const matchCount = this._simulations.filter(s => s.shadows === stream.entityId).length;
+          if (matchCount > 0) {
+            lenses.push({
+              range: new monaco.Range(stream.line, 1, stream.line, 1),
+              command: { id: '', title: `\u{1F4CA} ${matchCount} simulation(s) \u25B6 Preview` },
+            });
+          }
+        }
+
         return { lenses, dispose() {} };
       },
     });
@@ -612,16 +635,52 @@ export class TseApp extends LitElement {
       provideInlayHints: (model: MonacoModelInstance, _range: MonacoRange) => {
         if (!isAstReady()) return { hints: [], dispose() {} };
 
-        const defs = findEntityDefinitions(model.getValue(), model.uri.path || 'file.ts');
-        const lines = model.getValue().split('\n');
+        const sourceText = model.getValue();
+        const defs = findEntityDefinitions(sourceText, model.uri.path || 'file.ts');
+        const lines = sourceText.split('\n');
 
-        const hints = defs.map(def => ({
+        const hints: Array<{
+          position: { lineNumber: number; column: number };
+          label: string;
+          kind?: number;
+          paddingLeft?: boolean;
+          tooltip?: string;
+        }> = defs.map(def => ({
           position: { lineNumber: def.line, column: (lines[def.line - 1] || '').length + 1 },
           label: def.fullEntityId,
           kind: monaco.languages.InlayHintKind.Type,
           paddingLeft: true,
           tooltip: `MQTT entity: ${def.fullEntityId}`,
         }));
+
+        // Simulation operator pass rate hints
+        if (this._simulationResults.size > 0) {
+          const streams = findStreamSubscriptions(sourceText, model.uri.path || 'file.ts');
+          for (const stream of streams) {
+            // Find matching simulation result
+            const matchingSim = this._simulations.find(s => s.shadows === stream.entityId);
+            if (!matchingSim) continue;
+            const result = this._simulationResults.get(matchingSim.id) as {
+              stats: { perOperator: Array<{ name: string; inputCount: number; outputCount: number }> };
+            } | undefined;
+            if (!result) continue;
+
+            // Match operators by index
+            for (let i = 0; i < stream.operators.length && i < result.stats.perOperator.length; i++) {
+              const op = stream.operators[i];
+              const stat = result.stats.perOperator[i];
+              const passRate = stat.inputCount > 0
+                ? ((stat.outputCount / stat.inputCount) * 100).toFixed(0)
+                : '0';
+              hints.push({
+                position: { lineNumber: op.line, column: (lines[op.line - 1] || '').length + 1 },
+                label: `/* ${passRate}% pass */`,
+                paddingLeft: true,
+                tooltip: `${stat.name}: ${stat.inputCount} in \u2192 ${stat.outputCount} out`,
+              });
+            }
+          }
+        }
 
         return { hints, dispose() {} };
       },
