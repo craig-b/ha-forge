@@ -30,6 +30,7 @@ export { task } from './entities/task.js';
 export { mode } from './entities/mode.js';
 export { cron } from './entities/cron.js';
 export { simulate } from './entities/simulate.js';
+export { signals } from './signals.js';
 
 export type { SensorOptions } from './entities/sensor.js';
 export type { BinarySensorOptions } from './entities/binary_sensor.js';
