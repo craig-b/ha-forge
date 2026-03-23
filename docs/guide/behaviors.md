@@ -11,12 +11,6 @@ Behaviors are higher-order wrappers that modify how an entity publishes state. T
 | `sampled` | Captures every update, publishes on a fixed interval | Rate-limiting high-frequency sources |
 | `buffered` | Collects values, reduces on interval (avg, sum, etc.) | Aggregation, moving averages |
 
-Import behaviors from `ha-forge`:
-
-```typescript
-import { sensor, debounced, filtered, sampled, buffered, average } from 'ha-forge';
-```
-
 ## debounced
 
 Delays publishing until updates stop arriving for `wait` milliseconds. If a new update arrives during the wait, the timer resets. Only the last value is published.
@@ -85,8 +79,6 @@ Use when you want frequent internal updates but less frequent publishes to HA.
 Collects every value into a buffer. On each interval tick, calls `reduce(buffer)` and publishes the result. The buffer is cleared after each flush. Empty buffers are skipped.
 
 ```typescript
-import { sensor, buffered, average } from 'ha-forge';
-
 export const solarAvg = buffered(
   sensor({
     id: 'solar_avg',

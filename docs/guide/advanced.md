@@ -9,8 +9,6 @@
 Discover devices on the network and create entities for each:
 
 ```typescript
-import { entityFactory, sensor } from 'ha-forge';
-
 export default entityFactory(async () => {
   const devices = await discoverModbusDevices('/dev/ttyUSB0');
   return devices.map((d) =>
@@ -32,8 +30,6 @@ export default entityFactory(async () => {
 Query the HA installation and create entities based on what exists:
 
 ```typescript
-import { entityFactory, sensor } from 'ha-forge';
-
 export default entityFactory(async () => {
   const lights = await ha.getEntities('light');
   return lights.map((id) =>
@@ -62,8 +58,6 @@ This creates a usage-tracking sensor for every light in the installation. Adding
 ### Basic Usage
 
 ```typescript
-import { computed } from 'ha-forge';
-
 export const avgTemp = computed({
   id: 'house_avg_temp',
   name: 'House Average Temperature',
@@ -122,8 +116,6 @@ export const motion = computed({
 Computed entities are compatible with all behaviors (`buffered`, `debounced`, `filtered`, `sampled`):
 
 ```typescript
-import { computed, buffered, average } from 'ha-forge';
-
 // Smooth a computed value over 30-second windows
 export const smoothedPower = buffered(
   computed({
@@ -171,8 +163,6 @@ export const hvacStatus = computed({
 `cron()` creates a binary sensor that is ON during matching cron minutes and OFF otherwise. Useful for time-based automations.
 
 ```typescript
-import { cron } from 'ha-forge';
-
 export const businessHours = cron({
   id: 'business_hours',
   name: 'Business Hours',
@@ -189,8 +179,6 @@ export const quietHours = cron({
 Use cron entities in automations to gate time-based logic:
 
 ```typescript
-import { automation } from 'ha-forge';
-
 export const nightDoorbell = automation({
   id: 'night_doorbell',
   name: 'Night Doorbell',
@@ -213,8 +201,6 @@ export const nightDoorbell = automation({
 `mode()` creates a select entity backed by a state machine. `states` is a string array of valid modes, and `transitions` is a separate object keyed by state name with optional `enter`/`exit`/`guard` hooks.
 
 ```typescript
-import { mode } from 'ha-forge';
-
 export const houseMode = mode({
   id: 'house_mode',
   name: 'House Mode',
@@ -303,8 +289,6 @@ With `auto_rebuild_on_registry_change` enabled, the runtime automatically trigge
 Every entity context has `this.mqtt` for direct MQTT operations outside the managed entity state:
 
 ```typescript
-import { automation } from 'ha-forge';
-
 export const bridge = automation({
   id: 'zigbee_bridge',
   name: 'Zigbee Bridge',

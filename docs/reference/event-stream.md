@@ -66,8 +66,6 @@ const stream = this.events.withState(
 The SDK exports `createEventStream()` for advanced use (typically not needed in user code):
 
 ```ts
-import { createEventStream } from 'ha-forge';
-
 const stream = createEventStream(
   (cb) => {
     // Register callback, return unsubscribe function

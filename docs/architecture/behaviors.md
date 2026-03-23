@@ -21,8 +21,6 @@ Delays publishing until updates stop arriving for `wait` milliseconds. If a new 
 **Important:** `debounced` is designed for bursty updates, not continuous streams. If your entity polls on a fixed interval shorter than the debounce `wait`, updates will never settle and only the first value will be published. For continuous streams, use `sampled` instead.
 
 ```typescript
-import { sensor, debounced } from 'ha-forge';
-
 export const temp = debounced(
   sensor({
     id: 'noisy_temp',
@@ -45,8 +43,6 @@ export const temp = debounced(
 Calls the original `update()` only when `predicate(value, attributes)` returns `true`. No timers, no buffering — purely synchronous gating.
 
 ```typescript
-import { sensor, filtered } from 'ha-forge';
-
 export const power = filtered(
   sensor({
     id: 'grid_power',
@@ -66,8 +62,6 @@ export const power = filtered(
 Captures the latest value on every `update()` call but only publishes to HA on a fixed interval. The first update publishes immediately — no initial dead time.
 
 ```typescript
-import { sensor, sampled } from 'ha-forge';
-
 export const cpu = sampled(
   sensor({
     id: 'cpu_usage',
@@ -90,8 +84,6 @@ export const cpu = sampled(
 Collects every value passed to `update()` into a buffer. On each interval tick, calls `reduce(buffer)` and publishes the result. The buffer is cleared after each flush. Ticks where the buffer is empty are skipped.
 
 ```typescript
-import { sensor, buffered, average } from 'ha-forge';
-
 export const solarAvg = buffered(
   sensor({
     id: 'solar_avg',
@@ -124,8 +116,6 @@ Behaviors accept `StatefulEntityDefinition` — the subset of entity definitions
 Noisy analog sensors (temperature, humidity, power) jitter around the true value. A dead-band filter suppresses updates smaller than a threshold, cutting database writes without losing real changes.
 
 ```typescript
-import { sensor, filtered } from 'ha-forge';
-
 let lastPublished = 0;
 
 export const stableTemp = filtered(
@@ -154,8 +144,6 @@ export const stableTemp = filtered(
 PIR sensors go off/on/off/on as someone sits still. Debouncing the "off" transition prevents automation flicker.
 
 ```typescript
-import { binarySensor, debounced } from 'ha-forge';
-
 export const occupied = debounced(
   binarySensor({
     id: 'office_occupied',
@@ -179,8 +167,6 @@ Even with a 2-minute debounce, the first transition to "on" is instant — the f
 External APIs have quotas. Poll aggressively internally, publish conservatively, and drop failures.
 
 ```typescript
-import { sensor, filtered, sampled } from 'ha-forge';
-
 export const weather = filtered(
   sampled(
     sensor({
@@ -209,8 +195,6 @@ The order matters. `sampled` wraps the sensor, capturing every poll result but o
 A washing machine's power draw fluctuates wildly during a cycle: idle → wash → pause → spin → drain. Detecting "finished" from raw wattage is unreliable. Buffering + debouncing smooths the signal.
 
 ```typescript
-import { sensor, debounced, buffered, average } from 'ha-forge';
-
 export const washerState = debounced(
   buffered(
     sensor({
@@ -233,8 +217,6 @@ export const washerState = debounced(
 Build an automation on top:
 
 ```typescript
-import { automation } from 'ha-forge';
-
 export const washerDone = automation({
   id: 'washer_done_notify',
   init() {
@@ -253,8 +235,6 @@ export const washerDone = automation({
 CT clamps and smart plugs report instantaneous watts many times per second. The HA Energy dashboard needs clean periodic measurements, not a firehose.
 
 ```typescript
-import { sensor, buffered, average, min, max } from 'ha-forge';
-
 const ctClampSensor = (id: string, name: string) =>
   sensor({
     id,
@@ -286,8 +266,6 @@ export const gridPeak = buffered(ctClampSensor('grid_peak', 'Grid Peak'), {
 Behaviors modify how raw state is published. Computed entities derive new state from existing entities. They work on different layers and complement each other naturally — and computed entities can themselves be wrapped in behaviors.
 
 ```typescript
-import { sensor, computed, debounced, filtered, sampled, buffered, average } from 'ha-forge';
-
 // Layer 1: Raw sensor with dead-band filter
 let lastHumidity = 0;
 export const humidity = filtered(
@@ -332,8 +310,6 @@ The dead-band filter on humidity prevents the computed entity from re-evaluating
 The `this.events.on()` stream has its own `.debounce()`, `.throttle()`, `.filter()`, and `.distinctUntilChanged()` operators. These operate on *incoming events* — what triggers your entity's logic. Behaviors operate on *outgoing state* — what gets published. Use both when you need control over the full pipeline.
 
 ```typescript
-import { sensor, sampled } from 'ha-forge';
-
 export const doorActivity = sampled(
   sensor({
     id: 'door_activity_count',
@@ -359,9 +335,6 @@ The event stream's `.transition()` filters the *input* (ignoring close events an
 Behaviors don't interfere with the reactive system. A debounced sensor still fires state change events in HA — they're just less frequent. Watchdogs and reactions work on the published state, which is exactly what you want.
 
 ```typescript
-import { sensor, debounced } from 'ha-forge';
-import { automation } from 'ha-forge';
-
 export const serverTemp = debounced(
   sensor({
     id: 'server_room_temp',

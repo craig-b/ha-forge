@@ -24,8 +24,6 @@ All entity definitions share a common shape:
 Reports a value to HA. The most common entity type.
 
 ```typescript
-import { sensor } from 'ha-forge';
-
 export const cpuTemp = sensor({
   id: 'cpu_temp',
   name: 'CPU Temperature',
@@ -52,8 +50,6 @@ State type: `string | number`. Config options include `device_class` (70+ classe
 Two-state sensor: on or off.
 
 ```typescript
-import { binarySensor } from 'ha-forge';
-
 export const motion = binarySensor({
   id: 'office_motion',
   name: 'Motion',
@@ -72,8 +68,6 @@ State type: `'on' | 'off'`. Device classes include `motion`, `door`, `window`, `
 Serves an image URL to HA.
 
 ```typescript
-import { image } from 'ha-forge';
-
 export const snapshot = image({
   id: 'garden_snapshot',
   name: 'Garden Camera',
@@ -95,8 +89,6 @@ These entities accept commands from HA via MQTT. All have an `onCommand()` callb
 On/off control. Named `defineSwitch` because `switch` is a reserved word in JavaScript.
 
 ```typescript
-import { defineSwitch } from 'ha-forge';
-
 export const heater = defineSwitch({
   id: 'space_heater',
   name: 'Space Heater',
@@ -117,8 +109,6 @@ State type: `'on' | 'off'`. Command type: `'ON' | 'OFF'`.
 Supports brightness, color modes, effects, and transitions.
 
 ```typescript
-import { light } from 'ha-forge';
-
 export const desk = light({
   id: 'desk_light',
   name: 'Desk Light',
@@ -144,8 +134,6 @@ Color modes: `onoff`, `brightness`, `color_temp`, `hs`, `rgb`, `rgbw`, `rgbww`, 
 Garage doors, blinds, curtains. Supports position and tilt.
 
 ```typescript
-import { cover } from 'ha-forge';
-
 export const blinds = cover({
   id: 'living_room_blinds',
   name: 'Blinds',
@@ -165,8 +153,6 @@ export const blinds = cover({
 HVAC control with modes, fan speed, presets, and temperature targets.
 
 ```typescript
-import { climate } from 'ha-forge';
-
 export const hvac = climate({
   id: 'bedroom_climate',
   name: 'Bedroom',
@@ -190,8 +176,6 @@ export const hvac = climate({
 Fan speed, direction, preset modes, and oscillation.
 
 ```typescript
-import { fan } from 'ha-forge';
-
 export const ceilingFan = fan({
   id: 'ceiling_fan',
   name: 'Ceiling Fan',
@@ -214,8 +198,6 @@ export const ceilingFan = fan({
 Lock/unlock control with optional code.
 
 ```typescript
-import { lock } from 'ha-forge';
-
 export const frontDoor = lock({
   id: 'front_door_lock',
   name: 'Front Door',
@@ -233,8 +215,6 @@ export const frontDoor = lock({
 Numeric input with min/max/step.
 
 ```typescript
-import { number } from 'ha-forge';
-
 export const brightness = number({
   id: 'led_brightness',
   name: 'LED Brightness',
@@ -252,8 +232,6 @@ export const brightness = number({
 Dropdown selection from a list of options.
 
 ```typescript
-import { select } from 'ha-forge';
-
 export const scene = select({
   id: 'led_scene',
   name: 'LED Scene',
@@ -271,8 +249,6 @@ export const scene = select({
 Free-form text input.
 
 ```typescript
-import { text } from 'ha-forge';
-
 export const message = text({
   id: 'display_message',
   name: 'Display Message',
@@ -290,8 +266,6 @@ export const message = text({
 Command-only entity with no state. Triggers an action on press.
 
 ```typescript
-import { button } from 'ha-forge';
-
 export const reboot = button({
   id: 'reboot_server',
   name: 'Reboot Server',
@@ -326,8 +300,6 @@ These are not direct MQTT platforms. They provide higher-level abstractions buil
 Groups entities under a shared lifecycle with coordinated init/destroy and cross-entity access.
 
 ```typescript
-import { device, sensor, defineSwitch } from 'ha-forge';
-
 export default device({
   id: 'weather_station',
   name: 'Weather Station',
@@ -361,8 +333,6 @@ export default device({
 Derived sensor whose state is a pure function of other entities. Re-evaluates reactively, debounced (100ms default), and only publishes when the value changes.
 
 ```typescript
-import { computed } from 'ha-forge';
-
 export const comfortIndex = computed({
   id: 'comfort_index',
   name: 'Comfort Index',
@@ -381,8 +351,6 @@ export const comfortIndex = computed({
 Pure reactive script with managed lifecycle. Does not create a visible entity by default. Set `entity: true` to surface it as a binary sensor.
 
 ```typescript
-import { automation } from 'ha-forge';
-
 export const nightMode = automation({
   id: 'night_lights',
   init() {
@@ -400,8 +368,6 @@ export const nightMode = automation({
 Schedule entity surfaced as a binary sensor. ON during matching cron minutes, OFF otherwise.
 
 ```typescript
-import { cron } from 'ha-forge';
-
 export const businessHours = cron({
   id: 'business_hours',
   name: 'Business Hours',
@@ -414,8 +380,6 @@ export const businessHours = cron({
 One-shot script surfaced as a button entity. `run()` is triggered on button press. Set `runOnDeploy: true` to also execute on deploy. Gets `this.ha`, `this.log`, `this.mqtt` but no `this.events`.
 
 ```typescript
-import { task } from 'ha-forge';
-
 export const cleanup = task({
   id: 'daily_cleanup',
   name: 'Daily Cleanup',
@@ -433,8 +397,6 @@ export const cleanup = task({
 State machine surfaced as a select entity. `states` is a string array of valid modes, and `transitions` is a separate object keyed by state name with optional `enter`/`exit`/`guard` hooks.
 
 ```typescript
-import { mode } from 'ha-forge';
-
 export const houseMode = mode({
   id: 'house_mode',
   name: 'House Mode',
@@ -461,8 +423,6 @@ export const houseMode = mode({
 Generates entities dynamically at deploy time. The factory function is async and returns an array of entity definitions.
 
 ```typescript
-import { entityFactory, sensor } from 'ha-forge';
-
 export default entityFactory(async () => {
   const devices = await discoverModbusDevices('/dev/ttyUSB0');
   return devices.map((d) =>
