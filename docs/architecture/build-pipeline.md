@@ -102,6 +102,8 @@ export type EntitiesInDomain<D extends HADomain> = {
 Written to `/config/.generated/ha-validators.ts`:
 
 ```typescript
+import { rangeValidator, oneOfValidator, rgbValidator } from '@ha-forge/sdk/validate';
+
 export const validators = {
   'light.turn_on': {
     brightness: rangeValidator(0, 255),
