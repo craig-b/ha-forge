@@ -337,8 +337,8 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
   }
 
   // ---- Build typed HAClient overloads ----
-  const onOverloads: string[] = [];
-  const domainOnOverloads: string[] = [];
+  const streamOverloads: string[] = [];
+  const domainStreamOverloads: string[] = [];
   const getStateOverloads: string[] = [];
   const callServiceOverloads: string[] = [];
   const domainCallServiceOverloads: string[] = [];
@@ -357,9 +357,9 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
 
     domainsWithEntities.add(domain);
 
-    // on() overload — includes entity_id literal as third TypedStateChangedEvent param
-    onOverloads.push(
-      `  on(entity: '${escapedId}', callback?: (event: TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>) => void): EventStream<TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>>;`,
+    // stream() overload — includes entity_id literal as third TypedStateChangedEvent param
+    streamOverloads.push(
+      `  stream(entity: '${escapedId}'): EventStream<TypedStateChangedEvent<${stateType}, ${attrsType}, '${escapedId}'>>;`,
     );
 
     // getState() overload
@@ -385,8 +385,8 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     const repState = repEntity ? stateMap.get(repEntity) : undefined;
     const domainStateType = repState ? inferStateType(domain, repState) : 'string';
 
-    domainOnOverloads.push(
-      `  on(domain: '${escapedDomain}', callback?: (event: TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>) => void): EventStream<TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>>;`,
+    domainStreamOverloads.push(
+      `  stream(domain: '${escapedDomain}'): EventStream<TypedStateChangedEvent<${domainStateType}, Record<string, unknown>, EntitiesInDomain<'${escapedDomain}'>>>;`,
     );
   }
 
@@ -527,19 +527,18 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     ` * automatically cleaned up when the owning entity/device is torn down.`,
     ` */`,
     `interface HAEventsContext {`,
-    `  // --- Per-entity on() overloads: subscribe to a specific entity's state changes ---`,
-    ...onOverloads,
+    `  // --- Per-entity stream() overloads: create a lazy stream for a specific entity's state changes ---`,
+    ...streamOverloads,
     ``,
-    `  // --- Per-domain on() overloads: subscribe to all entities in a domain ---`,
-    ...domainOnOverloads,
+    `  // --- Per-domain stream() overloads: create a lazy stream for all entities in a domain ---`,
+    ...domainStreamOverloads,
     ``,
     `  /**`,
-    `   * Subscribe to state changes for multiple entities with typed events.`,
+    `   * Create a lazy event stream for multiple entities with typed events.`,
     `   * @param entities - Array of entity IDs to monitor.`,
-    `   * @param callback - Called with a typed event each time any listed entity changes.`,
-    `   * @returns Unsubscribe function.`,
+    `   * @returns A lazy EventStream — chain operators then call \`.subscribe(callback)\`.`,
     `   */`,
-    `  on<E extends HAEntityId>(entities: E[], callback?: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => void): EventStream<TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>>;`,
+    `  stream<E extends HAEntityId>(entities: E[]): EventStream<TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>>;`,
     ``,
     `  /**`,
     `   * Set up typed declarative reaction rules. Entity IDs autocomplete and the \`to\` field`,
@@ -562,8 +561,8 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `  combine<E extends HAEntityId>(entities: E[], callback: (states: { [K in E]: TypedEntitySnapshot<K> | null }) => void): () => void;`,
     ``,
     `  /** Subscribe to state changes with typed context entity snapshots. */`,
-    `  withState<C extends HAEntityId>(entityOrDomain: HAEntityId | HADomain, context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): EventStream;`,
-    `  withState<C extends HAEntityId>(entities: HAEntityId[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): EventStream;`,
+    `  withState<C extends HAEntityId>(entityOrDomain: HAEntityId | HADomain, context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): Subscription;`,
+    `  withState<C extends HAEntityId>(entities: HAEntityId[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: TypedEntitySnapshot<K> }) => void): Subscription;`,
     ``,
     `  /** Set up watchdog timers with typed entity IDs. */`,
     `  watchdog<K extends HAEntityId>(rules: { [E in K]: {`,

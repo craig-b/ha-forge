@@ -403,19 +403,19 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates typed on() overloads on HAEventsContext (not HAClient)', () => {
+    it('generates typed stream() overloads on HAEventsContext (not HAClient)', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain("on(entity: 'light.living_room',");
-      expect(content).toContain("on(entity: 'sensor.temperature',");
+      expect(content).toContain("stream(entity: 'light.living_room')");
+      expect(content).toContain("stream(entity: 'sensor.temperature')");
       expect(content).toContain('TypedStateChangedEvent<');
-      // Entity ID literal should be the third type parameter and on() returns EventStream
-      expect(content).toContain("'light.living_room'>) => void): EventStream<");
-      // on() should be inside HAEventsContext, not HAClient
+      // Entity ID literal should be the third type parameter and stream() returns EventStream
+      expect(content).toContain("'light.living_room'>>;");
+      // stream() should be inside HAEventsContext, not HAClient
       const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
-      expect(haClientBlock).not.toContain('on(entity:');
+      expect(haClientBlock).not.toContain('stream(entity:');
       cleanup();
     });
 
@@ -485,13 +485,13 @@ describe('generateTypes()', () => {
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
       // Typed overloads exist (on HAEventsContext)
-      expect(content).toContain("on(entity: 'light.living_room',");
+      expect(content).toContain("stream(entity: 'light.living_room')");
       // Typed overloads exist (on HAClient)
       expect(content).toContain("callService<S extends keyof HAEntityMap['light.living_room']");
       expect(content).toContain("getState(entityId: 'light.living_room'):");
 
       // No string fallbacks
-      expect(content).not.toContain('on(entityOrDomain: string | string[],');
+      expect(content).not.toContain('stream(entityOrDomain: string | string[],');
       expect(content).not.toContain('callService(entity: string, service: string,');
       expect(content).not.toContain('getState(entityId: string):');
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>)');
@@ -499,25 +499,25 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('generates domain-level on() overloads', () => {
+    it('generates domain-level stream() overloads', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
       // Domain overloads for light and input_select
-      expect(content).toContain("on(domain: 'light',");
-      expect(content).toContain("on(domain: 'input_select',");
-      // Domain on() should use EntitiesInDomain for entity_id
+      expect(content).toContain("stream(domain: 'light')");
+      expect(content).toContain("stream(domain: 'input_select')");
+      // Domain stream() should use EntitiesInDomain for entity_id
       expect(content).toContain("EntitiesInDomain<'light'>");
       cleanup();
     });
 
-    it('generates typed array on() overload', () => {
+    it('generates typed array stream() overload', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      expect(content).toContain('on<E extends HAEntityId>(entities: E[],');
+      expect(content).toContain('stream<E extends HAEntityId>(entities: E[])');
       cleanup();
     });
 
@@ -599,15 +599,15 @@ describe('generateTypes()', () => {
       cleanup();
     });
 
-    it('on() returns EventStream with typed event', () => {
+    it('stream() returns EventStream with typed event', () => {
       setup();
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      // Per-entity on() returns EventStream<TypedStateChangedEvent<...>>
-      expect(content).toMatch(/on\(entity: 'light\.living_room'[\s\S]*?\): EventStream<TypedStateChangedEvent</);
-      // Array on() returns EventStream too
-      expect(content).toMatch(/on<E extends HAEntityId>\(entities: E\[\][\s\S]*?\): EventStream<TypedStateChangedEvent</);
+      // Per-entity stream() returns EventStream<TypedStateChangedEvent<...>>
+      expect(content).toMatch(/stream\(entity: 'light\.living_room'\): EventStream<TypedStateChangedEvent</);
+      // Array stream() returns EventStream too
+      expect(content).toMatch(/stream<E extends HAEntityId>\(entities: E\[\]\): EventStream<TypedStateChangedEvent</);
       cleanup();
     });
   });
