@@ -1,10 +1,12 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { BuildStep, EntityInfo, LogEntry } from '../types.js';
+import type { SimulationLocation, StreamSubscriptionLocation } from '../ast-analyzers.js';
 
 import './tse-build-output.js';
 import './tse-exports-panel.js';
 import './tse-log-viewer.js';
+import './tse-simulate-panel.js';
 
 @customElement('tse-bottom-panel')
 export class TseBottomPanel extends LitElement {
@@ -13,6 +15,9 @@ export class TseBottomPanel extends LitElement {
   @property({ type: Array }) entities: EntityInfo[] = [];
   @property({ type: Array }) logs: LogEntry[] = [];
   @property({ type: Array }) logEntityIds: string[] = [];
+  @property({ type: Array }) simulations: SimulationLocation[] = [];
+  @property({ type: Array }) streams: StreamSubscriptionLocation[] = [];
+  @property({ type: Object }) simulationResults: Map<string, unknown> = new Map();
   @state() private _activePanel = 'build-output';
 
   createRenderRoot() { return this; }
@@ -28,10 +33,10 @@ export class TseBottomPanel extends LitElement {
       <div class="panel-resize-handle"
         @mousedown=${this._onResizeStart}></div>
       <div class="panel-tabs">
-        ${['build-output', 'exports', 'logs'].map((panel) => html`
+        ${['build-output', 'exports', 'logs', 'simulate'].map((panel) => html`
           <button class="panel-tab ${this._activePanel === panel ? 'active' : ''}"
             @click=${() => this._switchPanel(panel)}>
-            ${{ 'build-output': 'Build Output', exports: 'Exports', logs: 'Logs' }[panel]}
+            ${{ 'build-output': 'Build Output', exports: 'Exports', logs: 'Logs', simulate: 'Simulate' }[panel]}
           </button>
         `)}
       </div>
@@ -44,6 +49,13 @@ export class TseBottomPanel extends LitElement {
       </div>
       <div class="panel-content ${this._activePanel === 'logs' ? 'active' : ''}">
         <tse-log-viewer .logs=${this.logs} .entityIds=${this.logEntityIds}></tse-log-viewer>
+      </div>
+      <div class="panel-content ${this._activePanel === 'simulate' ? 'active' : ''}">
+        <tse-simulate-panel
+          .simulations=${this.simulations}
+          .streams=${this.streams}
+          .simulationResults=${this.simulationResults}>
+        </tse-simulate-panel>
       </div>
     `;
   }
