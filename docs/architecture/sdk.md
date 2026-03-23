@@ -509,3 +509,19 @@ ha.fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<vo
 ```
 
 Fires a custom event on the HA event bus via WebSocket.
+
+## Simulated Time Engine
+
+The SDK includes a deterministic simulation engine (`simulate-engine.ts`) for evaluating operator chains without real devices:
+
+- **Virtual clock** — advances through input events in time order, no real timers
+- **Timer priority queue** — handles debounce callbacks with correct ordering
+- **Operator pipeline** — processes debounce, throttle, distinctUntilChanged, onTransition as discrete stages
+- **filter/map pass-through** — closures can't be serialized from AST, so these pass events unchanged in v1
+- **Multi-entity support** — merges events from multiple entities into a single timeline for combine()/withState() simulation
+
+The engine runs client-side in the web editor (no Node dependencies) and produces `SimulationResult` with input/output events and per-operator stats.
+
+A companion `simulate-context.ts` provides a mock `EntityContext` for running entity-level behaviors (`debounced()`, `filtered()`, `sampled()`, `buffered()`) with virtual timers, capturing `this.update()` calls as output events.
+
+Signal generators (`signals.ts`) use a seeded xoshiro128** PRNG for deterministic output. Four generators are provided: `numeric`, `binary`, `enum`, and `recorded`.
