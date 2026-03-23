@@ -414,7 +414,7 @@ Beyond the 22 MQTT platform factories, the SDK provides higher-level constructs:
 
 Inside entity `init()`, `this.events` provides lifecycle-managed subscriptions:
 
-- **`on()`** — State change subscription. Returns chainable `EventStream` with operators: `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.transition()`.
+- **`on()`** — State change subscription. Returns chainable `EventStream` with operators: `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.onTransition()`.
 - **`reactions()`** — Declarative reaction rules with `to`, `when`, `do`, `after` (delayed, auto-cancelled).
 - **`combine()`** — Watch multiple entities, callback gets all snapshots on any change.
 - **`withState()`** — Enrich trigger events with context entity snapshots.

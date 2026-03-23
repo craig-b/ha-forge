@@ -317,7 +317,7 @@ export const doorActivity = sampled(
     init() {
       let count = 0;
       this.events.on('binary_sensor.front_door', () => this.update(++count))
-        .transition('off', 'on');       // only real opens (event stream filter)
+        .onTransition('off', 'on');       // only real opens (event stream filter)
 
       // Reset at midnight
       this.poll(() => { count = 0; return 0; }, { cron: '0 0 * * *' });
@@ -328,7 +328,7 @@ export const doorActivity = sampled(
 );
 ```
 
-The event stream's `.transition()` filters the *input* (ignoring close events and attribute-only changes). The `sampled` behavior controls the *output* (publishing at most once per hour even if the door opens 50 times).
+The event stream's `.onTransition()` filters the *input* (ignoring close events and attribute-only changes). The `sampled` behavior controls the *output* (publishing at most once per hour even if the door opens 50 times).
 
 ### Combining with Reactions and Watchdogs
 

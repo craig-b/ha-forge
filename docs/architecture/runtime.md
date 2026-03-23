@@ -315,7 +315,7 @@ this.events.on('sensor.temperature', (e) => { /* handler */ })
   .debounce(5000);
 ```
 
-EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.transition(from, to)`, `.unsubscribe()`.
+EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.onTransition(from, to)`, `.unsubscribe()`.
 
 #### events.reactions()
 

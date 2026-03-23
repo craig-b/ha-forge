@@ -245,7 +245,7 @@ export const doorCount = sampled(
     init() {
       let count = 0;
       this.events.on('binary_sensor.front_door', () => this.update(++count))
-        .transition('off', 'on');  // incoming: only real open events
+        .onTransition('off', 'on');  // incoming: only real open events
 
       this.poll(() => { count = 0; return 0; }, { cron: '0 0 * * *' });
       return 0;
@@ -255,7 +255,7 @@ export const doorCount = sampled(
 );
 ```
 
-The `.transition()` operator filters the input (ignoring close events). The `sampled` behavior controls the output (publishing at most once per hour).
+The `.onTransition()` operator filters the input (ignoring close events). The `sampled` behavior controls the output (publishing at most once per hour).
 
 ## Type Constraint
 

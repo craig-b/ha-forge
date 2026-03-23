@@ -186,9 +186,11 @@ export interface EventStream<TEvent extends StateChangedEvent = StateChangedEven
    * ```ts
    * // Fire only when a door opens
    * this.events.on('binary_sensor.front_door')
-   *   .transition('off', 'on');
+   *   .onTransition('off', 'on');
    * ```
    */
+  onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>;
+  /** @deprecated Use `onTransition` instead. */
   transition(from: string | '*', to: string | '*'): EventStream<TEvent>;
 }
 
@@ -431,7 +433,7 @@ export interface EventsContext {
    *
    * @param entityOrDomain - Entity ID, domain name, or array of entity IDs.
    * @param callback - Called with a state change event. Optional when using stream operators.
-   * @returns An `EventStream` with `.filter()`, `.debounce()`, `.throttle()`, `.map()`, `.distinctUntilChanged()`, and `.transition()` operators.
+   * @returns An `EventStream` with `.filter()`, `.debounce()`, `.throttle()`, `.map()`, `.distinctUntilChanged()`, and `.onTransition()` operators.
    *
    * @example
    * ```ts

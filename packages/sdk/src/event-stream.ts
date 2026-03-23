@@ -107,13 +107,17 @@ export function createEventStream(
       return stream;
     },
 
-    transition(from, to) {
+    onTransition(from, to) {
       processors.push((event, next) => {
         const fromMatch = from === '*' || event.old_state === from;
         const toMatch = to === '*' || event.new_state === to;
         if (fromMatch && toMatch) next(event);
       });
       return stream;
+    },
+
+    transition(from, to) {
+      return stream.onTransition(from, to);
     },
   };
 

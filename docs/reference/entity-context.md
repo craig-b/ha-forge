@@ -176,7 +176,7 @@ on(entityOrDomain: string | string[], callback?: StateChangedCallback): EventStr
 | `entityOrDomain` | `string \| string[]` | Yes | Entity ID (e.g. `'light.kitchen'`), domain name (e.g. `'light'`), or array of entity IDs. If the string contains a `.`, it's treated as an entity ID; otherwise as a domain. |
 | `callback` | `(event: StateChangedEvent) => void` | No | Called with each state change event. Optional when using stream operators. |
 
-**Returns:** `EventStream` — chainable stream with `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.transition()`, and `.unsubscribe()`.
+**Returns:** `EventStream` — chainable stream with `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.onTransition()`, and `.unsubscribe()`.
 
 **StateChangedEvent:**
 

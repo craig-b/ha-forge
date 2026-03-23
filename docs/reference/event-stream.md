@@ -12,7 +12,7 @@ interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
   debounce(ms: number): EventStream<TEvent>;
   throttle(ms: number): EventStream<TEvent>;
   distinctUntilChanged(): EventStream<TEvent>;
-  transition(from: string | '*', to: string | '*'): EventStream<TEvent>;
+  onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>;
 }
 ```
 
@@ -198,12 +198,12 @@ this.events.on('sensor.humidity')
   .distinctUntilChanged();
 ```
 
-### transition(from, to)
+### onTransition(from, to)
 
 Only fire when the entity transitions between specific states.
 
 ```ts
-transition(from: string | '*', to: string | '*'): EventStream<TEvent>
+onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>
 ```
 
 | Parameter | Type | Description |
@@ -220,15 +220,15 @@ transition(from: string | '*', to: string | '*'): EventStream<TEvent>
 ```ts
 // Fire only when a door opens
 this.events.on('binary_sensor.front_door')
-  .transition('off', 'on');
+  .onTransition('off', 'on');
 
 // Fire on any transition away from 'home'
 this.events.on('input_select.house_mode')
-  .transition('home', '*');
+  .onTransition('home', '*');
 
 // Fire on any transition to 'off'
 this.events.on('switch.pump')
-  .transition('*', 'off');
+  .onTransition('*', 'off');
 ```
 
 ---
@@ -296,15 +296,15 @@ this.events.on('sensor.power')
 
 Only one event per 5 seconds reaches the map. The rounded value reflects whichever event happened to be the first in each 5-second window.
 
-### distinctUntilChanged then transition
+### distinctUntilChanged then onTransition
 
 ```ts
 this.events.on('cover.garage')
   .distinctUntilChanged()                 // 1. Skip attribute-only updates
-  .transition('open', 'closed');          // 2. Only fire on open -> closed
+  .onTransition('open', 'closed');          // 2. Only fire on open -> closed
 ```
 
-Attribute-only updates (where state doesn't change) are filtered out first, so `transition` only sees genuine state changes.
+Attribute-only updates (where state doesn't change) are filtered out first, so `onTransition` only sees genuine state changes.
 
 ---
 

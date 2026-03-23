@@ -102,7 +102,7 @@ this.events.on('input_select.house_mode', (e) => {
   .distinctUntilChanged();
 ```
 
-### .transition(from, to)
+### .onTransition(from, to)
 
 Passes events only when the state transitions from one specific value to another. A shorthand for filtering on `old_state` and `new_state`. Accepts `'*'` as a wildcard for either side.
 
@@ -110,7 +110,7 @@ Passes events only when the state transitions from one specific value to another
 this.events.on('binary_sensor.front_door', () => {
     this.ha.callService('light.hallway', 'turn_on');
   })
-  .transition('off', 'on');
+  .onTransition('off', 'on');
 ```
 
 ### .unsubscribe()
