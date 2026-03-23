@@ -113,7 +113,7 @@ For full control over the device — shared polling, coordinated lifecycle, type
 
 ## Reacting to HA State
 
-Use `this.events.on()` inside `init()` to subscribe to state changes from any entity in your HA installation. Building on the greenhouse example:
+Use `this.events.stream()` inside `init()` to subscribe to state changes from any entity in your HA installation. Building on the greenhouse example:
 
 ```ts
 export default device({
@@ -130,9 +130,10 @@ export default device({
     }, { interval: 30_000 });
 
     // Auto-toggle the fan based on temperature
-    this.events.on('sensor.temp', (e) => {
-      this.entities.fan.update(Number(e.new_state) > 30 ? 'on' : 'off');
-    });
+    this.events.stream('sensor.temp')
+      .subscribe((e) => {
+        this.entities.fan.update(Number(e.new_state) > 30 ? 'on' : 'off');
+      });
   },
 });
 ```

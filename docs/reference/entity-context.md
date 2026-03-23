@@ -161,12 +161,12 @@ Scoped event subscription context. All subscriptions are automatically cleaned u
 
 See [Event Stream Reference](event-stream.md) for `EventStream` operators.
 
-### this.events.on(entityOrDomain, callback?)
+### this.events.stream(entityOrDomain)
 
-Subscribe to state changes for an entity, domain, or array of entities. Returns an `EventStream` with chainable operators.
+Create a lazy `EventStream` for state changes on an entity, domain, or array of entities. No listener is registered until `.subscribe()` is called.
 
 ```ts
-on(entityOrDomain: string | string[], callback?: StateChangedCallback): EventStream
+stream(entityOrDomain: string | string[]): EventStream
 ```
 
 **Parameters:**
@@ -174,9 +174,8 @@ on(entityOrDomain: string | string[], callback?: StateChangedCallback): EventStr
 | Parameter | Type | Required | Description |
 |---|---|---|---|
 | `entityOrDomain` | `string \| string[]` | Yes | Entity ID (e.g. `'light.kitchen'`), domain name (e.g. `'light'`), or array of entity IDs. If the string contains a `.`, it's treated as an entity ID; otherwise as a domain. |
-| `callback` | `(event: StateChangedEvent) => void` | No | Called with each state change event. Optional when using stream operators. |
 
-**Returns:** `EventStream` — chainable stream with `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.onTransition()`, and `.unsubscribe()`.
+**Returns:** `EventStream` — lazy, chainable stream with `.filter()`, `.map()`, `.debounce()`, `.throttle()`, `.distinctUntilChanged()`, `.onTransition()`, and `.subscribe(callback)`. Call `.subscribe()` to activate the listener and get a `Subscription` back.
 
 **StateChangedEvent:**
 
@@ -278,7 +277,7 @@ withState<C extends string>(
 | `context` | `C[]` | Yes | Entity IDs whose current state must be available. The callback is skipped if any context entity has no cached state or is `'unavailable'`/`'unknown'`. |
 | `callback` | `(event, states) => void` | Yes | Called with the triggering event and a guaranteed-present state snapshot of all context entities. No null checks needed. |
 
-**Returns:** `EventStream`.
+**Returns:** `Subscription`.
 
 ### this.events.watchdog(rules)
 

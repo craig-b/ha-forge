@@ -30,7 +30,7 @@ Each entity instance transitions through:
 1. **Created**: Entity definition loaded from bundle. Not yet registered.
 2. **Registered**: MQTT discovery payload published. Command topic subscribed (if bidirectional). Entity appears in HA.
 3. **Initialized**: `init()` called. Initial state published. Polls/subscriptions started. Entity is fully operational.
-4. **Running**: Steady state. State updates flow via `this.update()`. Commands flow via `onCommand()`. HA subscriptions via `ha.on()`.
+4. **Running**: Steady state. State updates flow via `this.update()`. Commands flow via `onCommand()`. HA subscriptions via `this.events.stream()` or `ha.on()`.
 5. **Destroying**: `destroy()` called. User cleanup runs.
 6. **Disposed**: All tracked handles force-cleaned. If entity is being removed (not redeployed), MQTT discovery topic cleared.
 
@@ -302,20 +302,22 @@ This prevents resource leaks across redeploys. User code never needs to manually
 
 Entity contexts provide `this.events` with lifecycle-managed subscriptions that auto-clean on teardown. This is the preferred API for entity scripts (over the global `ha.on()`).
 
-#### events.on()
+#### events.stream()
 
-Returns a chainable `EventStream`:
+Returns a lazy `EventStream`. No listener is registered until `.subscribe()` is called. `.subscribe()` returns a `Subscription` with `.unsubscribe()`.
 
 ```typescript
-this.events.on('light.living_room', (e) => { /* typed callback */ });
+this.events.stream('light.living_room')
+  .subscribe((e) => { /* typed callback */ });
 
 // With stream operators
-this.events.on('sensor.temperature', (e) => { /* handler */ })
+this.events.stream('sensor.temperature')
   .filter((e) => Number(e.new_state) > 30)
-  .debounce(5000);
+  .debounce(5000)
+  .subscribe((e) => { /* handler */ });
 ```
 
-EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.onTransition(from, to)`, `.unsubscribe()`.
+EventStream operators: `.filter()`, `.map()`, `.debounce(ms)`, `.throttle(ms)`, `.distinctUntilChanged()`, `.onTransition(from, to)`, `.subscribe(callback)`.
 
 #### events.reactions()
 

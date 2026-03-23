@@ -2,17 +2,21 @@
 
 > For usage examples, see the [Reactive Patterns guide](../guide/reactive.md).
 
-An `EventStream` is a composable, chainable event pipeline returned by `this.events.on()`. Operators transform the stream and return a new `EventStream`, enabling fluent chaining. All internal timers and subscriptions are cleaned up when the stream is unsubscribed or the owning entity is torn down.
+An `EventStream` is a composable, chainable event pipeline returned by `this.events.stream()`. The stream is **lazy** -- no listener is registered until `.subscribe()` is called. Operators transform the stream and return a new `EventStream`, enabling fluent chaining. `.subscribe()` terminates the chain, registers the listener, and returns a `Subscription` handle for cleanup.
 
 ```ts
 interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
-  unsubscribe(): void;
   filter(predicate: (event: TEvent) => boolean): EventStream<TEvent>;
   map(transform: (event: TEvent) => TEvent): EventStream<TEvent>;
   debounce(ms: number): EventStream<TEvent>;
   throttle(ms: number): EventStream<TEvent>;
   distinctUntilChanged(): EventStream<TEvent>;
   onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>;
+  subscribe(callback: (event: TEvent) => void): Subscription;
+}
+
+interface Subscription {
+  unsubscribe(): void;
 }
 ```
 
@@ -22,35 +26,35 @@ interface EventStream<TEvent extends StateChangedEvent = StateChangedEvent> {
 
 ### From entity subscriptions
 
-The primary way to create an `EventStream` is via `this.events.on()`:
+The primary way to create an `EventStream` is via `this.events.stream()`:
 
 ```ts
 // Subscribe to a specific entity
-const stream = this.events.on('light.kitchen');
+const sub = this.events.stream('light.kitchen')
+  .subscribe((event) => { /* ... */ });
 
 // Subscribe to a domain
-const stream = this.events.on('light');
+const sub = this.events.stream('light')
+  .subscribe((event) => { /* ... */ });
 
 // Subscribe to multiple entities
-const stream = this.events.on(['light.kitchen', 'light.bedroom']);
+const sub = this.events.stream(['light.kitchen', 'light.bedroom'])
+  .subscribe((event) => { /* ... */ });
 
-// With an inline callback
-this.events.on('binary_sensor.motion', (event) => {
-  this.log.info('Motion detected', { state: event.new_state });
-});
-
-// Combining callback with operators
-this.events.on('binary_sensor.motion', (event) => {
-  this.ha.callService('light.hallway', 'turn_on');
-}).debounce(5000);
+// With operators before subscribe
+const sub = this.events.stream('binary_sensor.motion')
+  .debounce(5000)
+  .subscribe((event) => {
+    this.ha.callService('light.hallway', 'turn_on');
+  });
 ```
 
 ### From withState
 
-`this.events.withState()` also returns an `EventStream`:
+`this.events.withState()` returns a `Subscription`:
 
 ```ts
-const stream = this.events.withState(
+const sub = this.events.withState(
   'binary_sensor.motion',
   ['sensor.lux'],
   (event, states) => {
@@ -83,7 +87,7 @@ const stream = createEventStream(
 
 Operators are applied in reading order (left to right). The chain `.filter().debounce()` means: filter first, then debounce the filtered events.
 
-All operators return the same `EventStream` instance for fluent chaining. Operators modify the stream's internal processor pipeline and are evaluated in order for each incoming event.
+All operators return a new `EventStream` for fluent chaining. Operators build up an internal processor pipeline and are evaluated in order for each incoming event. The stream is lazy -- no listener is registered until `.subscribe()` is called at the end of the chain.
 
 ### filter(predicate)
 
@@ -100,8 +104,9 @@ filter(predicate: (event: TEvent) => boolean): EventStream<TEvent>
 **Behavior:** Events that fail the predicate are dropped entirely — they do not reach downstream operators or the final callback.
 
 ```ts
-this.events.on('sensor.temperature')
-  .filter(e => Number(e.new_state) > 30);
+this.events.stream('sensor.temperature')
+  .filter(e => Number(e.new_state) > 30)
+  .subscribe((e) => { /* only events above 30 */ });
 ```
 
 ### map(transform)
@@ -119,11 +124,12 @@ map(transform: (event: TEvent) => TEvent): EventStream<TEvent>
 **Behavior:** The returned event replaces the original for all downstream operators and the final callback.
 
 ```ts
-this.events.on('sensor.temperature')
+this.events.stream('sensor.temperature')
   .map(e => ({
     ...e,
     new_state: String(Math.round(Number(e.new_state))),
-  }));
+  }))
+  .subscribe((e) => { /* e.new_state is rounded */ });
 ```
 
 ### debounce(ms)
@@ -147,9 +153,10 @@ debounce(ms: number): EventStream<TEvent>
 
 ```ts
 // Only react if motion stays on for 30 seconds
-this.events.on('binary_sensor.motion')
+this.events.stream('binary_sensor.motion')
   .filter(e => e.new_state === 'on')
-  .debounce(30_000);
+  .debounce(30_000)
+  .subscribe((e) => { /* motion sustained for 30s */ });
 ```
 
 ### throttle(ms)
@@ -173,8 +180,9 @@ throttle(ms: number): EventStream<TEvent>
 
 ```ts
 // At most one update per second
-this.events.on('sensor.rapidly_updating')
-  .throttle(1000);
+this.events.stream('sensor.rapidly_updating')
+  .throttle(1000)
+  .subscribe((e) => { /* at most once per second */ });
 ```
 
 ### distinctUntilChanged()
@@ -194,8 +202,9 @@ distinctUntilChanged(): EventStream<TEvent>
 
 ```ts
 // Only fire when the state value actually changes
-this.events.on('sensor.humidity')
-  .distinctUntilChanged();
+this.events.stream('sensor.humidity')
+  .distinctUntilChanged()
+  .subscribe((e) => { /* only genuine state changes */ });
 ```
 
 ### onTransition(from, to)
@@ -219,45 +228,53 @@ onTransition(from: string | '*', to: string | '*'): EventStream<TEvent>
 
 ```ts
 // Fire only when a door opens
-this.events.on('binary_sensor.front_door')
-  .onTransition('off', 'on');
+this.events.stream('binary_sensor.front_door')
+  .onTransition('off', 'on')
+  .subscribe(() => { /* door opened */ });
 
 // Fire on any transition away from 'home'
-this.events.on('input_select.house_mode')
-  .onTransition('home', '*');
+this.events.stream('input_select.house_mode')
+  .onTransition('home', '*')
+  .subscribe(() => { /* left home mode */ });
 
 // Fire on any transition to 'off'
-this.events.on('switch.pump')
-  .onTransition('*', 'off');
+this.events.stream('switch.pump')
+  .onTransition('*', 'off')
+  .subscribe(() => { /* pump turned off */ });
 ```
 
 ---
 
 ## Cleanup
 
-### .unsubscribe()
+### Subscription.unsubscribe()
 
-Cancel the event stream and clean up all internal timers and the base subscription.
+`.subscribe()` returns a `Subscription` with an `unsubscribe()` method. Calling it cancels the subscription and cleans up all internal timers and the base event listener.
 
 ```ts
-stream.unsubscribe(): void
+const sub = this.events.stream('sensor.temperature')
+  .filter(e => Number(e.new_state) > 30)
+  .subscribe((e) => { /* ... */ });
+
+// Later, to cancel:
+sub.unsubscribe();
 ```
 
 **Behavior:**
 
-- Marks the stream as disposed — no further events are processed.
+- Marks the subscription as disposed -- no further events are processed.
 - Clears all internal timers (debounce pending timers).
 - Calls the base unsubscribe function to remove the HA event listener.
 - Safe to call multiple times (idempotent).
 
 ### Automatic cleanup
 
-When using `this.events.on()` inside entity callbacks, the stream's unsubscribe function is automatically registered with the entity's lifecycle tracker. On entity teardown:
+When using `this.events.stream()` inside entity callbacks, the subscription's unsubscribe function is automatically registered with the entity's lifecycle tracker. On entity teardown:
 
 1. The entity's `destroy()` callback is called (if defined) for explicit cleanup.
-2. The runtime force-disposes all tracked handles: timers, intervals, poll refs, MQTT subscriptions, and event subscriptions (including stream unsubscribes).
+2. The runtime force-disposes all tracked handles: timers, intervals, poll refs, MQTT subscriptions, and event subscriptions (including subscription unsubscribes).
 
-You do NOT need to manually call `.unsubscribe()` on streams created via `this.events`. However, if you need to dynamically remove a subscription before entity teardown, `.unsubscribe()` is available.
+You do NOT need to manually call `.unsubscribe()` on subscriptions created via `this.events`. However, if you need to dynamically remove a subscription before entity teardown, `.unsubscribe()` is available on the `Subscription` object.
 
 ---
 
@@ -268,9 +285,10 @@ Operators are applied in the order they are chained. This affects behavior signi
 ### filter before debounce
 
 ```ts
-this.events.on('binary_sensor.motion')
+this.events.stream('binary_sensor.motion')
   .filter(e => e.new_state === 'on')     // 1. Only pass 'on' events
-  .debounce(30_000);                      // 2. Wait 30s with no 'on' events
+  .debounce(30_000)                      // 2. Wait 30s with no 'on' events
+  .subscribe((e) => { /* ... */ });
 ```
 
 The debounce only sees `'on'` events. If motion goes `on -> off -> on` within 30 seconds, the debounce timer resets on the second `'on'`, but the `'off'` event is invisible. The callback fires 30 seconds after the last `'on'`.
@@ -278,9 +296,10 @@ The debounce only sees `'on'` events. If motion goes `on -> off -> on` within 30
 ### debounce before filter
 
 ```ts
-this.events.on('binary_sensor.motion')
+this.events.stream('binary_sensor.motion')
   .debounce(30_000)                       // 1. Wait 30s with no events at all
-  .filter(e => e.new_state === 'on');     // 2. Then check if it's 'on'
+  .filter(e => e.new_state === 'on')      // 2. Then check if it's 'on'
+  .subscribe((e) => { /* ... */ });
 ```
 
 The debounce sees ALL events. If motion goes `on -> off` within 30 seconds, the timer resets on `'off'`. After 30 seconds of silence, the `'off'` event reaches the filter and is dropped. The callback only fires if the last event in a 30-second quiet period was `'on'`.
@@ -288,10 +307,11 @@ The debounce sees ALL events. If motion goes `on -> off` within 30 seconds, the 
 ### throttle then map
 
 ```ts
-this.events.on('sensor.power')
+this.events.stream('sensor.power')
   .throttle(5000)                         // 1. At most one event per 5s
-  .map(e => ({ ...e, new_state: String(Math.round(Number(e.new_state))) }));
+  .map(e => ({ ...e, new_state: String(Math.round(Number(e.new_state))) }))
                                           // 2. Round the value
+  .subscribe((e) => { /* ... */ });
 ```
 
 Only one event per 5 seconds reaches the map. The rounded value reflects whichever event happened to be the first in each 5-second window.
@@ -299,9 +319,10 @@ Only one event per 5 seconds reaches the map. The rounded value reflects whichev
 ### distinctUntilChanged then onTransition
 
 ```ts
-this.events.on('cover.garage')
+this.events.stream('cover.garage')
   .distinctUntilChanged()                 // 1. Skip attribute-only updates
-  .onTransition('open', 'closed');          // 2. Only fire on open -> closed
+  .onTransition('open', 'closed')         // 2. Only fire on open -> closed
+  .subscribe((e) => { /* ... */ });
 ```
 
 Attribute-only updates (where state doesn't change) are filtered out first, so `onTransition` only sees genuine state changes.
@@ -314,7 +335,7 @@ Attribute-only updates (where state doesn't change) are filtered out first, so `
 
 | Feature | EventStream operators | Behavior wrappers |
 |---|---|---|
-| Applied to | HA event subscriptions (`this.events.on()`) | Entity definitions (wraps a sensor/switch/etc.) |
+| Applied to | HA event subscriptions (`this.events.stream()`) | Entity definitions (wraps a sensor/switch/etc.) |
 | Scope | Transforms the event stream within an entity | Transforms the entity's state publishing behavior |
 | Created by | Chaining `.filter()`, `.debounce()`, etc. | `debounced(entity, opts)`, `filtered(entity, opts)` |
 | Use case | React to HA state changes with filtering/timing | Smooth or aggregate state values before publishing |

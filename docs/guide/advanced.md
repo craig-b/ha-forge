@@ -39,9 +39,10 @@ export default entityFactory(async () => {
       config: { unit_of_measurement: 'hours', state_class: 'total_increasing' },
       init() {
         let onMinutes = 0;
-        this.events.on(id, (e) => {
-          if (e.new_state === 'on') this.update((onMinutes += 1) / 60);
-        });
+        this.events.stream(id)
+          .subscribe((e) => {
+            if (e.new_state === 'on') this.update((onMinutes += 1) / 60);
+          });
         return 0;
       },
     })

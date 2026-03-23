@@ -240,7 +240,7 @@ friendlyName(entityId: string): string
 
 ## Global ha.on() and ha.reactions()
 
-The global `ha` object (available at module scope) is an `HAClient`, which extends `StatelessHAApi` with two subscription methods: `on()` and `reactions()`. These are **only** on the global `ha` -- they are NOT available on `this.ha` inside entity callbacks (which is the `StatelessHAApi` interface). Inside entities, use `this.events.on()` and `this.events.reactions()` instead, which are lifecycle-managed.
+The global `ha` object (available at module scope) is an `HAClient`, which extends `StatelessHAApi` with two subscription methods: `on()` and `reactions()`. These are **only** on the global `ha` -- they are NOT available on `this.ha` inside entity callbacks (which is the `StatelessHAApi` interface). Inside entities, use `this.events.stream()` and `this.events.reactions()` instead, which are lifecycle-managed.
 
 ### ha.on()
 
@@ -318,7 +318,7 @@ ha.reactions({
 });
 ```
 
-> **Prefer `this.events` inside entities.** The global `ha.on()` and `ha.reactions()` subscriptions are not lifecycle-managed -- they persist until explicitly unsubscribed or the runtime shuts down. Inside entity `init()`, always use `this.events.on()` and `this.events.reactions()`, which are automatically cleaned up when the entity is destroyed.
+> **Prefer `this.events` inside entities.** The global `ha.on()` and `ha.reactions()` subscriptions are not lifecycle-managed -- they persist until explicitly unsubscribed or the runtime shuts down. Inside entity `init()`, always use `this.events.stream()` and `this.events.reactions()`, which are automatically cleaned up when the entity is destroyed.
 
 ---
 

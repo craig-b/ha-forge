@@ -150,9 +150,11 @@ export const occupied = debounced(
     name: 'Office Occupied',
     config: { device_class: 'occupancy' },
     init() {
-      this.events.on('binary_sensor.office_pir', (e) => {
-        this.update(e.new_state as 'on' | 'off');
-      }).filter((e) => e.new_state !== e.old_state);
+      this.events.stream('binary_sensor.office_pir')
+        .filter((e) => e.new_state !== e.old_state)
+        .subscribe((e) => {
+          this.update(e.new_state as 'on' | 'off');
+        });
       return 'off';
     },
   }),
@@ -202,9 +204,10 @@ export const washerState = debounced(
       name: 'Washer Power',
       config: { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' },
       init() {
-        this.events.on('sensor.washer_ct_clamp', (e) => {
-          this.update(Number(e.new_state));
-        });
+        this.events.stream('sensor.washer_ct_clamp')
+          .subscribe((e) => {
+            this.update(Number(e.new_state));
+          });
         return 0;
       },
     }),
@@ -220,12 +223,13 @@ Build an automation on top:
 export const washerDone = automation({
   id: 'washer_done_notify',
   init() {
-    this.events.on('sensor.washer_power_smoothed', () => {
+    this.events.stream('sensor.washer_power_smoothed')
+      .filter((e) => Number(e.old_state) > 10 && Number(e.new_state) <= 10)
+      .subscribe(() => {
         this.ha.callService('notify.mobile', 'send_message', {
           message: 'Washing machine has finished',
         });
-      })
-      .filter((e) => Number(e.old_state) > 10 && Number(e.new_state) <= 10);
+      });
   },
 });
 ```
@@ -241,9 +245,10 @@ const ctClampSensor = (id: string, name: string) =>
     name,
     config: { device_class: 'power', unit_of_measurement: 'W', state_class: 'measurement' },
     init() {
-      this.events.on(`sensor.${id}_raw` as any, (e) => {
-        this.update(Number(e.new_state));
-      });
+      this.events.stream(`sensor.${id}_raw` as any)
+        .subscribe((e) => {
+          this.update(Number(e.new_state));
+        });
       return 0;
     },
   });
@@ -307,7 +312,7 @@ The dead-band filter on humidity prevents the computed entity from re-evaluating
 
 ### Combining with Event Streams
 
-The `this.events.on()` stream has its own `.debounce()`, `.throttle()`, `.filter()`, and `.distinctUntilChanged()` operators. These operate on *incoming events* — what triggers your entity's logic. Behaviors operate on *outgoing state* — what gets published. Use both when you need control over the full pipeline.
+The `this.events.stream()` pipeline has its own `.debounce()`, `.throttle()`, `.filter()`, and `.distinctUntilChanged()` operators. These operate on *incoming events* — what triggers your entity's logic. Behaviors operate on *outgoing state* — what gets published. Use both when you need control over the full pipeline.
 
 ```typescript
 export const doorActivity = sampled(
@@ -316,8 +321,9 @@ export const doorActivity = sampled(
     name: 'Door Opens (per hour)',
     init() {
       let count = 0;
-      this.events.on('binary_sensor.front_door', () => this.update(++count))
-        .onTransition('off', 'on');       // only real opens (event stream filter)
+      this.events.stream('binary_sensor.front_door')
+        .onTransition('off', 'on')        // only real opens (event stream filter)
+        .subscribe(() => this.update(++count));
 
       // Reset at midnight
       this.poll(() => { count = 0; return 0; }, { cron: '0 0 * * *' });

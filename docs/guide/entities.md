@@ -376,11 +376,12 @@ Pure reactive script with managed lifecycle. Does not create a visible entity by
 export const nightMode = automation({
   id: 'night_lights',
   init() {
-    this.events.on('binary_sensor.front_door', (e) => {
-      if (e.new_state === 'on') {
-        this.ha.callService('light.porch', 'turn_on');
-      }
-    });
+    this.events.stream('binary_sensor.front_door')
+      .subscribe((e) => {
+        if (e.new_state === 'on') {
+          this.ha.callService('light.porch', 'turn_on');
+        }
+      });
   },
 });
 ```

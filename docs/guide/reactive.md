@@ -2,57 +2,62 @@
 
 HA Forge provides a layered reactive API for responding to state changes in Home Assistant. All subscriptions created through `this.events` are lifecycle-managed -- they are automatically cleaned up when the entity is torn down on rebuild or shutdown.
 
-## this.events.on()
+## this.events.stream()
 
-The primary subscription method. Available inside `init()` on all entity types that support events (sensor, binarySensor, switch, light, automation, device, and all other stateful entities).
+The primary subscription method. Available inside `init()` on all entity types that support events (sensor, binarySensor, switch, light, automation, device, and all other stateful entities). `.stream()` returns a lazy `EventStream` -- no listener is registered until `.subscribe()` is called.
 
 ### Basic Usage
 
 ```typescript
-this.events.on('binary_sensor.front_door', (e) => {
-  // e.entity_id: 'binary_sensor.front_door'
-  // e.old_state: 'on' | 'off'
-  // e.new_state: 'on' | 'off'
-  // e.old_attributes, e.new_attributes: typed
-  // e.timestamp: number
-  if (e.new_state === 'on') {
-    this.ha.callService('light.porch', 'turn_on');
-  }
-});
+this.events.stream('binary_sensor.front_door')
+  .subscribe((e) => {
+    // e.entity_id: 'binary_sensor.front_door'
+    // e.old_state: 'on' | 'off'
+    // e.new_state: 'on' | 'off'
+    // e.old_attributes, e.new_attributes: typed
+    // e.timestamp: number
+    if (e.new_state === 'on') {
+      this.ha.callService('light.porch', 'turn_on');
+    }
+  });
 ```
 
 ### Overloads
 
 ```typescript
 // Single entity -- callback typed to that entity
-this.events.on('light.living_room', (e) => { /* ... */ });
+this.events.stream('light.living_room')
+  .subscribe((e) => { /* ... */ });
 
 // Domain -- fires for ALL entities in that domain
-this.events.on('light', (e) => {
-  // e.entity_id: 'light.living_room' | 'light.bedroom' | ...
-});
+this.events.stream('light')
+  .subscribe((e) => {
+    // e.entity_id: 'light.living_room' | 'light.bedroom' | ...
+  });
 
 // Array of entities -- fires for any in the list
-this.events.on(['light.living_room', 'light.bedroom'], (e) => { /* ... */ });
+this.events.stream(['light.living_room', 'light.bedroom'])
+  .subscribe((e) => { /* ... */ });
 ```
 
 Entity IDs and domains autocomplete from your HA installation's type registry.
 
 ## EventStream Operators
 
-`on()` returns a chainable `EventStream`. The callback passed to `on()` is the terminal action -- operators added to the stream transform or filter events *before* the callback fires.
+`.stream()` returns a lazy `EventStream`. Operators transform or filter events before they reach the callback in `.subscribe()`, which terminates the chain and activates the listener.
 
 ### .filter(predicate)
 
 Passes events only when the predicate returns true.
 
 ```typescript
-this.events.on('sensor.outdoor_temp', (e) => {
+this.events.stream('sensor.outdoor_temp')
+  .filter((e) => Number(e.new_state) > 30)
+  .subscribe((e) => {
     this.ha.callService('notify.mobile', 'send_message', {
       message: `Temperature is ${e.new_state}°C`,
     });
-  })
-  .filter((e) => Number(e.new_state) > 30);
+  });
 ```
 
 ### .map(transform)
@@ -60,11 +65,12 @@ this.events.on('sensor.outdoor_temp', (e) => {
 Transforms the event before passing it downstream.
 
 ```typescript
-this.events.on('sensor.power_meter', (e) => {
-    this.log.warn('High power draw', { watts: Number(e.new_state) });
-  })
+this.events.stream('sensor.power_meter')
   .map((e) => ({ ...e, new_state: String(Math.round(Number(e.new_state))) }))
-  .filter((e) => Number(e.new_state) > 1000);
+  .filter((e) => Number(e.new_state) > 1000)
+  .subscribe((e) => {
+    this.log.warn('High power draw', { watts: Number(e.new_state) });
+  });
 ```
 
 ### .debounce(ms)
@@ -72,11 +78,12 @@ this.events.on('sensor.power_meter', (e) => {
 Waits for `ms` milliseconds of silence before passing the last event. Resets the timer on each new event.
 
 ```typescript
-this.events.on('sensor.temperature', (e) => {
+this.events.stream('sensor.temperature')
+  .debounce(5000)
+  .subscribe((e) => {
     // Only fires after temperature stops changing for 5 seconds
     this.update(Number(e.new_state));
-  })
-  .debounce(5000);
+  });
 ```
 
 ### .throttle(ms)
@@ -84,11 +91,12 @@ this.events.on('sensor.temperature', (e) => {
 Passes at most one event per `ms` milliseconds. The first event passes immediately; subsequent events within the window are dropped.
 
 ```typescript
-this.events.on('sensor.energy_meter', (e) => {
+this.events.stream('sensor.energy_meter')
+  .throttle(60_000)
+  .subscribe((e) => {
     // At most one update per minute
     recordEnergyReading(Number(e.new_state));
-  })
-  .throttle(60_000);
+  });
 ```
 
 ### .distinctUntilChanged()
@@ -96,10 +104,11 @@ this.events.on('sensor.energy_meter', (e) => {
 Drops events where the new state equals the previous state. Useful for entities that fire attribute-only changes.
 
 ```typescript
-this.events.on('input_select.house_mode', (e) => {
+this.events.stream('input_select.house_mode')
+  .distinctUntilChanged()
+  .subscribe((e) => {
     this.log.info('Mode changed', { from: e.old_state, to: e.new_state });
-  })
-  .distinctUntilChanged();
+  });
 ```
 
 ### .onTransition(from, to)
@@ -107,25 +116,27 @@ this.events.on('input_select.house_mode', (e) => {
 Passes events only when the state transitions from one specific value to another. A shorthand for filtering on `old_state` and `new_state`. Accepts `'*'` as a wildcard for either side.
 
 ```typescript
-this.events.on('binary_sensor.front_door', () => {
+this.events.stream('binary_sensor.front_door')
+  .onTransition('off', 'on')
+  .subscribe(() => {
     this.ha.callService('light.hallway', 'turn_on');
-  })
-  .onTransition('off', 'on');
+  });
 ```
 
-### .unsubscribe()
+### Subscription.unsubscribe()
 
-Tears down the stream and all internal timers. Usually not needed -- streams are automatically cleaned up when the entity is torn down.
+`.subscribe()` returns a `Subscription` with `.unsubscribe()`. Tears down the subscription and all internal timers. Usually not needed -- subscriptions are automatically cleaned up when the entity is torn down.
 
 ### Chaining
 
-Operators chain naturally. Order matters -- each operator processes the output of the previous one, and the callback passed to `on()` fires last.
+Operators chain naturally. Order matters -- each operator processes the output of the previous one, and `.subscribe()` fires last.
 
 ```typescript
-this.events.on('sensor.power_meter', (e) => this.update(Number(e.new_state)))
+this.events.stream('sensor.power_meter')
   .filter((e) => Number(e.new_state) > 0)       // drop zero readings
   .throttle(10_000)                               // at most every 10s
-  .distinctUntilChanged();                         // skip duplicates
+  .distinctUntilChanged()                          // skip duplicates
+  .subscribe((e) => this.update(Number(e.new_state)));
 ```
 
 ## Declarative Reactions
@@ -299,7 +310,7 @@ this.events.sequence({
 
 | API | automation | sensor / switch / etc. | device | task |
 |---|---|---|---|---|
-| `this.events.on()` | Yes | Yes | Yes | No |
+| `this.events.stream()` | Yes | Yes | Yes | No |
 | `this.events.reactions()` | Yes | Yes | Yes | No |
 | `this.events.combine()` | Yes | Yes | Yes | No |
 | `this.events.withState()` | Yes | Yes | Yes | No |
@@ -315,4 +326,4 @@ this.events.sequence({
 
 ## this.ha (StatelessHAApi)
 
-The `this.ha` object is a stateless API for querying and acting on Home Assistant. It provides `callService`, `getState`, `getEntities`, `fireEvent`, and `friendlyName`. It does **not** have an `on()` method -- all event subscriptions go through `this.events`.
+The `this.ha` object is a stateless API for querying and acting on Home Assistant. It provides `callService`, `getState`, `getEntities`, `fireEvent`, and `friendlyName`. It does **not** have subscription methods -- all event subscriptions go through `this.events`.
