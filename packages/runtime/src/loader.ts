@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import * as fs from 'node:fs';
-import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, DeviceMemberDefinition, AutomationDefinition, TaskDefinition, ModeDefinition, CronDefinition } from '@ha-forge/sdk';
+import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, DeviceMemberDefinition, AutomationDefinition, TaskDefinition, ModeDefinition, CronDefinition, SimulationDefinition } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
@@ -87,6 +87,8 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.task = sdk.task;
   g.mode = sdk.mode;
   g.cron = sdk.cron;
+  g.simulate = sdk.simulate;
+  g.signals = sdk.signals;
   g.debounced = sdk.debounced;
   g.filtered = sdk.filtered;
   g.sampled = sdk.sampled;
@@ -180,6 +182,7 @@ async function loadSingleBundle(
 
   // Walk all exports — check __kind discriminants first since they also have id/name
   for (const [, value] of Object.entries(mod)) {
+    if (isSimulationDefinition(value)) continue; // source-only, skip
     if (isDeviceDefinition(value)) {
       deviceDefs.push(value);
     } else if (isAutomationDefinition(value)) {
@@ -282,6 +285,15 @@ async function loadSingleBundle(
   }));
 
   return { entities, devices, automations, tasks, modes, crons };
+}
+
+export function isSimulationDefinition(value: unknown): value is SimulationDefinition {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '__kind' in value &&
+    (value as Record<string, unknown>).__kind === 'simulate'
+  );
 }
 
 export function isDeviceDefinition(value: unknown): value is DeviceDefinition {

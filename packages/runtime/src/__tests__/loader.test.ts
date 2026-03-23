@@ -197,6 +197,21 @@ describe('loadBundles()', () => {
     expect(result.entities).toHaveLength(1);
     expect(result.entities[0].definition.id).toBe('s1');
   });
+
+  it('silently skips simulation definitions (__kind: simulate)', async () => {
+    const jsContent = `
+      export const sim = { __kind: 'simulate', id: 'temp_sim', shadows: 'sensor.temp', signal: () => [] };
+      export const real = { id: 'real_sensor', name: 'Real', type: 'sensor' };
+    `;
+    fs.writeFileSync(path.join(tmpDir, 'simtest.js'), jsContent);
+
+    const result = await loadBundles(tmpDir);
+    // Simulation should be skipped, only real entity loaded
+    expect(result.entities).toHaveLength(1);
+    expect(result.entities[0].definition.id).toBe('real_sensor');
+    expect(result.automations).toHaveLength(0);
+    expect(result.devices).toHaveLength(0);
+  });
 });
 
 describe('installGlobals()', () => {
