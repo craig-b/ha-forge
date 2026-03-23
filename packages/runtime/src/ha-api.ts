@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, Subscription, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
 import { CronExpressionParser } from 'cron-parser';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
@@ -353,13 +353,18 @@ export class HAApiImpl implements HAApi {
   createScopedEvents(handles: EventHandleTracker): EventsContext {
     const self = this;
     return {
-      on: (entityOrDomain: string | string[], callback?: SDKStateChangedCallback) => {
-        const stream = createEventStream(
+      stream: (entityOrDomain: string | string[]) => {
+        const baseStream = createEventStream(
           (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
-          callback as StateChangedCallback | undefined,
         );
-        handles.eventSubscriptions.push(() => stream.unsubscribe());
-        return stream;
+        // Wrap subscribe to track cleanup handles
+        const origSubscribe = baseStream.subscribe.bind(baseStream);
+        (baseStream as any).subscribe = (callback: StateChangedCallback) => {
+          const sub = origSubscribe(callback);
+          handles.eventSubscriptions.push(() => sub.unsubscribe());
+          return sub;
+        };
+        return baseStream;
       },
       reactions: (rules: Record<string, ReactionRule>) => {
         const unsub = self.reactions(rules);
@@ -383,18 +388,18 @@ export class HAApiImpl implements HAApi {
       withState: <C extends string>(entityOrDomain: string | string[], context: C[], callback: (event: StateChangedEvent, states: { [K in C]: EntitySnapshot }) => void) => {
         const stream = createEventStream(
           (cb) => self.on(entityOrDomain, cb as StateChangedCallback),
-          ((event: StateChangedEvent) => {
-            const states: Record<string, EntitySnapshot> = {};
-            for (const eid of context) {
-              const snap = self.getCachedSnapshot(eid);
-              if (!snap || snap.state === 'unavailable' || snap.state === 'unknown') return;
-              states[eid] = snap;
-            }
-            callback(event, states as { [K in C]: EntitySnapshot });
-          }) as StateChangedCallback,
         );
-        handles.eventSubscriptions.push(() => stream.unsubscribe());
-        return stream;
+        const sub = stream.subscribe(((event: StateChangedEvent) => {
+          const states: Record<string, EntitySnapshot> = {};
+          for (const eid of context) {
+            const snap = self.getCachedSnapshot(eid);
+            if (!snap || snap.state === 'unavailable' || snap.state === 'unknown') return;
+            states[eid] = snap;
+          }
+          callback(event, states as { [K in C]: EntitySnapshot });
+        }) as StateChangedCallback);
+        handles.eventSubscriptions.push(() => sub.unsubscribe());
+        return sub;
       },
       watchdog: <K extends string>(rules: Record<K, WatchdogRule>) => {
         const timers = new Map<string, ReturnType<typeof setTimeout>>();

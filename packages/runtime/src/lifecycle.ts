@@ -718,10 +718,10 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      stream() { entityLogger.warn('this.events.stream() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
-      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return { unsubscribe() {} }; },
       watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
       invariant() { entityLogger.warn('this.events.invariant() unavailable — no WebSocket connection'); return () => {}; },
       sequence() { entityLogger.warn('this.events.sequence() unavailable — no WebSocket connection'); return () => {}; },
@@ -1536,10 +1536,10 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      stream() { entityLogger.warn('this.events.stream() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
-      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return { unsubscribe() {} }; },
       watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
       invariant() { entityLogger.warn('this.events.invariant() unavailable — no WebSocket connection'); return () => {}; },
       sequence() { entityLogger.warn('this.events.sequence() unavailable — no WebSocket connection'); return () => {}; },
@@ -1674,10 +1674,10 @@ export class EntityLifecycleManager {
     };
 
     const stubEvents: EventsContext = {
-      on() { entityLogger.warn('this.events.on() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      stream() { entityLogger.warn('this.events.stream() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
       reactions() { entityLogger.warn('this.events.reactions() unavailable — no WebSocket connection'); return () => {}; },
       combine() { entityLogger.warn('this.events.combine() unavailable — no WebSocket connection'); return () => {}; },
-      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return createEventStream(() => () => {}); },
+      withState() { entityLogger.warn('this.events.withState() unavailable — no WebSocket connection'); return { unsubscribe() {} }; },
       watchdog() { entityLogger.warn('this.events.watchdog() unavailable — no WebSocket connection'); return () => {}; },
       invariant() { entityLogger.warn('this.events.invariant() unavailable — no WebSocket connection'); return () => {}; },
       sequence() { entityLogger.warn('this.events.sequence() unavailable — no WebSocket connection'); return () => {}; },
