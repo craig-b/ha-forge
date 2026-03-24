@@ -1,7 +1,7 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { SimulationLocation, StreamSubscriptionLocation } from '../ast-analyzers.js';
-import type { ChainSimulationResult, ChainStageResult } from '../chain-simulation.js';
+import type { SimulationShimResult, EntitySimSummary } from '../simulation-shim.js';
 
 import './tse-signal-chart.js';
 
@@ -32,10 +32,10 @@ export class TseSimulatePanel extends LitElement {
   @property({ type: Array }) simulations: SimulationLocation[] = [];
   @property({ type: Array }) streams: StreamSubscriptionLocation[] = [];
   @property({ type: Object }) simulationResults: Map<string, SimulationResult> = new Map();
-  @property({ type: Object }) chainResults: Map<string, ChainSimulationResult> = new Map();
+  @property({ type: Object }) chainResults: Map<string, SimulationShimResult> = new Map();
   @state() private _selectedSimId = '';
   @state() private _timeRangeMs = 60_000;
-  @state() private _expandedStage: string | null = null;
+  @state() private _expandedEntity: string | null = null;
 
   createRenderRoot() { return this; }
 
@@ -94,7 +94,7 @@ export class TseSimulatePanel extends LitElement {
           </label>
         </div>
 
-        ${chainResult ? this._renderChainMode(chainResult, signalType, timeRange) :
+        ${chainResult ? this._renderChainMode(chainResult, selected!, signalType, timeRange) :
           result ? this._renderSingleMode(result, signalType, timeRange) :
           html`<div class="sim-warning">Select a simulation and matching stream subscription to preview.</div>`}
 
@@ -141,92 +141,131 @@ export class TseSimulatePanel extends LitElement {
     `;
   }
 
-  private _renderChainMode(chain: ChainSimulationResult, signalType: string, timeRange: { start: number; end: number }) {
+  private _renderChainMode(
+    chain: SimulationShimResult,
+    sim: SimulationLocation,
+    signalType: string,
+    timeRange: { start: number; end: number },
+  ) {
+    const sourceEvents = chain.events.get(sim.shadows) || [];
+    // Find the last entity with events (the chain output)
+    let finalEntityId = sim.shadows;
+    let finalEvents = sourceEvents;
+    for (const [entityId, summary] of chain.entities) {
+      if (entityId !== sim.shadows && summary.simulated && summary.eventCount > 0) {
+        finalEntityId = entityId;
+        finalEvents = chain.events.get(entityId) || [];
+      }
+    }
+
+    const entityList = [...chain.entities.entries()];
+
     return html`
       <div class="simulate-charts simulate-charts-chain">
         <tse-signal-chart
-          .events=${chain.sourceEvents}
+          .events=${sourceEvents}
           .signalType=${signalType}
           .timeRange=${timeRange}
-          label="Source: ${chain.stages[0]?.entityId || 'signal'}">
+          label="Source: ${this._shortEntityId(sim.shadows)}">
         </tse-signal-chart>
         <tse-signal-chart
-          .events=${chain.finalEvents}
+          .events=${finalEvents}
           .signalType=${'numeric'}
           .timeRange=${timeRange}
-          label="Final: ${chain.finalEntityId}">
+          label="Output: ${this._shortEntityId(finalEntityId)}">
         </tse-signal-chart>
       </div>
 
-      ${this._renderChainFlow(chain.stages)}
+      ${this._renderEntityFlow(entityList, sim.shadows)}
 
-      ${this._expandedStage ? this._renderExpandedStage(chain, signalType, timeRange) : nothing}
+      ${this._expandedEntity ? this._renderExpandedEntity(chain, timeRange) : nothing}
+
+      ${chain.errors.length > 0 ? html`
+        <div class="sim-warning">
+          ${chain.errors.map(e => html`
+            <div>${e.entityId ? html`<code>${e.entityId}</code> ` : ''}${e.message} (${e.phase})</div>
+          `)}
+        </div>
+      ` : ''}
+
+      ${chain.missingEntities.length > 0 ? html`
+        <div class="sim-warning">
+          Missing simulation sources:
+          ${chain.missingEntities.map(id => html`<code>${id}</code> `)}
+          — add <code>simulate()</code> for these to complete the chain.
+        </div>
+      ` : ''}
 
       <div class="simulation-stats">
         <span class="operator-stat">
-          ${chain.sourceEvents.length} source events → ${chain.finalEvents.length} final events
+          ${sourceEvents.length} source → ${finalEvents.length} output
         </span>
+        ${chain.serviceCalls.length > 0 ? html`
+          <span class="operator-stat">
+            ${chain.serviceCalls.length} service calls
+          </span>
+        ` : ''}
       </div>
     `;
   }
 
-  private _renderChainFlow(stages: ChainStageResult[]) {
+  private _renderEntityFlow(entities: [string, EntitySimSummary][], sourceId: string) {
     return html`
       <div class="chain-flow-bar">
-        ${stages.map((stage, i) => html`
+        ${entities.map(([entityId, summary], i) => html`
           ${i > 0 ? html`<span class="chain-arrow">→</span>` : nothing}
           <button
-            class="chain-node ${this._chainNodeClass(stage)}"
-            title=${stage.skipReason || (stage.simulated ? 'Simulated' : 'Skipped')}
-            @click=${() => this._toggleStage(stage.entityId)}>
-            ${this._shortEntityId(stage.entityId)}
-            <span class="chain-badge">${stage.events.length}</span>
+            class="chain-node ${this._entityNodeClass(summary, entityId === sourceId)}"
+            title=${summary.simulated ? `${summary.kind}: ${summary.eventCount} events` : `${summary.kind}: no events`}
+            @click=${() => this._toggleEntity(entityId)}>
+            ${this._shortEntityId(entityId)}
+            <span class="chain-badge">${summary.eventCount}</span>
           </button>
         `)}
       </div>
     `;
   }
 
-  private _renderExpandedStage(chain: ChainSimulationResult, _signalType: string, timeRange: { start: number; end: number }) {
-    const stage = chain.stages.find(s => s.entityId === this._expandedStage);
-    if (!stage) return nothing;
+  private _renderExpandedEntity(chain: SimulationShimResult, timeRange: { start: number; end: number }) {
+    const events = chain.events.get(this._expandedEntity!) || [];
+    const summary = chain.entities.get(this._expandedEntity!);
 
     return html`
       <div class="chain-expanded-stage">
         <div class="chain-expanded-header">
-          <strong>${stage.entityId}</strong>
-          ${stage.skipReason ? html`<span class="chain-skip-reason">${stage.skipReason}</span>` : nothing}
-          <button class="chain-close" @click=${() => this._toggleStage(null)}>✕</button>
+          <strong>${this._expandedEntity}</strong>
+          ${summary ? html`<span class="chain-skip-reason">${summary.kind} — ${summary.eventCount} events</span>` : nothing}
+          <button class="chain-close" @click=${() => this._toggleEntity(null)}>✕</button>
         </div>
         <tse-signal-chart
-          .events=${stage.events}
+          .events=${events}
           .signalType=${'numeric'}
           .timeRange=${timeRange}
-          label="${stage.entityId}">
+          label="${this._expandedEntity}">
         </tse-signal-chart>
       </div>
     `;
   }
 
-  private _chainNodeClass(stage: ChainStageResult): string {
-    if (stage.simulated && !stage.skipReason) return 'chain-node-ok';
-    if (stage.simulated && stage.skipReason) return 'chain-node-partial';
+  private _entityNodeClass(summary: EntitySimSummary, isSource: boolean): string {
+    if (isSource) return 'chain-node-ok';
+    if (summary.simulated && summary.eventCount > 0) return 'chain-node-ok';
+    if (summary.simulated) return 'chain-node-partial';
     return 'chain-node-skip';
   }
 
   private _shortEntityId(entityId: string): string {
-    // Remove domain prefix for display
     const dot = entityId.indexOf('.');
     return dot >= 0 ? entityId.substring(dot + 1) : entityId;
   }
 
-  private _toggleStage(entityId: string | null) {
-    this._expandedStage = this._expandedStage === entityId ? null : entityId;
+  private _toggleEntity(entityId: string | null) {
+    this._expandedEntity = this._expandedEntity === entityId ? null : entityId;
   }
 
   private _onSelectSim(e: Event) {
     this._selectedSimId = (e.target as HTMLSelectElement).value;
-    this._expandedStage = null;
+    this._expandedEntity = null;
   }
 
   private _onTimeRange(e: Event) {

@@ -4,9 +4,7 @@ import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './typ
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, type SimulationLocation, type StreamSubscriptionLocation } from './ast-analyzers.js';
 import { signals as clientSignals, runSimulation as clientRunSimulation } from './simulation.js';
-import { buildChainPaths } from './dependency-graph.js';
-import { extractCompute, setTypeScriptApi as setExtractorTsApi } from './compute-extractor.js';
-import { runChainSimulation, type ChainSimulationResult } from './chain-simulation.js';
+import { runShimSimulation, type SimulationShimResult } from './simulation-shim.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -209,7 +207,7 @@ export class TseApp extends LitElement {
   @state() private _simulations: SimulationLocation[] = [];
   @state() private _streams: StreamSubscriptionLocation[] = [];
   @state() private _simulationResults: Map<string, unknown> = new Map();
-  @state() private _chainResults: Map<string, ChainSimulationResult> = new Map();
+  @state() private _chainResults: Map<string, SimulationShimResult> = new Map();
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
 
@@ -402,7 +400,6 @@ export class TseApp extends LitElement {
       const tsGlobal = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
       if (tsGlobal?.createSourceFile) {
         setTypeScriptApi(tsGlobal);
-        setExtractorTsApi(tsGlobal);
         setAstAnalyzerActive();
         this._runDiagnostics();
         console.debug('[ha-forge] TypeScript API loaded');
@@ -2484,69 +2481,72 @@ export class TseApp extends LitElement {
   }
 
   private _runChainSimulations() {
-    if (this._simulations.length === 0) {
+    if (this._simulations.length === 0 || !isAstReady()) {
       this._chainResults = new Map();
       return;
     }
 
-    // Collect entity definitions and dependencies from all open files
-    const allDefs: import('./ast-analyzers.js').EntityDefinitionLocation[] = [];
-    const allDeps = new Map<string, import('./ast-analyzers.js').EntityDependencies>();
-    const allStreams: import('./ast-analyzers.js').StreamSubscriptionLocation[] = [];
-    const fileDataByEntity = new Map<string, string>();
+    // Transpile all open files and concatenate for the shim
+    const tsApi = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
+    if (!tsApi) {
+      this._chainResults = new Map();
+      return;
+    }
 
+    const transpiledParts: string[] = [];
     for (const file of this._openFiles) {
-      const defs = findEntityDefinitions(file.content, file.path);
-      allDefs.push(...defs);
-      const deps = findEntityDependencies(file.content, file.path);
-      for (const [k, v] of deps) allDeps.set(k, v);
-      const streams = findStreamSubscriptions(file.content, file.path);
-      allStreams.push(...streams);
-      for (const def of defs) fileDataByEntity.set(def.fullEntityId, file.path);
-    }
-
-    // Build chain paths
-    const chainPaths = buildChainPaths(this._simulations, allDefs, allDeps, allStreams, fileDataByEntity);
-    if (chainPaths.length === 0) {
-      this._chainResults = new Map();
-      return;
-    }
-
-    // Extract and compile compute functions for chain nodes
-    const computeFns = new Map<string, import('./compute-extractor.js').ComputeFn>();
-    for (const chain of chainPaths) {
-      for (const node of chain.nodes) {
-        if (node.kind !== 'computed') continue;
-        // Find source text for this entity
-        const filePath = node.sourceFile;
-        const file = this._openFiles.find(f => f.path === filePath);
-        if (!file) continue;
-
-        const extracted = extractCompute(file.content, node.entityId, filePath);
-        if (extracted?.compiled) {
-          computeFns.set(node.entityId, extracted.compiled);
-        } else if (extracted && !extracted.safe) {
-          node.simulability = 'unsafe';
-          node.unsafeReason = extracted.unsafeReason;
-        }
+      try {
+        const result = tsApi.transpileModule(file.content, {
+          compilerOptions: {
+            target: tsApi.ScriptTarget.ES2020,
+            module: tsApi.ModuleKind.None, // strip import/export for shim execution
+            removeComments: true,
+          },
+          fileName: file.path,
+        });
+        // Strip any remaining export/import statements from the output
+        const cleaned = result.outputText
+          .replace(/^export\s+(default\s+)?/gm, '')
+          .replace(/^import\s+.*$/gm, '');
+        transpiledParts.push(cleaned);
+      } catch {
+        // Transpilation failed for this file — skip it
       }
     }
 
-    // Run chain simulations using existing single-hop results as source events
-    const chainResults = new Map<string, ChainSimulationResult>();
-    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
+    if (transpiledParts.length === 0) {
+      this._chainResults = new Map();
+      return;
+    }
 
-    for (const chain of chainPaths) {
-      const sim = this._simulations.find(s => s.id === chain.simulationId);
-      if (!sim) continue;
+    const transpiledJs = transpiledParts.join('\n;\n');
 
-      // Get source events from the single-hop simulation result
+    // Collect source events from existing single-hop results
+    const sourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
+    for (const sim of this._simulations) {
       const singleResult = this._simulationResults.get(sim.id) as { input: Array<{ t: number; value: string | number }> } | undefined;
-      const sourceEvents = singleResult?.input;
-      if (!sourceEvents || sourceEvents.length === 0) continue;
+      if (singleResult?.input) {
+        sourceEvents.set(sim.id, singleResult.input);
+      }
+    }
 
-      const result = runChainSimulation(chain, sourceEvents, { computeFns });
-      chainResults.set(chain.simulationId, result);
+    if (sourceEvents.size === 0) {
+      this._chainResults = new Map();
+      return;
+    }
+
+    // Run the shim simulation
+    const chainResults = new Map<string, SimulationShimResult>();
+    try {
+      const result = runShimSimulation(transpiledJs, sourceEvents, this._simTimeRangeMs);
+      // Associate result with each simulation that has downstream entities
+      for (const sim of this._simulations) {
+        if (sourceEvents.has(sim.id) && result.entities.size > 1) {
+          chainResults.set(sim.id, result);
+        }
+      }
+    } catch {
+      // Shim simulation failed — fall back to single-hop only
     }
 
     this._chainResults = chainResults;
