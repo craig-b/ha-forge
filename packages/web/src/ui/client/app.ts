@@ -287,7 +287,7 @@ export class TseApp extends LitElement {
     const opts: RequestInit = { method, headers: { 'Content-Type': 'application/json' } };
     if (body) opts.body = JSON.stringify(body);
     return fetch(this._base + path, opts).then((res) => {
-      if (!res.ok) console.warn(`[ha-forge] API ${method} ${path} returned ${res.status}`);
+      if (!res.ok) console.error(`[ha-forge] API ${method} ${path} returned ${res.status}`);
       return res.json() as Promise<Record<string, unknown>>;
     });
   }
@@ -358,7 +358,7 @@ export class TseApp extends LitElement {
         monaco.languages.typescript.typescriptDefaults.addExtraLib(content, uri);
         this._createReadOnlyModel(content, uri);
       }
-    }).catch(e => console.warn('[ha-forge] Failed to load SDK types', e));
+    }).catch(e => console.error('[ha-forge] Failed to load SDK types', e));
 
     this._api('GET', '/api/types/status').then((status) => {
       if (status.generated) {
@@ -374,13 +374,13 @@ export class TseApp extends LitElement {
         monaco.languages.typescript.typescriptDefaults.addExtraLib(content, uri);
         this._createReadOnlyModel(content, uri);
       }
-    }).catch(e => console.warn('[ha-forge] Failed to load HA registry types', e));
+    }).catch(e => console.warn('[ha-forge] Failed to load HA registry types', e));  // non-fatal: editor works without HA types
 
     this._api('GET', '/api/types/completion-registry').then((data) => {
       if (data && data.domains) {
         this._completionRegistry = data;
       }
-    }).catch(e => console.warn('[ha-forge] Failed to load completion registry', e));
+    }).catch(e => console.warn('[ha-forge] Failed to load completion registry', e));  // non-fatal: completions degraded
   }
 
   private _createReadOnlyModel(content: string, uri: string) {
@@ -402,10 +402,10 @@ export class TseApp extends LitElement {
         setTypeScriptApi(tsGlobal);
         setAstAnalyzerActive();
         this._runDiagnostics();
-        console.debug('[ha-forge] TypeScript API loaded');
+        console.log('[ha-forge] TypeScript API loaded');
       }
     };
-    script.onerror = (e) => console.warn('[ha-forge] Failed to load TypeScript API', e);
+    script.onerror = (e) => console.error('[ha-forge] Failed to load TypeScript API', e);
     document.head.appendChild(script);
 
     // Load cronstrue for human-readable cron descriptions in hover tooltips.
@@ -418,7 +418,7 @@ export class TseApp extends LitElement {
       this._cronstrue = cronstrue;
       this._setupCronHoverProvider(cronstrue);
       this._refreshCodeLenses();
-      console.debug('[ha-forge] cronstrue loaded');
+      console.log('[ha-forge] cronstrue loaded');
     }, (err: unknown) => console.warn('[ha-forge] Failed to load cronstrue', err));
   }
 
@@ -2304,7 +2304,7 @@ export class TseApp extends LitElement {
   private async _loadEntities() {
     const data = await this._api('GET', '/api/entities');
     this._entities = (data.entities as EntityInfo[]) ?? [];
-    console.debug(`[ha-forge] Loaded ${this._entities.length} entities`);
+    console.log(`[ha-forge] Loaded ${this._entities.length} entities`);
     this._refreshCodeLenses();
     this._refreshInlayHints();
   }
@@ -2484,10 +2484,10 @@ export class TseApp extends LitElement {
           }
         } catch (e) { console.warn('[ha-forge] WebSocket message parse error', e); }
       };
-      ws.onopen = () => console.debug('[ha-forge] WebSocket connected');
-      ws.onclose = () => { console.debug('[ha-forge] WebSocket disconnected, reconnecting...'); setTimeout(() => this._connectWebSocket(), 3000); };
+      ws.onopen = () => console.log('[ha-forge] WebSocket connected');
+      ws.onclose = () => { console.warn('[ha-forge] WebSocket disconnected, reconnecting...'); setTimeout(() => this._connectWebSocket(), 3000); };
     } catch (e) {
-      console.warn('[ha-forge] WebSocket connection failed', e);
+      console.error('[ha-forge] WebSocket connection failed', e);
       setTimeout(() => this._connectWebSocket(), 5000);
     }
   }
