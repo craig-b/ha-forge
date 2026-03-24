@@ -192,8 +192,10 @@ export class TseSignalChart extends LitElement {
   ) {
     if (events.length === 0) return;
     const svgEl = (e.currentTarget as SVGSVGElement);
-    const rect = svgEl.getBoundingClientRect();
-    const svgX = ((e.clientX - rect.left) / rect.width) * 600; // viewBox width
+    const pt = svgEl.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const svgX = pt.matrixTransform(svgEl.getScreenCTM()!.inverse()).x;
     const t = range.start + ((svgX - pad.left) / plotW) * (range.end - range.start);
 
     // Find closest event
