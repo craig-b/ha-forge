@@ -98,7 +98,7 @@ export class TseSimulatePanel extends LitElement {
     const entityEvents = result.events.get(entity.fullEntityId) || [];
 
     // Find source entities from the scenario
-    const sourceIds = scenario?.sources.map(s => s.shadows) || [];
+    const sourceIds = scenario?.sources || [];
     const primarySourceId = sourceIds[0];
     const sourceEvents = primarySourceId ? (result.events.get(primarySourceId) || []) : [];
 

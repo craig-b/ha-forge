@@ -3,7 +3,6 @@ import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findScenarios, type EntityDefinitionLocation, type ScenarioLocation } from './ast-analyzers.js';
-import { signals as clientSignals } from './simulation.js';
 import { runShimSimulation, type SimulationShimResult } from './simulation-shim.js';
 
 import './components/tse-header.js';
@@ -2391,58 +2390,10 @@ export class TseApp extends LitElement {
       return;
     }
 
-    // Use the selected scenario, falling back to the first one
-    const scenario = (this._simSelectedScenario
-      ? this._simScenarios.find(s => s.name === this._simSelectedScenario)
-      : null) || this._simScenarios[0];
-    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
-    const sourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
-
-    for (const source of scenario.sources) {
-      const p = source.signalParams;
-      let events: Array<{ t: number; value: string | number }>;
-      switch (source.signalType) {
-        case 'numeric':
-          events = clientSignals.numeric({
-            base: typeof p.base === 'number' ? p.base : 20,
-            noise: typeof p.noise === 'number' ? p.noise : 3,
-            spikeTo: typeof p.spikeTo === 'number' ? p.spikeTo : undefined,
-            spikeChance: typeof p.spikeChance === 'number' ? p.spikeChance : undefined,
-            dropoutEvery: typeof p.dropoutEvery === 'number' ? p.dropoutEvery : undefined,
-            interval: typeof p.interval === 'number' ? p.interval : 1000,
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        case 'binary':
-          events = clientSignals.binary({
-            onDuration: Array.isArray(p.onDuration) ? p.onDuration as [number, number] : [3000, 8000],
-            offDuration: Array.isArray(p.offDuration) ? p.offDuration as [number, number] : [2000, 5000],
-            falseRetrigger: typeof p.falseRetrigger === 'number' ? p.falseRetrigger : undefined,
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        case 'enum':
-          events = clientSignals.enum({
-            states: Array.isArray(p.states) ? p.states as string[] : ['idle', 'active', 'standby'],
-            dwellRange: Array.isArray(p.dwellRange) ? p.dwellRange as [number, number] : [3000, 8000],
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        default:
-          events = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
-      }
-      sourceEvents.set(source.shadows, events);
-    }
-
-    if (sourceEvents.size === 0) {
-      this._shimResult = null;
-      return;
-    }
-
     const transpiledJs = transpiledParts.join('\n;\n');
 
     try {
-      this._shimResult = runShimSimulation(transpiledJs, sourceEvents, this._simTimeRangeMs);
+      this._shimResult = runShimSimulation(transpiledJs, this._simSelectedScenario, this._simTimeRangeMs);
     } catch {
       this._shimResult = null;
     }

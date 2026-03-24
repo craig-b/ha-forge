@@ -12,7 +12,7 @@
  * External APIs (fetch, fs, process) are simply not provided.
  */
 
-import type { SignalEvent } from './simulation.js';
+import { signals, type SignalEvent } from './simulation.js';
 
 // ---- Result types ----
 
@@ -519,15 +519,16 @@ function factoryDomain(kind: string): string {
  * model as Monaco's TypeScript worker.
  *
  * @param transpiledJs - User code transpiled to JS (from ts.transpileModule).
- * @param sourceEvents - Map of entity ID → generated source events.
+ * @param scenarioName - Name of the scenario to run (empty = first scenario found).
  * @param timeRangeMs - Duration to simulate in virtual time.
  */
 export function runShimSimulation(
   transpiledJs: string,
-  sourceEvents: Map<string, SignalEvent[]>,
+  scenarioName: string,
   timeRangeMs: number,
 ): SimulationShimResult {
   const state = createSimState();
+  const capturedScenarios: Array<{ name: string; sources: Array<{ shadows: string; signal: (range: { start: number; end: number; stepMs: number }) => SignalEvent[] }> }> = [];
 
   // Build the shim globals — only what we explicitly provide is available
   const factories: Record<string, EntityFactoryFn> = {};
@@ -542,8 +543,13 @@ export function runShimSimulation(
 
   const shimGlobals: Record<string, unknown> = {
     ...factories,
-    simulate: { scenario() { return { __kind: 'scenario' }; } },
-    signals: {}, // signals are evaluated at AST time, not runtime
+    simulate: {
+      scenario(name: string, sources: Array<{ shadows: string; signal: unknown }>) {
+        capturedScenarios.push({ name, sources: sources as typeof capturedScenarios[0]['sources'] });
+        return { __kind: 'scenario', name, sources };
+      },
+    },
+    signals,
     device: (config: Record<string, unknown>) => ({ __kind: 'device', ...config }),
     debounced: (inner: Record<string, unknown>) => inner,
     filtered: (inner: Record<string, unknown>) => inner,
@@ -597,7 +603,31 @@ export function runShimSimulation(
     if (reg.init) reg.init();
   }
 
-  // Feed source events through the simulation (keyed by entity ID directly)
+  // Select scenario and generate source events from captured signal generators
+  const scenario = (scenarioName
+    ? capturedScenarios.find(s => s.name === scenarioName)
+    : null) || capturedScenarios[0];
+
+  if (!scenario) {
+    state.errors.push({ message: 'No scenarios found — use simulate.scenario() to define one', phase: 'init' });
+    return buildResult(state);
+  }
+
+  const timeRange = { start: 0, end: timeRangeMs, stepMs: 1000 };
+  const sourceEvents = new Map<string, SignalEvent[]>();
+  for (const source of scenario.sources) {
+    try {
+      const events = source.signal(timeRange);
+      sourceEvents.set(source.shadows, events);
+    } catch (err) {
+      state.errors.push({
+        entityId: source.shadows,
+        message: `Signal generation failed: ${err instanceof Error ? err.message : String(err)}`,
+        phase: 'init',
+      });
+    }
+  }
+
   for (const [entityId, events] of sourceEvents) {
     const sorted = [...events].sort((a, b) => a.t - b.t);
 

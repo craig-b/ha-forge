@@ -2054,23 +2054,20 @@ export function extractObjectLiteral(node: import('typescript').Node): Record<st
 
 // ---- Scenario detection ----
 
-export type SignalType = 'numeric' | 'binary' | 'enum' | 'recorded' | 'unknown';
-
 export interface ScenarioLocation {
   name: string;
-  sources: Array<{ shadows: string; signalType: SignalType; signalParams: Record<string, unknown> }>;
+  sources: string[];  // shadows entity IDs
   line: number;
   endLine: number;
 }
 
-/** Find simulate.scenario() calls in source text. */
+/** Find simulate.scenario() calls in source text — extracts names and shadow IDs for the UI picker. */
 export function findScenarios(sourceText: string, fileName = 'file.ts'): ScenarioLocation[] {
   if (!ts) return [];
   const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
   const results: ScenarioLocation[] = [];
 
   function visit(node: import('typescript').Node) {
-    // Match: simulate.scenario('name', [ { shadows: '...', signal: signals.*(...) }, ... ])
     if (ts!.isCallExpression(node) && ts!.isPropertyAccessExpression(node.expression) &&
         ts!.isIdentifier(node.expression.expression) && node.expression.expression.text === 'simulate' &&
         node.expression.name.text === 'scenario') {
@@ -2083,40 +2080,21 @@ export function findScenarios(sourceText: string, fileName = 'file.ts'): Scenari
       const sourcesArg = node.arguments[1];
       if (!ts!.isArrayLiteralExpression(sourcesArg)) { ts!.forEachChild(node, visit); return; }
 
-      const sources: ScenarioLocation['sources'] = [];
+      const shadows: string[] = [];
       for (const el of sourcesArg.elements) {
         if (!ts!.isObjectLiteralExpression(el)) continue;
-        let shadows = '';
-        let signalType: SignalType = 'unknown';
-        let signalParams: Record<string, unknown> = {};
-
         for (const prop of el.properties) {
           if (!ts!.isPropertyAssignment(prop) || !ts!.isIdentifier(prop.name)) continue;
-          const pname = prop.name.text;
-          if (pname === 'shadows' && ts!.isStringLiteral(prop.initializer)) {
-            shadows = prop.initializer.text;
-          } else if (pname === 'signal' && ts!.isCallExpression(prop.initializer)) {
-            const callExpr = prop.initializer.expression;
-            if (ts!.isPropertyAccessExpression(callExpr) && ts!.isIdentifier(callExpr.expression) &&
-                callExpr.expression.text === 'signals') {
-              const method = callExpr.name.text;
-              if (method === 'numeric' || method === 'binary' || method === 'enum' || method === 'recorded') {
-                signalType = method;
-              }
-              const signalArg = prop.initializer.arguments[0];
-              if (signalArg) signalParams = extractObjectLiteral(signalArg);
-            }
-            // Also handle: signal is a variable reference (shared signal)
-            // In that case signalType stays 'unknown' and signalParams empty — acceptable
+          if (prop.name.text === 'shadows' && ts!.isStringLiteral(prop.initializer)) {
+            shadows.push(prop.initializer.text);
           }
         }
-        if (shadows) sources.push({ shadows, signalType, signalParams });
       }
 
-      if (sources.length > 0) {
+      if (shadows.length > 0) {
         const { line: startLine } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
         const { line: endLine } = sf.getLineAndCharacterOfPosition(node.getEnd());
-        results.push({ name, sources, line: startLine + 1, endLine: endLine + 1 });
+        results.push({ name, sources: shadows, line: startLine + 1, endLine: endLine + 1 });
       }
     }
     ts!.forEachChild(node, visit);
