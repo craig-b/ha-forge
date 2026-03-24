@@ -541,6 +541,35 @@ export function runShimSimulation(
     factories[name] = createEntityFactory(state, name);
   }
 
+  // Built-in reducer implementations matching the SDK
+  const builtinReducers: Record<string, (values: number[]) => number> = {
+    average: (vals) => vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
+    sum: (vals) => vals.reduce((a, b) => a + b, 0),
+    min: (vals) => vals.length > 0 ? Math.min(...vals) : 0,
+    max: (vals) => vals.length > 0 ? Math.max(...vals) : 0,
+    last: (vals) => vals.length > 0 ? vals[vals.length - 1] : 0,
+    count: (vals) => vals.length,
+  };
+
+  // Track behavior wrappers applied to entities (entityId → config)
+  interface BehaviorWrap { type: string; intervalMs?: number; reduceFn?: (values: number[]) => number; waitMs?: number; predicate?: (v: unknown) => boolean }
+  const behaviorWraps = new Map<string, BehaviorWrap>();
+
+  function resolveReducer(reduce: unknown): (values: number[]) => number {
+    if (typeof reduce === 'function') return reduce as (values: number[]) => number;
+    if (typeof reduce === 'string' && builtinReducers[reduce]) return builtinReducers[reduce];
+    return builtinReducers.average;
+  }
+
+  function resolveEntityId(inner: Record<string, unknown>): string {
+    const id = inner.id as string;
+    // Try to find matching registered entity
+    for (const fullId of state.registeredEntities.keys()) {
+      if (fullId.endsWith(`.${id}`)) return fullId;
+    }
+    return id;
+  }
+
   const shimGlobals: Record<string, unknown> = {
     ...factories,
     simulate: {
@@ -551,10 +580,28 @@ export function runShimSimulation(
     },
     signals,
     device: (config: Record<string, unknown>) => ({ __kind: 'device', ...config }),
-    debounced: (inner: Record<string, unknown>) => inner,
-    filtered: (inner: Record<string, unknown>) => inner,
-    sampled: (inner: Record<string, unknown>) => inner,
-    buffered: (inner: Record<string, unknown>) => inner,
+    debounced: (inner: Record<string, unknown>, opts?: { wait?: number }) => {
+      behaviorWraps.set(resolveEntityId(inner), { type: 'debounced', waitMs: opts?.wait || 1000 });
+      return inner;
+    },
+    filtered: (inner: Record<string, unknown>, opts?: { predicate?: unknown }) => {
+      if (typeof opts?.predicate === 'function') {
+        behaviorWraps.set(resolveEntityId(inner), { type: 'filtered', predicate: opts.predicate as (v: unknown) => boolean });
+      }
+      return inner;
+    },
+    sampled: (inner: Record<string, unknown>, opts?: { interval?: number }) => {
+      behaviorWraps.set(resolveEntityId(inner), { type: 'sampled', intervalMs: opts?.interval || 30_000 });
+      return inner;
+    },
+    buffered: (inner: Record<string, unknown>, opts?: { interval?: number; reduce?: unknown }) => {
+      behaviorWraps.set(resolveEntityId(inner), {
+        type: 'buffered',
+        intervalMs: opts?.interval || 30_000,
+        reduceFn: resolveReducer(opts?.reduce),
+      });
+      return inner;
+    },
     average: 'average', sum: 'sum', min: 'min', max: 'max', last: 'last', count: 'count',
     exports: {},  // absorb CommonJS-style exports emitted by transpiler
     module: { exports: {} },  // absorb module.exports patterns
@@ -659,6 +706,67 @@ export function runShimSimulation(
 
   // Final flush
   flushTimersUpTo(state.timers, state.currentTime + timeRangeMs, (t) => { state.currentTime = t; });
+
+  // Post-process behavior wrappers on output events
+  for (const [entityId, wrap] of behaviorWraps) {
+    const raw = state.outputEvents.get(entityId);
+    if (!raw || raw.length === 0) continue;
+
+    if (wrap.type === 'buffered' && wrap.intervalMs && wrap.reduceFn) {
+      // Window events into intervals and apply reducer
+      const processed: SignalEvent[] = [];
+      let windowStart = raw[0].t;
+      let windowValues: number[] = [];
+
+      for (const event of raw) {
+        if (event.t >= windowStart + wrap.intervalMs) {
+          // Flush current window
+          if (windowValues.length > 0) {
+            const reduced = wrap.reduceFn(windowValues);
+            processed.push({ t: windowStart + wrap.intervalMs, value: Math.round(reduced * 100) / 100 });
+          }
+          windowStart = windowStart + wrap.intervalMs * Math.floor((event.t - windowStart) / wrap.intervalMs);
+          windowValues = [];
+        }
+        const num = typeof event.value === 'number' ? event.value : Number(event.value);
+        if (!isNaN(num)) windowValues.push(num);
+      }
+      // Flush last window
+      if (windowValues.length > 0) {
+        const reduced = wrap.reduceFn(windowValues);
+        processed.push({ t: windowStart + wrap.intervalMs, value: Math.round(reduced * 100) / 100 });
+      }
+      state.outputEvents.set(entityId, processed);
+    } else if (wrap.type === 'debounced' && wrap.waitMs) {
+      // Keep only events that have no successor within waitMs
+      const processed: SignalEvent[] = [];
+      for (let i = 0; i < raw.length; i++) {
+        const next = raw[i + 1];
+        if (!next || next.t - raw[i].t >= wrap.waitMs) {
+          processed.push(raw[i]);
+        }
+      }
+      state.outputEvents.set(entityId, processed);
+    } else if (wrap.type === 'sampled' && wrap.intervalMs) {
+      // Take the latest value at each interval boundary
+      const processed: SignalEvent[] = [];
+      let nextSample = raw[0].t + wrap.intervalMs;
+      let latest = raw[0];
+      for (const event of raw) {
+        if (event.t >= nextSample) {
+          processed.push({ t: nextSample, value: latest.value });
+          nextSample += wrap.intervalMs;
+        }
+        latest = event;
+      }
+      state.outputEvents.set(entityId, processed);
+    } else if (wrap.type === 'filtered' && wrap.predicate) {
+      const pred = wrap.predicate;
+      state.outputEvents.set(entityId, raw.filter(e => {
+        try { return pred(e.value); } catch { return true; }
+      }));
+    }
+  }
 
   return buildResult(state);
 }
