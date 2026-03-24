@@ -59,7 +59,7 @@ export type { AutomationOptions } from './entities/automation.js';
 export type { TaskOptions } from './entities/task.js';
 export type { ModeOptions } from './entities/mode.js';
 export type { CronOptions } from './entities/cron.js';
-export type { SimulateOptions } from './entities/simulate.js';
+export type { SimulateOptions, ScenarioSource } from './entities/simulate.js';
 
 export type {
   NumberInRange,

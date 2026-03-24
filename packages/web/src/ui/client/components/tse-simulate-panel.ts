@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { SimulationLocation, StreamSubscriptionLocation } from '../ast-analyzers.js';
+import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-analyzers.js';
 import type { SimulationShimResult, EntitySimSummary } from '../simulation-shim.js';
 
 import './tse-signal-chart.js';
@@ -10,78 +10,64 @@ interface SignalEvent {
   value: string | number;
 }
 
-interface OperatorStats {
-  name: string;
-  inputCount: number;
-  outputCount: number;
-}
-
-interface SimulationResult {
-  input: SignalEvent[];
-  output: SignalEvent[];
-  stats: {
-    inputCount: number;
-    outputCount: number;
-    passRate: number;
-    perOperator: OperatorStats[];
-  };
-}
-
 @customElement('tse-simulate-panel')
 export class TseSimulatePanel extends LitElement {
-  @property({ type: Array }) simulations: SimulationLocation[] = [];
-  @property({ type: Array }) streams: StreamSubscriptionLocation[] = [];
-  @property({ type: Object }) simulationResults: Map<string, SimulationResult> = new Map();
-  @property({ type: Object }) chainResults: Map<string, SimulationShimResult> = new Map();
-  @state() private _selectedSimId = '';
+  /** All entity definitions in open files. */
+  @property({ type: Array }) entities: EntityDefinitionLocation[] = [];
+  /** All scenarios in open files. */
+  @property({ type: Array }) scenarios: ScenarioLocation[] = [];
+  /** Simulation result from the shim (keyed by scenario name). */
+  @property({ type: Object }) shimResult: SimulationShimResult | null = null;
+  @state() private _selectedEntity = '';
+  @state() private _selectedScenario = '';
   @state() private _timeRangeMs = 60_000;
   @state() private _expandedEntity: string | null = null;
 
   createRenderRoot() { return this; }
 
   render() {
-    if (this.simulations.length === 0) {
+    const exportedEntities = this.entities.filter(e => e.isExported && e.domain !== 'device');
+
+    if (exportedEntities.length === 0 && this.scenarios.length === 0) {
       return html`<div class="simulate-panel">
-        <div class="sim-warning">No simulations defined. Use <code>simulate()</code> with <code>signals.*</code> to create one.</div>
+        <div class="sim-warning">
+          No exported entities or scenarios. Export entities and define scenarios with
+          <code>simulate.scenario()</code> to preview behavior.
+        </div>
       </div>`;
     }
 
-    const selected = this._selectedSimId
-      ? this.simulations.find(s => s.id === this._selectedSimId)
-      : this.simulations[0];
+    const selectedEntity = this._selectedEntity
+      ? exportedEntities.find(e => e.fullEntityId === this._selectedEntity)
+      : exportedEntities[0];
 
-    const result = selected ? this.simulationResults.get(selected.id) : undefined;
-    const chainResult = selected ? this.chainResults.get(selected.id) : undefined;
+    const selectedScenario = this._selectedScenario
+      ? this.scenarios.find(s => s.name === this._selectedScenario)
+      : this.scenarios[0];
+
     const timeRange = { start: 0, end: this._timeRangeMs };
-
-    // Group simulations by shadows target for the picker
-    const byShadows = new Map<string, SimulationLocation[]>();
-    for (const sim of this.simulations) {
-      const list = byShadows.get(sim.shadows) || [];
-      list.push(sim);
-      byShadows.set(sim.shadows, list);
-    }
-
-    // Check for unshadowed entities in stream subscriptions
-    const shadowedEntities = new Set(this.simulations.map(s => s.shadows));
-    const unshadowed = this.streams.filter(s => !shadowedEntities.has(s.entityId));
-
-    const signalType = selected?.signalType === 'binary' ? 'binary' : selected?.signalType === 'enum' ? 'enum' : 'numeric';
 
     return html`
       <div class="simulate-panel">
         <div class="simulate-top-bar">
-          <select class="scenario-picker" @change=${this._onSelectSim}>
-            ${[...byShadows.entries()].map(([shadows, sims]) => html`
-              <optgroup label="${shadows}">
-                ${sims.map(sim => html`
-                  <option value="${sim.id}" ?selected=${sim.id === selected?.id}>
-                    ${sim.id} (${sim.signalType})
-                  </option>
-                `)}
-              </optgroup>
-            `)}
-          </select>
+          ${exportedEntities.length > 0 ? html`
+            <select class="scenario-picker" @change=${this._onSelectEntity}>
+              ${exportedEntities.map(e => html`
+                <option value="${e.fullEntityId}" ?selected=${e.fullEntityId === selectedEntity?.fullEntityId}>
+                  ${e.fullEntityId}
+                </option>
+              `)}
+            </select>
+          ` : ''}
+          ${this.scenarios.length > 0 ? html`
+            <select class="scenario-picker" @change=${this._onSelectScenario}>
+              ${this.scenarios.map(s => html`
+                <option value="${s.name}" ?selected=${s.name === selectedScenario?.name}>
+                  ${s.name}
+                </option>
+              `)}
+            </select>
+          ` : ''}
           <label class="simulate-time-label">
             Duration:
             <select class="scenario-picker" @change=${this._onTimeRange}>
@@ -94,131 +80,90 @@ export class TseSimulatePanel extends LitElement {
           </label>
         </div>
 
-        ${chainResult ? this._renderChainMode(chainResult, selected!, signalType, timeRange) :
-          result ? this._renderSingleMode(result, signalType, timeRange) :
-          html`<div class="sim-warning">Select a simulation and matching stream subscription to preview.</div>`}
-
-        ${unshadowed.length > 0 ? html`
-          <div class="sim-warning">
-            Unshadowed entities in stream subscriptions:
-            ${unshadowed.map(s => html`<code>${s.entityId}</code> `)}
-            — add <code>simulate()</code> definitions for these to enable full simulation.
-          </div>
-        ` : ''}
+        ${this.shimResult && selectedEntity
+          ? this._renderResult(this.shimResult, selectedEntity, selectedScenario, timeRange)
+          : this.scenarios.length === 0
+            ? html`<div class="sim-warning">Define scenarios with <code>simulate.scenario('name', [...])</code> to preview.</div>`
+            : html`<div class="sim-warning">Running simulation...</div>`}
       </div>
     `;
   }
 
-  private _renderSingleMode(result: SimulationResult, signalType: string, timeRange: { start: number; end: number }) {
-    return html`
-      <div class="simulate-charts">
-        <tse-signal-chart
-          .events=${result.input}
-          .signalType=${signalType}
-          .timeRange=${timeRange}
-          label="Raw Signal">
-        </tse-signal-chart>
-        <tse-signal-chart
-          .events=${result.output}
-          .signalType=${signalType}
-          .timeRange=${timeRange}
-          label="After Operators">
-        </tse-signal-chart>
-      </div>
-
-      <div class="simulation-stats">
-        <span class="operator-stat">
-          ${result.stats.inputCount} in → ${result.stats.outputCount} out
-          (${(result.stats.passRate * 100).toFixed(0)}% pass)
-        </span>
-        ${result.stats.perOperator.map(op => html`
-          <span class="operator-stat">
-            ${op.name}: ${op.inputCount}→${op.outputCount}
-            (${op.inputCount > 0 ? ((op.outputCount / op.inputCount) * 100).toFixed(0) : '0'}%)
-          </span>
-        `)}
-      </div>
-    `;
-  }
-
-  private _renderChainMode(
-    chain: SimulationShimResult,
-    sim: SimulationLocation,
-    signalType: string,
+  private _renderResult(
+    result: SimulationShimResult,
+    entity: EntityDefinitionLocation,
+    scenario: ScenarioLocation | undefined,
     timeRange: { start: number; end: number },
   ) {
-    const sourceEvents = chain.events.get(sim.shadows) || [];
-    // Find the last entity with events (the chain output)
-    let finalEntityId = sim.shadows;
-    let finalEvents = sourceEvents;
-    for (const [entityId, summary] of chain.entities) {
-      if (entityId !== sim.shadows && summary.simulated && summary.eventCount > 0) {
-        finalEntityId = entityId;
-        finalEvents = chain.events.get(entityId) || [];
-      }
-    }
+    const entityEvents = result.events.get(entity.fullEntityId) || [];
 
-    const entityList = [...chain.entities.entries()];
+    // Find source entities from the scenario
+    const sourceIds = scenario?.sources.map(s => s.shadows) || [];
+    const primarySourceId = sourceIds[0];
+    const sourceEvents = primarySourceId ? (result.events.get(primarySourceId) || []) : [];
+
+    // Build entity flow from result
+    const entityEntries = [...result.entities.entries()];
 
     return html`
       <div class="simulate-charts simulate-charts-chain">
+        ${sourceEvents.length > 0 ? html`
+          <tse-signal-chart
+            .events=${sourceEvents}
+            .signalType=${'numeric'}
+            .timeRange=${timeRange}
+            label="Source: ${this._shortId(primarySourceId || '')}">
+          </tse-signal-chart>
+        ` : ''}
         <tse-signal-chart
-          .events=${sourceEvents}
-          .signalType=${signalType}
-          .timeRange=${timeRange}
-          label="Source: ${this._shortEntityId(sim.shadows)}">
-        </tse-signal-chart>
-        <tse-signal-chart
-          .events=${finalEvents}
+          .events=${entityEvents}
           .signalType=${'numeric'}
           .timeRange=${timeRange}
-          label="Output: ${this._shortEntityId(finalEntityId)}">
+          label="${this._shortId(entity.fullEntityId)}">
         </tse-signal-chart>
       </div>
 
-      ${this._renderEntityFlow(entityList, sim.shadows)}
+      ${entityEntries.length > 1 ? this._renderEntityFlow(entityEntries) : nothing}
 
-      ${this._expandedEntity ? this._renderExpandedEntity(chain, timeRange) : nothing}
+      ${this._expandedEntity ? this._renderExpandedEntity(result, timeRange) : nothing}
 
-      ${chain.errors.length > 0 ? html`
+      ${result.errors.length > 0 ? html`
         <div class="sim-warning">
-          ${chain.errors.map(e => html`
+          ${result.errors.map(e => html`
             <div>${e.entityId ? html`<code>${e.entityId}</code> ` : ''}${e.message} (${e.phase})</div>
           `)}
         </div>
       ` : ''}
 
-      ${chain.missingEntities.length > 0 ? html`
+      ${result.missingEntities.length > 0 ? html`
         <div class="sim-warning">
           Missing simulation sources:
-          ${chain.missingEntities.map(id => html`<code>${id}</code> `)}
-          — add <code>simulate()</code> for these to complete the chain.
+          ${result.missingEntities.map(id => html`<code>${id}</code> `)}
+          — add these to the scenario to complete the chain.
         </div>
       ` : ''}
 
       <div class="simulation-stats">
         <span class="operator-stat">
-          ${sourceEvents.length} source → ${finalEvents.length} output
+          ${sourceEvents.length} source → ${entityEvents.length} output
         </span>
-        ${chain.serviceCalls.length > 0 ? html`
-          <span class="operator-stat">
-            ${chain.serviceCalls.length} service calls
-          </span>
+        ${result.serviceCalls.length > 0 ? html`
+          <span class="operator-stat">${result.serviceCalls.length} service calls</span>
         ` : ''}
       </div>
     `;
   }
 
-  private _renderEntityFlow(entities: [string, EntitySimSummary][], sourceId: string) {
+  private _renderEntityFlow(entities: [string, EntitySimSummary][]) {
     return html`
       <div class="chain-flow-bar">
         ${entities.map(([entityId, summary], i) => html`
           ${i > 0 ? html`<span class="chain-arrow">→</span>` : nothing}
           <button
-            class="chain-node ${this._entityNodeClass(summary, entityId === sourceId)}"
+            class="chain-node ${this._entityNodeClass(summary)}"
             title=${summary.simulated ? `${summary.kind}: ${summary.eventCount} events` : `${summary.kind}: no events`}
             @click=${() => this._toggleEntity(entityId)}>
-            ${this._shortEntityId(entityId)}
+            ${this._shortId(entityId)}
             <span class="chain-badge">${summary.eventCount}</span>
           </button>
         `)}
@@ -226,9 +171,9 @@ export class TseSimulatePanel extends LitElement {
     `;
   }
 
-  private _renderExpandedEntity(chain: SimulationShimResult, timeRange: { start: number; end: number }) {
-    const events = chain.events.get(this._expandedEntity!) || [];
-    const summary = chain.entities.get(this._expandedEntity!);
+  private _renderExpandedEntity(result: SimulationShimResult, timeRange: { start: number; end: number }) {
+    const events = result.events.get(this._expandedEntity!) || [];
+    const summary = result.entities.get(this._expandedEntity!);
 
     return html`
       <div class="chain-expanded-stage">
@@ -247,14 +192,14 @@ export class TseSimulatePanel extends LitElement {
     `;
   }
 
-  private _entityNodeClass(summary: EntitySimSummary, isSource: boolean): string {
-    if (isSource) return 'chain-node-ok';
+  private _entityNodeClass(summary: EntitySimSummary): string {
+    if (summary.kind === 'source') return 'chain-node-ok';
     if (summary.simulated && summary.eventCount > 0) return 'chain-node-ok';
     if (summary.simulated) return 'chain-node-partial';
     return 'chain-node-skip';
   }
 
-  private _shortEntityId(entityId: string): string {
+  private _shortId(entityId: string): string {
     const dot = entityId.indexOf('.');
     return dot >= 0 ? entityId.substring(dot + 1) : entityId;
   }
@@ -263,15 +208,31 @@ export class TseSimulatePanel extends LitElement {
     this._expandedEntity = this._expandedEntity === entityId ? null : entityId;
   }
 
-  private _onSelectSim(e: Event) {
-    this._selectedSimId = (e.target as HTMLSelectElement).value;
+  private _onSelectEntity(e: Event) {
+    this._selectedEntity = (e.target as HTMLSelectElement).value;
     this._expandedEntity = null;
+    this._fireSimulationChange();
+  }
+
+  private _onSelectScenario(e: Event) {
+    this._selectedScenario = (e.target as HTMLSelectElement).value;
+    this._expandedEntity = null;
+    this._fireSimulationChange();
   }
 
   private _onTimeRange(e: Event) {
     this._timeRangeMs = Number((e.target as HTMLSelectElement).value);
-    this.dispatchEvent(new CustomEvent('tse-simulation-time-change', {
-      bubbles: true, composed: true, detail: { timeRangeMs: this._timeRangeMs },
+    this._fireSimulationChange();
+  }
+
+  private _fireSimulationChange() {
+    this.dispatchEvent(new CustomEvent('tse-simulation-change', {
+      bubbles: true, composed: true,
+      detail: {
+        entity: this._selectedEntity,
+        scenario: this._selectedScenario,
+        timeRangeMs: this._timeRangeMs,
+      },
     }));
   }
 

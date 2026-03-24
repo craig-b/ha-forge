@@ -1,7 +1,8 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { BuildStep, EntityInfo, LogEntry } from '../types.js';
-import type { SimulationLocation, StreamSubscriptionLocation } from '../ast-analyzers.js';
+import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-analyzers.js';
+import type { SimulationShimResult } from '../simulation-shim.js';
 
 import './tse-build-output.js';
 import './tse-exports-panel.js';
@@ -15,10 +16,9 @@ export class TseBottomPanel extends LitElement {
   @property({ type: Array }) entities: EntityInfo[] = [];
   @property({ type: Array }) logs: LogEntry[] = [];
   @property({ type: Array }) logEntityIds: string[] = [];
-  @property({ type: Array }) simulations: SimulationLocation[] = [];
-  @property({ type: Array }) streams: StreamSubscriptionLocation[] = [];
-  @property({ type: Object }) simulationResults: Map<string, unknown> = new Map();
-  @property({ type: Object }) chainResults: Map<string, unknown> = new Map();
+  @property({ type: Array }) simEntities: EntityDefinitionLocation[] = [];
+  @property({ type: Array }) simScenarios: ScenarioLocation[] = [];
+  @property({ type: Object }) shimResult: SimulationShimResult | null = null;
   @state() private _activePanel = 'build-output';
 
   createRenderRoot() { return this; }
@@ -53,10 +53,9 @@ export class TseBottomPanel extends LitElement {
       </div>
       <div class="panel-content ${this._activePanel === 'simulate' ? 'active' : ''}">
         <tse-simulate-panel
-          .simulations=${this.simulations}
-          .streams=${this.streams}
-          .simulationResults=${this.simulationResults}
-          .chainResults=${this.chainResults}>
+          .entities=${this.simEntities}
+          .scenarios=${this.simScenarios}
+          .shimResult=${this.shimResult}>
         </tse-simulate-panel>
       </div>
     `;

@@ -182,7 +182,7 @@ async function loadSingleBundle(
 
   // Walk all exports — check __kind discriminants first since they also have id/name
   for (const [, value] of Object.entries(mod)) {
-    if (isSimulationDefinition(value)) continue; // source-only, skip
+    if (isSimulationDefinition(value) || isScenarioDefinition(value)) continue; // source-only, skip
     if (isDeviceDefinition(value)) {
       deviceDefs.push(value);
     } else if (isAutomationDefinition(value)) {
@@ -293,6 +293,15 @@ export function isSimulationDefinition(value: unknown): value is SimulationDefin
     value !== null &&
     '__kind' in value &&
     (value as Record<string, unknown>).__kind === 'simulate'
+  );
+}
+
+export function isScenarioDefinition(value: unknown): boolean {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    '__kind' in value &&
+    (value as Record<string, unknown>).__kind === 'scenario'
   );
 }
 

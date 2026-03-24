@@ -2,7 +2,7 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, type SimulationLocation, type StreamSubscriptionLocation } from './ast-analyzers.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, findScenarios, type SimulationLocation, type StreamSubscriptionLocation, type EntityDefinitionLocation, type ScenarioLocation } from './ast-analyzers.js';
 import { signals as clientSignals, runSimulation as clientRunSimulation } from './simulation.js';
 import { runShimSimulation, type SimulationShimResult } from './simulation-shim.js';
 
@@ -207,7 +207,9 @@ export class TseApp extends LitElement {
   @state() private _simulations: SimulationLocation[] = [];
   @state() private _streams: StreamSubscriptionLocation[] = [];
   @state() private _simulationResults: Map<string, unknown> = new Map();
-  @state() private _chainResults: Map<string, SimulationShimResult> = new Map();
+  @state() private _simEntities: EntityDefinitionLocation[] = [];
+  @state() private _simScenarios: ScenarioLocation[] = [];
+  @state() private _shimResult: SimulationShimResult | null = null;
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
 
@@ -237,9 +239,10 @@ export class TseApp extends LitElement {
       this._logFilter = e.detail;
       this._loadLogs(e.detail);
     }) as EventListener);
-    this.addEventListener('tse-simulation-time-change', ((e: CustomEvent) => {
-      this._simTimeRangeMs = e.detail.timeRangeMs;
+    this.addEventListener('tse-simulation-change', ((e: CustomEvent) => {
+      if (e.detail.timeRangeMs) this._simTimeRangeMs = e.detail.timeRangeMs;
       this._runSimulations();
+      this._runShimSimulation();
     }) as EventListener);
   }
 
@@ -271,10 +274,9 @@ export class TseApp extends LitElement {
             .entities=${this._entities}
             .logs=${this._logs}
             .logEntityIds=${this._logEntityIds}
-            .simulations=${this._simulations}
-            .streams=${this._streams}
-            .simulationResults=${this._simulationResults}
-            .chainResults=${this._chainResults}
+            .simEntities=${this._simEntities}
+            .simScenarios=${this._simScenarios}
+            .shimResult=${this._shimResult}
           ></tse-bottom-panel>
         </div>
       </div>
@@ -2393,13 +2395,18 @@ export class TseApp extends LitElement {
   private _updateSimulationData() {
     if (!isAstReady()) return;
 
-    // Collect simulations from all open files
+    // Collect simulations, entities, and scenarios from all open files
     const allSimulations: SimulationLocation[] = [];
+    const allEntities: EntityDefinitionLocation[] = [];
+    const allScenarios: ScenarioLocation[] = [];
     for (const file of this._openFiles) {
-      const sims = findSimulations(file.content, file.path);
-      allSimulations.push(...sims);
+      allSimulations.push(...findSimulations(file.content, file.path));
+      allEntities.push(...findEntityDefinitions(file.content, file.path));
+      allScenarios.push(...findScenarios(file.content, file.path));
     }
     this._simulations = allSimulations;
+    this._simEntities = allEntities;
+    this._simScenarios = allScenarios;
 
     // Find stream subscriptions in the current file
     const model = this._editor?.getModel();
@@ -2408,7 +2415,7 @@ export class TseApp extends LitElement {
     }
 
     this._runSimulations();
-    this._runChainSimulations();
+    this._runShimSimulation();
   }
 
   private _runSimulations() {
@@ -2480,76 +2487,116 @@ export class TseApp extends LitElement {
     this._simulationResults = results;
   }
 
-  private _runChainSimulations() {
-    if (this._simulations.length === 0 || !isAstReady()) {
-      this._chainResults = new Map();
+  private _runShimSimulation() {
+    if (this._simScenarios.length === 0 || !isAstReady()) {
+      this._shimResult = null;
       return;
     }
 
-    // Transpile all open files and concatenate for the shim
     const tsApi = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
     if (!tsApi) {
-      this._chainResults = new Map();
+      this._shimResult = null;
       return;
     }
 
+    // Transpile all open files for shim execution
     const transpiledParts: string[] = [];
     for (const file of this._openFiles) {
       try {
         const result = tsApi.transpileModule(file.content, {
           compilerOptions: {
             target: tsApi.ScriptTarget.ES2020,
-            module: tsApi.ModuleKind.None, // strip import/export for shim execution
+            module: tsApi.ModuleKind.None,
             removeComments: true,
           },
           fileName: file.path,
         });
-        // Strip any remaining export/import statements from the output
         const cleaned = result.outputText
           .replace(/^export\s+(default\s+)?/gm, '')
           .replace(/^import\s+.*$/gm, '');
         transpiledParts.push(cleaned);
       } catch {
-        // Transpilation failed for this file — skip it
+        // Skip files that fail to transpile
       }
     }
 
     if (transpiledParts.length === 0) {
-      this._chainResults = new Map();
+      this._shimResult = null;
       return;
     }
 
-    const transpiledJs = transpiledParts.join('\n;\n');
-
-    // Collect source events from existing single-hop results
+    // Generate source events from the first scenario's sources
+    // (the panel will re-trigger when the user picks a different scenario)
+    const scenario = this._simScenarios[0];
+    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
     const sourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
-    for (const sim of this._simulations) {
-      const singleResult = this._simulationResults.get(sim.id) as { input: Array<{ t: number; value: string | number }> } | undefined;
-      if (singleResult?.input) {
-        sourceEvents.set(sim.id, singleResult.input);
+
+    for (const source of scenario.sources) {
+      const p = source.signalParams;
+      let events: Array<{ t: number; value: string | number }>;
+      switch (source.signalType) {
+        case 'numeric':
+          events = clientSignals.numeric({
+            base: typeof p.base === 'number' ? p.base : 20,
+            noise: typeof p.noise === 'number' ? p.noise : 3,
+            spikeTo: typeof p.spikeTo === 'number' ? p.spikeTo : undefined,
+            spikeChance: typeof p.spikeChance === 'number' ? p.spikeChance : undefined,
+            dropoutEvery: typeof p.dropoutEvery === 'number' ? p.dropoutEvery : undefined,
+            interval: typeof p.interval === 'number' ? p.interval : 1000,
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
+          break;
+        case 'binary':
+          events = clientSignals.binary({
+            onDuration: Array.isArray(p.onDuration) ? p.onDuration as [number, number] : [3000, 8000],
+            offDuration: Array.isArray(p.offDuration) ? p.offDuration as [number, number] : [2000, 5000],
+            falseRetrigger: typeof p.falseRetrigger === 'number' ? p.falseRetrigger : undefined,
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
+          break;
+        case 'enum':
+          events = clientSignals.enum({
+            states: Array.isArray(p.states) ? p.states as string[] : ['idle', 'active', 'standby'],
+            dwellRange: Array.isArray(p.dwellRange) ? p.dwellRange as [number, number] : [3000, 8000],
+            seed: typeof p.seed === 'number' ? p.seed : 42,
+          })(timeRange);
+          break;
+        default:
+          events = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
       }
+      // Use shadows entity ID as the source event key (the shim's simulate.scenario
+      // is a no-op; we feed events directly by entity ID)
+      sourceEvents.set(source.shadows, events);
     }
 
     if (sourceEvents.size === 0) {
-      this._chainResults = new Map();
+      this._shimResult = null;
       return;
     }
 
-    // Run the shim simulation
-    const chainResults = new Map<string, SimulationShimResult>();
-    try {
-      const result = runShimSimulation(transpiledJs, sourceEvents, this._simTimeRangeMs);
-      // Associate result with each simulation that has downstream entities
-      for (const sim of this._simulations) {
-        if (sourceEvents.has(sim.id) && result.entities.size > 1) {
-          chainResults.set(sim.id, result);
-        }
-      }
-    } catch {
-      // Shim simulation failed — fall back to single-hop only
+    // Wrap source events with fake simulation IDs for the shim
+    // The shim expects Map<simId, events> but scenarios use shadows directly
+    const shimSourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
+    let idx = 0;
+    for (const [shadows, events] of sourceEvents) {
+      shimSourceEvents.set(`__scenario_${idx++}`, events);
+      // Also inject simulate() calls into the transpiled JS so the shim knows about shadows
     }
 
-    this._chainResults = chainResults;
+    // Build transpiled JS with injected simulate() calls for the scenario sources
+    const injectLines: string[] = [];
+    idx = 0;
+    for (const source of scenario.sources) {
+      injectLines.push(`simulate({ id: '__scenario_${idx++}', shadows: '${source.shadows}', signal: function() { return []; } });`);
+    }
+
+    const transpiledJs = injectLines.join('\n') + '\n;\n' + transpiledParts.join('\n;\n');
+
+    try {
+      this._shimResult = runShimSimulation(transpiledJs, shimSourceEvents, this._simTimeRangeMs);
+    } catch {
+      this._shimResult = null;
+    }
   }
 
   // ---- Keyboard shortcuts ----

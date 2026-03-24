@@ -76,6 +76,15 @@ export interface SimulationDefinition {
   signal: SignalGenerator;
 }
 
+/** A named simulation scenario — a group of signal sources that run together. */
+export interface ScenarioDefinition {
+  __kind: 'scenario';
+  /** Scenario name shown in the UI picker. */
+  name: string;
+  /** Signal sources, each shadowing a real entity. */
+  sources: Array<{ shadows: string; signal: SignalGenerator }>;
+}
+
 /**
  * Device metadata for grouping entities under a single HA device.
  * Entities sharing the same `id` appear together in the HA device registry.
