@@ -110,14 +110,14 @@ export class TseSimulatePanel extends LitElement {
         ${sourceEvents.length > 0 ? html`
           <tse-signal-chart
             .events=${sourceEvents}
-            .signalType=${'numeric'}
+            .signalType=${this._detectSignalType(sourceEvents)}
             .timeRange=${timeRange}
             label="Source: ${this._shortId(primarySourceId || '')}">
           </tse-signal-chart>
         ` : ''}
         <tse-signal-chart
           .events=${entityEvents}
-          .signalType=${'numeric'}
+          .signalType=${this._detectSignalType(entityEvents)}
           .timeRange=${timeRange}
           label="${this._shortId(entity.fullEntityId)}">
         </tse-signal-chart>
@@ -184,7 +184,7 @@ export class TseSimulatePanel extends LitElement {
         </div>
         <tse-signal-chart
           .events=${events}
-          .signalType=${'numeric'}
+          .signalType=${this._detectSignalType(events)}
           .timeRange=${timeRange}
           label="${this._expandedEntity}">
         </tse-signal-chart>
@@ -197,6 +197,16 @@ export class TseSimulatePanel extends LitElement {
     if (summary.simulated && summary.eventCount > 0) return 'chain-node-ok';
     if (summary.simulated) return 'chain-node-partial';
     return 'chain-node-skip';
+  }
+
+  private _detectSignalType(events: SignalEvent[]): 'numeric' | 'binary' | 'enum' {
+    if (events.length === 0) return 'numeric';
+    const values = events.map(e => e.value).filter(v => v !== 'unavailable');
+    if (values.length === 0) return 'numeric';
+    if (values.every(v => typeof v === 'number')) return 'numeric';
+    const strs = new Set(values.map(v => String(v).toLowerCase()));
+    if (strs.size <= 2 && [...strs].every(s => s === 'on' || s === 'off')) return 'binary';
+    return 'enum';
   }
 
   private _shortId(entityId: string): string {
