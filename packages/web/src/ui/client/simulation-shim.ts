@@ -556,7 +556,8 @@ export function runShimSimulation(
     sampled: (inner: Record<string, unknown>) => inner,
     buffered: (inner: Record<string, unknown>) => inner,
     average: 'average', sum: 'sum', min: 'min', max: 'max', last: 'last', count: 'count',
-    exports: {},  // absorb any CommonJS-style exports emitted by transpiler
+    exports: {},  // absorb CommonJS-style exports emitted by transpiler
+    module: { exports: {} },  // absorb module.exports patterns
     console,      // pass through real console so user logs appear in devtools
     setTimeout: (cb: () => void, ms: number) => {
       const id = state.nextTimerId++;
