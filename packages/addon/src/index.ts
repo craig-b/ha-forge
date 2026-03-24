@@ -221,12 +221,25 @@ async function main(): Promise<void> {
           }
           let entityCount = 0;
           if (result.bundle?.success && buildManager) {
-            entityCount = (await buildManager.deploy()).entityCount;
+            entityCount = (await buildManager.smartDeploy()).entityCount;
             wsHub.broadcast('entities', 'deployed', { entityCount });
           }
           const stepsWithDiagnostics = result.steps.map((step) => {
             if (step.step === 'tsc-check' && result.tscCheck?.diagnostics.length) {
               return { ...step, diagnostics: result.tscCheck.diagnostics };
+            }
+            if (step.step === 'bundle' && result.bundle) {
+              const bundleDiags = result.bundle.files
+                .filter((f) => !f.success)
+                .map((f) => ({
+                  file: f.inputFile.replace(/^\/config\//, ''),
+                  line: 1,
+                  column: 1,
+                  code: 0,
+                  message: f.errors.join('; '),
+                  severity: 'error' as const,
+                }));
+              if (bundleDiags.length) return { ...step, diagnostics: bundleDiags };
             }
             return step;
           });
