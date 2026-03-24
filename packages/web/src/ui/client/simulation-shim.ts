@@ -508,14 +508,6 @@ function factoryDomain(kind: string): string {
   return map[kind] || kind;
 }
 
-// ---- Simulate definition shim ----
-
-interface SimSourceDef {
-  id: string;
-  shadows: string;
-  signal?: unknown;
-}
-
 // ---- Main simulation runner ----
 
 /**
@@ -527,7 +519,7 @@ interface SimSourceDef {
  * model as Monaco's TypeScript worker.
  *
  * @param transpiledJs - User code transpiled to JS (from ts.transpileModule).
- * @param sourceEvents - Map of simulation ID → generated source events.
+ * @param sourceEvents - Map of entity ID → generated source events.
  * @param timeRangeMs - Duration to simulate in virtual time.
  */
 export function runShimSimulation(
@@ -536,7 +528,6 @@ export function runShimSimulation(
   timeRangeMs: number,
 ): SimulationShimResult {
   const state = createSimState();
-  const simSources = new Map<string, SimSourceDef>();
 
   // Build the shim globals — only what we explicitly provide is available
   const factories: Record<string, EntityFactoryFn> = {};
@@ -551,10 +542,7 @@ export function runShimSimulation(
 
   const shimGlobals: Record<string, unknown> = {
     ...factories,
-    simulate: (opts: SimSourceDef) => {
-      simSources.set(opts.id, opts);
-      return { __kind: 'simulate', ...opts };
-    },
+    simulate: { scenario() { return { __kind: 'scenario' }; } },
     signals: {}, // signals are evaluated at AST time, not runtime
     device: (config: Record<string, unknown>) => ({ __kind: 'device', ...config }),
     debounced: (inner: Record<string, unknown>) => inner,
@@ -608,21 +596,17 @@ export function runShimSimulation(
     if (reg.init) reg.init();
   }
 
-  // Feed source events through the simulation
-  for (const [simId, events] of sourceEvents) {
-    const simDef = simSources.get(simId);
-    if (!simDef) continue;
-
-    const shadowsId = simDef.shadows;
+  // Feed source events through the simulation (keyed by entity ID directly)
+  for (const [entityId, events] of sourceEvents) {
     const sorted = [...events].sort((a, b) => a.t - b.t);
 
     // Initialize source entity state
     if (sorted.length > 0) {
-      state.stateStore.set(shadowsId, { state: sorted[0].value, attributes: {} });
+      state.stateStore.set(entityId, { state: sorted[0].value, attributes: {} });
     }
 
     // Record source events
-    state.outputEvents.set(shadowsId, [...sorted]);
+    state.outputEvents.set(entityId, [...sorted]);
 
     // Feed each event
     for (let i = 0; i < sorted.length; i++) {
@@ -631,10 +615,10 @@ export function runShimSimulation(
 
       flushTimersUpTo(state.timers, event.t, (t) => { state.currentTime = t; });
 
-      const oldState = state.stateStore.get(shadowsId)?.state;
-      state.stateStore.set(shadowsId, { state: event.value, attributes: {} });
+      const oldState = state.stateStore.get(entityId)?.state;
+      state.stateStore.set(entityId, { state: event.value, attributes: {} });
 
-      notifyStreamSubs(state, shadowsId, event.value, oldState);
+      notifyStreamSubs(state, entityId, event.value, oldState);
 
       const nextTime = i + 1 < sorted.length ? sorted[i + 1].t : event.t + 60_000;
       flushTimersUpTo(state.timers, nextTime - 1, (t) => { state.currentTime = t; });

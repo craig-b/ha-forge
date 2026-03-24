@@ -65,17 +65,6 @@ export interface TimeRange {
 /** A pure function that generates signal events for a given time range. */
 export type SignalGenerator = (range: TimeRange) => SignalEvent[];
 
-/** A simulation definition — source-only, never deployed to HA. */
-export interface SimulationDefinition {
-  __kind: 'simulate';
-  /** Unique simulation identifier. */
-  id: string;
-  /** The real HA entity_id this simulation stands in for. */
-  shadows: string;
-  /** Signal generator that produces synthetic events. */
-  signal: SignalGenerator;
-}
-
 /** A named simulation scenario — a group of signal sources that run together. */
 export interface ScenarioDefinition {
   __kind: 'scenario';

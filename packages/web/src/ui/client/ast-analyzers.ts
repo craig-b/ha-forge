@@ -123,11 +123,6 @@ function checkFactoryCall(
     checkComputedCall(node, sf, diagnostics, entities);
     return;
   }
-  // simulate() has different required fields (id, shadows, signal) — not an entity
-  if (name === 'simulate') {
-    checkSimulateCall(node, sf, diagnostics);
-    return;
-  }
   // automation doesn't have a name field
   const requiresName = name !== 'automation';
 
@@ -619,49 +614,6 @@ function checkComputedCall(
   }
 }
 
-// ---- simulate() validation ----
-
-function checkSimulateCall(
-  node: import('typescript').CallExpression,
-  sf: import('typescript').SourceFile,
-  diagnostics: AnalyzerDiagnostic[],
-) {
-  if (!ts) return;
-  const arg = node.arguments[0];
-  if (!arg || !ts.isObjectLiteralExpression(arg)) return;
-
-  const props = new Map<string, import('typescript').Node>();
-  for (const prop of arg.properties) {
-    if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.name)) {
-      props.set(prop.name.text, prop.initializer);
-    } else if (ts.isShorthandPropertyAssignment(prop)) {
-      props.set(prop.name.text, prop);
-    }
-  }
-
-  if (!props.has('id')) {
-    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'id' property`, 'error'));
-  }
-  if (!props.has('shadows')) {
-    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'shadows' property — the real HA entity ID to shadow`, 'error'));
-  }
-  if (!props.has('signal')) {
-    diagnostics.push(markerAt(arg, sf, `simulate() missing required 'signal' property — use signals.numeric(), signals.binary(), etc.`, 'error'));
-  }
-
-  // Validate shadows looks like an entity ID (domain.object_id)
-  const shadowsNode = props.get('shadows');
-  if (shadowsNode && ts.isStringLiteral(shadowsNode)) {
-    const value = shadowsNode.text;
-    if (value && !value.includes('.')) {
-      diagnostics.push(markerAt(shadowsNode, sf,
-        `shadows should be a fully qualified entity ID (e.g. 'sensor.temperature'), got '${value}'`,
-        'error',
-      ));
-    }
-  }
-}
-
 // ---- Entity ID domain mismatch ----
 
 /** Maps factory names to their HA entity domain. Exported for CodeLens/inlay hints. */
@@ -690,7 +642,6 @@ export const FACTORY_DOMAINS: Record<string, string> = {
   notify: 'notify',
   update: 'update',
   image: 'image',
-  simulate: 'simulate',
 };
 
 function checkIdDomainMismatch(
@@ -2075,18 +2026,6 @@ export function findEntityDependencies(sourceText: string, fileName = 'file.ts')
   return result;
 }
 
-// ---- Simulation detection ----
-
-export interface SimulationLocation {
-  id: string;
-  shadows: string;
-  signalType: 'numeric' | 'binary' | 'enum' | 'recorded' | 'unknown';
-  /** Literal signal generator params extracted from the AST (e.g. { base: 22, noise: 1.5, ... }). */
-  signalParams: Record<string, unknown>;
-  line: number;
-  endLine: number;
-}
-
 /** Extract literal values from an AST object literal expression (numbers, strings, arrays of numbers). */
 export function extractObjectLiteral(node: import('typescript').Node): Record<string, unknown> {
   if (!ts || !ts.isObjectLiteralExpression(node)) return {};
@@ -2113,74 +2052,13 @@ export function extractObjectLiteral(node: import('typescript').Node): Record<st
   return result;
 }
 
-/** Find simulate() calls in source text. */
-export function findSimulations(sourceText: string, fileName = 'file.ts'): SimulationLocation[] {
-  if (!ts) return [];
-  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
-  const results: SimulationLocation[] = [];
-
-  function visit(node: import('typescript').Node) {
-    if (ts!.isCallExpression(node) && ts!.isIdentifier(node.expression) && node.expression.text === 'simulate') {
-      const arg = node.arguments[0];
-      if (!arg || !ts!.isObjectLiteralExpression(arg)) {
-        ts!.forEachChild(node, visit);
-        return;
-      }
-
-      let id = '';
-      let shadows = '';
-      let signalType: SimulationLocation['signalType'] = 'unknown';
-      let signalParams: Record<string, unknown> = {};
-
-      for (const prop of arg.properties) {
-        if (!ts!.isPropertyAssignment(prop) || !ts!.isIdentifier(prop.name)) continue;
-        const name = prop.name.text;
-        if (name === 'id' && ts!.isStringLiteral(prop.initializer)) {
-          id = prop.initializer.text;
-        } else if (name === 'shadows' && ts!.isStringLiteral(prop.initializer)) {
-          shadows = prop.initializer.text;
-        } else if (name === 'signal' && ts!.isCallExpression(prop.initializer)) {
-          const callExpr = prop.initializer.expression;
-          if (ts!.isPropertyAccessExpression(callExpr) && ts!.isIdentifier(callExpr.expression) &&
-              callExpr.expression.text === 'signals') {
-            const method = callExpr.name.text;
-            if (method === 'numeric' || method === 'binary' || method === 'enum' || method === 'recorded') {
-              signalType = method;
-            }
-            // Extract literal params from the signals.*() argument
-            const signalArg = prop.initializer.arguments[0];
-            if (signalArg) {
-              signalParams = extractObjectLiteral(signalArg);
-            }
-          }
-        }
-      }
-
-      if (id) {
-        const { line: startLine } = sf.getLineAndCharacterOfPosition(node.getStart(sf));
-        const { line: endLine } = sf.getLineAndCharacterOfPosition(node.getEnd());
-        results.push({
-          id,
-          shadows,
-          signalType,
-          signalParams,
-          line: startLine + 1,
-          endLine: endLine + 1,
-        });
-      }
-    }
-    ts!.forEachChild(node, visit);
-  }
-
-  visit(sf);
-  return results;
-}
-
 // ---- Scenario detection ----
+
+export type SignalType = 'numeric' | 'binary' | 'enum' | 'recorded' | 'unknown';
 
 export interface ScenarioLocation {
   name: string;
-  sources: Array<{ shadows: string; signalType: SimulationLocation['signalType']; signalParams: Record<string, unknown> }>;
+  sources: Array<{ shadows: string; signalType: SignalType; signalParams: Record<string, unknown> }>;
   line: number;
   endLine: number;
 }
@@ -2209,7 +2087,7 @@ export function findScenarios(sourceText: string, fileName = 'file.ts'): Scenari
       for (const el of sourcesArg.elements) {
         if (!ts!.isObjectLiteralExpression(el)) continue;
         let shadows = '';
-        let signalType: SimulationLocation['signalType'] = 'unknown';
+        let signalType: SignalType = 'unknown';
         let signalParams: Record<string, unknown> = {};
 
         for (const prop of el.properties) {
@@ -2242,116 +2120,6 @@ export function findScenarios(sourceText: string, fileName = 'file.ts'): Scenari
       }
     }
     ts!.forEachChild(node, visit);
-  }
-
-  visit(sf);
-  return results;
-}
-
-// ---- Stream subscription detection ----
-
-export interface StreamSubscriptionLocation {
-  entityId: string;
-  line: number;
-  operators: Array<{ name: string; args: unknown[]; line: number }>;
-  parentEntityId?: string;
-}
-
-/** Find this.events.stream() chains and extract operator names and literal args. */
-export function findStreamSubscriptions(sourceText: string, fileName = 'file.ts'): StreamSubscriptionLocation[] {
-  if (!ts) return [];
-  const sf = ts.createSourceFile(fileName, sourceText, ts.ScriptTarget.Latest, true);
-  const results: StreamSubscriptionLocation[] = [];
-
-  function visit(node: import('typescript').Node) {
-    // Look for: this.events.stream('entity_id').operator().operator().subscribe(...)
-    if (ts!.isCallExpression(node)) {
-      const chain = extractStreamChain(node, sf);
-      if (chain) results.push(chain);
-    }
-    ts!.forEachChild(node, visit);
-  }
-
-  function extractStreamChain(node: import('typescript').CallExpression, sf: import('typescript').SourceFile): StreamSubscriptionLocation | null {
-    // Walk up the method call chain to find the root .stream() call
-    let current: import('typescript').Node = node;
-    const operators: Array<{ name: string; args: unknown[]; line: number }> = [];
-
-    // Walk the chain from outermost to find the stream() root
-    const callStack: import('typescript').CallExpression[] = [];
-    let cursor: import('typescript').Expression = node.expression;
-
-    // Unwind: subscribe().throttle().debounce().stream()
-    callStack.push(node);
-    while (ts!.isPropertyAccessExpression(cursor) && ts!.isCallExpression(cursor.expression)) {
-      // This is like: something.method(...)
-      // cursor = something.method, cursor.expression = something which is a call
-      callStack.push(cursor.expression as import('typescript').CallExpression);
-      // The actual expression to check is the call's expression
-      const inner = (cursor.expression as import('typescript').CallExpression).expression;
-      if (ts!.isPropertyAccessExpression(inner)) {
-        cursor = inner;
-      } else {
-        break;
-      }
-    }
-
-    // Now find the .stream() call in the chain
-    // We need: this.events.stream('entity_id')
-    let streamCall: import('typescript').CallExpression | null = null;
-    let entityId = '';
-
-    for (const call of callStack) {
-      if (ts!.isPropertyAccessExpression(call.expression) && call.expression.name.text === 'stream') {
-        // Check it's this.events.stream
-        const obj = call.expression.expression;
-        if (ts!.isPropertyAccessExpression(obj) && obj.name.text === 'events' &&
-            obj.expression.kind === ts!.SyntaxKind.ThisKeyword) {
-          streamCall = call;
-          if (call.arguments.length > 0 && ts!.isStringLiteral(call.arguments[0])) {
-            entityId = call.arguments[0].text;
-          }
-          break;
-        }
-      }
-    }
-
-    if (!streamCall || !entityId) return null;
-
-    // Now extract operators between stream() and subscribe()
-    // Walk from stream call outward
-    let walker: import('typescript').Node = streamCall;
-    while (walker.parent) {
-      const parent = walker.parent;
-      if (ts!.isPropertyAccessExpression(parent) && parent.parent && ts!.isCallExpression(parent.parent)) {
-        const methodName = parent.name.text;
-        if (methodName === 'subscribe') break;
-
-        const callNode = parent.parent;
-        const args: unknown[] = [];
-        for (const arg of callNode.arguments) {
-          if (ts!.isNumericLiteral(arg)) {
-            args.push(Number(arg.text));
-          } else if (ts!.isStringLiteral(arg)) {
-            args.push(arg.text);
-          }
-          // Closures can't be serialized — skip
-        }
-
-        const { line } = sf.getLineAndCharacterOfPosition(parent.name.getStart(sf));
-        operators.push({ name: methodName, args, line: line + 1 });
-        walker = callNode;
-      } else {
-        break;
-      }
-    }
-
-    const { line } = sf.getLineAndCharacterOfPosition(streamCall.getStart(sf));
-    return {
-      entityId,
-      line: line + 1,
-      operators,
-    };
   }
 
   visit(sf);

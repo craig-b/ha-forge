@@ -583,9 +583,9 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `/** Typed computed attribute — watch list constrained to known HA entity IDs. */`,
     `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
-    `/** Define a signal simulation that shadows a real entity ID. Source-only — never deployed. */`,
-    `declare function simulate(options: { id: string; shadows: HAEntityId; signal: import('@ha-forge/sdk').SignalGenerator }): import('@ha-forge/sdk').SimulationDefinition;`,
-    `/** Library of pure signal generators for use with simulate(). */`,
+    `/** Define simulation scenarios — groups of signal sources that run together. */`,
+    `declare const simulate: { scenario(name: string, sources: Array<{ shadows: HAEntityId; signal: import('@ha-forge/sdk').SignalGenerator }>): import('@ha-forge/sdk').ScenarioDefinition };`,
+    `/** Library of pure signal generators for use with simulate.scenario(). */`,
     `declare const signals: typeof import('@ha-forge/sdk').signals;`,
     ``,
   ].join('\n');

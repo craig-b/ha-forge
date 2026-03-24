@@ -2,8 +2,8 @@ import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, findScenarios, type SimulationLocation, type StreamSubscriptionLocation, type EntityDefinitionLocation, type ScenarioLocation } from './ast-analyzers.js';
-import { signals as clientSignals, runSimulation as clientRunSimulation } from './simulation.js';
+import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findScenarios, type EntityDefinitionLocation, type ScenarioLocation } from './ast-analyzers.js';
+import { signals as clientSignals } from './simulation.js';
 import { runShimSimulation, type SimulationShimResult } from './simulation-shim.js';
 
 import './components/tse-header.js';
@@ -204,9 +204,6 @@ export class TseApp extends LitElement {
   @state() private _entities: EntityInfo[] = [];
   @state() private _logs: LogEntry[] = [];
   @state() private _logEntityIds: string[] = [];
-  @state() private _simulations: SimulationLocation[] = [];
-  @state() private _streams: StreamSubscriptionLocation[] = [];
-  @state() private _simulationResults: Map<string, unknown> = new Map();
   @state() private _simEntities: EntityDefinitionLocation[] = [];
   @state() private _simScenarios: ScenarioLocation[] = [];
   @state() private _shimResult: SimulationShimResult | null = null;
@@ -243,7 +240,6 @@ export class TseApp extends LitElement {
     this.addEventListener('tse-simulation-change', ((e: CustomEvent) => {
       if (e.detail.timeRangeMs) this._simTimeRangeMs = e.detail.timeRangeMs;
       if (e.detail.scenario) this._simSelectedScenario = e.detail.scenario;
-      this._runSimulations();
       this._runShimSimulation();
     }) as EventListener);
   }
@@ -599,29 +595,6 @@ export class TseApp extends LitElement {
           });
         }
 
-        // Simulation lenses
-        const sourceText = model.getValue();
-        const sims = findSimulations(sourceText, model.uri.path || 'file.ts');
-        for (const sim of sims) {
-          lenses.push({
-            range: new monaco.Range(sim.line, 1, sim.line, 1),
-            command: { id: '', title: `\u{1F4CA} simulate: ${sim.signalType} \u2192 ${sim.shadows} \u25B6 Preview` },
-          });
-        }
-
-        // Stream subscription simulation availability lenses
-        const streams = findStreamSubscriptions(sourceText, model.uri.path || 'file.ts');
-        const shadowedEntities = new Set(this._simulations.map(s => s.shadows));
-        for (const stream of streams) {
-          const matchCount = this._simulations.filter(s => s.shadows === stream.entityId).length;
-          if (matchCount > 0) {
-            lenses.push({
-              range: new monaco.Range(stream.line, 1, stream.line, 1),
-              command: { id: '', title: `\u{1F4CA} ${matchCount} simulation(s) \u25B6 Preview` },
-            });
-          }
-        }
-
         return { lenses, dispose() {} };
       },
     });
@@ -660,35 +633,6 @@ export class TseApp extends LitElement {
           paddingLeft: true,
           tooltip: `MQTT entity: ${def.fullEntityId}`,
         }));
-
-        // Simulation operator pass rate hints
-        if (this._simulationResults.size > 0) {
-          const streams = findStreamSubscriptions(sourceText, model.uri.path || 'file.ts');
-          for (const stream of streams) {
-            // Find matching simulation result
-            const matchingSim = this._simulations.find(s => s.shadows === stream.entityId);
-            if (!matchingSim) continue;
-            const result = this._simulationResults.get(matchingSim.id) as {
-              stats: { perOperator: Array<{ name: string; inputCount: number; outputCount: number }> };
-            } | undefined;
-            if (!result) continue;
-
-            // Match operators by index
-            for (let i = 0; i < stream.operators.length && i < result.stats.perOperator.length; i++) {
-              const op = stream.operators[i];
-              const stat = result.stats.perOperator[i];
-              const passRate = stat.inputCount > 0
-                ? ((stat.outputCount / stat.inputCount) * 100).toFixed(0)
-                : '0';
-              hints.push({
-                position: { lineNumber: op.line, column: (lines[op.line - 1] || '').length + 1 },
-                label: `/* ${passRate}% pass */`,
-                paddingLeft: true,
-                tooltip: `${stat.name}: ${stat.inputCount} in \u2192 ${stat.outputCount} out`,
-              });
-            }
-          }
-        }
 
         return { hints, dispose() {} };
       },
@@ -2397,96 +2341,16 @@ export class TseApp extends LitElement {
   private _updateSimulationData() {
     if (!isAstReady()) return;
 
-    // Collect simulations, entities, and scenarios from all open files
-    const allSimulations: SimulationLocation[] = [];
     const allEntities: EntityDefinitionLocation[] = [];
     const allScenarios: ScenarioLocation[] = [];
     for (const file of this._openFiles) {
-      allSimulations.push(...findSimulations(file.content, file.path));
       allEntities.push(...findEntityDefinitions(file.content, file.path));
       allScenarios.push(...findScenarios(file.content, file.path));
     }
-    this._simulations = allSimulations;
     this._simEntities = allEntities;
     this._simScenarios = allScenarios;
 
-    // Find stream subscriptions in the current file
-    const model = this._editor?.getModel();
-    if (model) {
-      this._streams = findStreamSubscriptions(model.getValue(), model.uri.path || 'file.ts');
-    }
-
-    this._runSimulations();
     this._runShimSimulation();
-  }
-
-  private _runSimulations() {
-    if (this._simulations.length === 0) {
-      this._simulationResults = new Map();
-      return;
-    }
-
-    const results = new Map<string, unknown>();
-    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
-
-    for (const sim of this._simulations) {
-      // Generate signal events using the params extracted from the user's signals.*() call
-      const p = sim.signalParams;
-      let inputEvents: Array<{ t: number; value: string | number }>;
-      switch (sim.signalType) {
-        case 'numeric':
-          inputEvents = clientSignals.numeric({
-            base: typeof p.base === 'number' ? p.base : 20,
-            noise: typeof p.noise === 'number' ? p.noise : 3,
-            spikeTo: typeof p.spikeTo === 'number' ? p.spikeTo : undefined,
-            spikeChance: typeof p.spikeChance === 'number' ? p.spikeChance : undefined,
-            dropoutEvery: typeof p.dropoutEvery === 'number' ? p.dropoutEvery : undefined,
-            interval: typeof p.interval === 'number' ? p.interval : 1000,
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        case 'binary':
-          inputEvents = clientSignals.binary({
-            onDuration: Array.isArray(p.onDuration) ? p.onDuration as [number, number] : [3000, 8000],
-            offDuration: Array.isArray(p.offDuration) ? p.offDuration as [number, number] : [2000, 5000],
-            falseRetrigger: typeof p.falseRetrigger === 'number' ? p.falseRetrigger : undefined,
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        case 'enum':
-          inputEvents = clientSignals.enum({
-            states: Array.isArray(p.states) ? p.states as string[] : ['idle', 'active', 'standby'],
-            dwellRange: Array.isArray(p.dwellRange) ? p.dwellRange as [number, number] : [3000, 8000],
-            seed: typeof p.seed === 'number' ? p.seed : 42,
-          })(timeRange);
-          break;
-        default:
-          inputEvents = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
-      }
-
-      // Find matching stream subscriptions for this simulation's shadowed entity
-      const matchingStreams = this._streams.filter(s => s.entityId === sim.shadows);
-
-      // Extract operator descriptors from AST data
-      const operators = matchingStreams.flatMap(stream =>
-        stream.operators.map(op => {
-          switch (op.name) {
-            case 'debounce': return { type: 'debounce' as const, ms: (op.args[0] as number) || 1000 };
-            case 'throttle': return { type: 'throttle' as const, ms: (op.args[0] as number) || 1000 };
-            case 'distinctUntilChanged': return { type: 'distinctUntilChanged' as const };
-            case 'onTransition': return { type: 'onTransition' as const, from: String(op.args[0] || '*'), to: String(op.args[1] || '*') };
-            case 'filter': return { type: 'filter' as const };
-            case 'map': return { type: 'map' as const };
-            default: return null;
-          }
-        }).filter((op): op is NonNullable<typeof op> => op !== null)
-      );
-
-      const result = clientRunSimulation(inputEvents, operators);
-      results.set(sim.id, result);
-    }
-
-    this._simulationResults = results;
   }
 
   private _runShimSimulation() {
@@ -2567,8 +2431,6 @@ export class TseApp extends LitElement {
         default:
           events = clientSignals.numeric({ base: 20, noise: 3, interval: 1000, seed: 42 })(timeRange);
       }
-      // Use shadows entity ID as the source event key (the shim's simulate.scenario
-      // is a no-op; we feed events directly by entity ID)
       sourceEvents.set(source.shadows, events);
     }
 
@@ -2577,26 +2439,10 @@ export class TseApp extends LitElement {
       return;
     }
 
-    // Wrap source events with fake simulation IDs for the shim
-    // The shim expects Map<simId, events> but scenarios use shadows directly
-    const shimSourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
-    let idx = 0;
-    for (const [shadows, events] of sourceEvents) {
-      shimSourceEvents.set(`__scenario_${idx++}`, events);
-      // Also inject simulate() calls into the transpiled JS so the shim knows about shadows
-    }
-
-    // Build transpiled JS with injected simulate() calls for the scenario sources
-    const injectLines: string[] = [];
-    idx = 0;
-    for (const source of scenario.sources) {
-      injectLines.push(`simulate({ id: '__scenario_${idx++}', shadows: '${source.shadows}', signal: function() { return []; } });`);
-    }
-
-    const transpiledJs = injectLines.join('\n') + '\n;\n' + transpiledParts.join('\n;\n');
+    const transpiledJs = transpiledParts.join('\n;\n');
 
     try {
-      this._shimResult = runShimSimulation(transpiledJs, shimSourceEvents, this._simTimeRangeMs);
+      this._shimResult = runShimSimulation(transpiledJs, sourceEvents, this._simTimeRangeMs);
     } catch {
       this._shimResult = null;
     }

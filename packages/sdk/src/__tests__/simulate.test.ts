@@ -7,18 +7,17 @@ import { debounced } from '../behaviors/debounced.js';
 import { sensor } from '../entities/sensor.js';
 import type { SignalEvent, TimeRange } from '../types.js';
 
-// ---- simulate() factory ----
+// ---- simulate.scenario() factory ----
 
-describe('simulate()', () => {
-  it('stamps __kind: simulate', () => {
-    const sim = simulate({
-      id: 'test_sim',
-      shadows: 'sensor.temperature',
-      signal: () => [],
-    });
-    expect(sim.__kind).toBe('simulate');
-    expect(sim.id).toBe('test_sim');
-    expect(sim.shadows).toBe('sensor.temperature');
+describe('simulate.scenario()', () => {
+  it('stamps __kind: scenario', () => {
+    const sc = simulate.scenario('test', [
+      { shadows: 'sensor.temperature', signal: () => [] },
+    ]);
+    expect(sc.__kind).toBe('scenario');
+    expect(sc.name).toBe('test');
+    expect(sc.sources).toHaveLength(1);
+    expect(sc.sources[0].shadows).toBe('sensor.temperature');
   });
 });
 

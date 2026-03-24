@@ -457,15 +457,13 @@ declare function mode<TStates extends string>(options: ModeOptions<TStates>): Mo
  */
 declare function cron(options: CronOptions): CronDefinition;
 /**
- * Define a signal simulation that shadows a real entity ID.
- * Simulations are source-only — the runtime skips them during deploy.
- * Use with \`signals.*\` generators to test behavior chains in the web editor.
- * @param options - Simulation configuration including id, shadows target, and signal generator.
- * @returns A \`SimulationDefinition\` (never deployed).
+ * Define simulation scenarios — groups of signal sources that run together.
+ * Scenarios are source-only and never deployed. Use the web editor's scenario
+ * picker to switch between them.
  */
 declare const simulate: typeof import('@ha-forge/sdk').simulate;
 /**
- * Library of pure signal generators for use with \`simulate()\`.
+ * Library of pure signal generators for use with \`simulate.scenario()\`.
  * Includes \`signals.numeric()\`, \`signals.binary()\`, \`signals.enum()\`, and \`signals.recorded()\`.
  */
 declare const signals: typeof import('@ha-forge/sdk').signals;
