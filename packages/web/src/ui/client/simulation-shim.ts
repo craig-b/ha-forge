@@ -541,7 +541,7 @@ export function runShimSimulation(
   // Build the shim globals — only what we explicitly provide is available
   const factories: Record<string, EntityFactoryFn> = {};
   const factoryNames = [
-    'sensor', 'binarySensor', 'switch', 'light', 'cover', 'climate',
+    'sensor', 'binarySensor', 'defineSwitch', 'light', 'cover', 'climate',
     'fan', 'lock', 'number', 'select', 'text', 'button', 'scene',
     'event', 'computed', 'automation', 'task', 'mode',
   ];
@@ -588,10 +588,13 @@ export function runShimSimulation(
 
   // Execute user code — this registers entities and simulations.
   // User's own code from their editor, restricted to shim globals only.
+  // We pass a single _g object and generate var declarations to avoid
+  // reserved-word issues with names like 'switch' as function parameters.
   try {
+    const varDecls = Object.keys(shimGlobals).map(k => `var ${k} = _g[${JSON.stringify(k)}];`).join('\n');
     // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: sandbox for user's own editor code
-    const fn = new Function(...Object.keys(shimGlobals), transpiledJs);
-    fn(...Object.values(shimGlobals));
+    const fn = new Function('_g', varDecls + '\n' + transpiledJs);
+    fn(shimGlobals);
   } catch (err) {
     state.errors.push({
       message: `Module execution failed: ${err instanceof Error ? err.message : String(err)}`,
