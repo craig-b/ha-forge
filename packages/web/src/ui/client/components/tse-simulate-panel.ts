@@ -22,8 +22,18 @@ export class TseSimulatePanel extends LitElement {
   @state() private _selectedScenario = '';
   @state() private _timeRangeMs = 60_000;
   @state() private _expandedEntity: string | null = null;
+  @state() private _viewStart = -1;
+  @state() private _viewEnd = -1;
 
   createRenderRoot() { return this; }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.addEventListener('tse-view-change', ((e: CustomEvent) => {
+      this._viewStart = e.detail.start;
+      this._viewEnd = e.detail.end;
+    }) as EventListener);
+  }
 
   render() {
     const exportedEntities = this.entities.filter(e => e.isExported && e.domain !== 'device');
@@ -112,6 +122,8 @@ export class TseSimulatePanel extends LitElement {
             .events=${sourceEvents}
             .signalType=${this._detectSignalType(sourceEvents)}
             .timeRange=${timeRange}
+            .viewStart=${this._viewStart}
+            .viewEnd=${this._viewEnd}
             label="Source: ${this._shortId(primarySourceId || '')}">
           </tse-signal-chart>
         ` : ''}
@@ -119,6 +131,8 @@ export class TseSimulatePanel extends LitElement {
           .events=${entityEvents}
           .signalType=${this._detectSignalType(entityEvents)}
           .timeRange=${timeRange}
+          .viewStart=${this._viewStart}
+          .viewEnd=${this._viewEnd}
           label="${this._shortId(entity.fullEntityId)}">
         </tse-signal-chart>
       </div>
@@ -186,6 +200,8 @@ export class TseSimulatePanel extends LitElement {
           .events=${events}
           .signalType=${this._detectSignalType(events)}
           .timeRange=${timeRange}
+          .viewStart=${this._viewStart}
+          .viewEnd=${this._viewEnd}
           label="${this._expandedEntity}">
         </tse-signal-chart>
       </div>
@@ -218,20 +234,28 @@ export class TseSimulatePanel extends LitElement {
     this._expandedEntity = this._expandedEntity === entityId ? null : entityId;
   }
 
+  private _resetView() {
+    this._viewStart = -1;
+    this._viewEnd = -1;
+  }
+
   private _onSelectEntity(e: Event) {
     this._selectedEntity = (e.target as HTMLSelectElement).value;
     this._expandedEntity = null;
+    this._resetView();
     this._fireSimulationChange();
   }
 
   private _onSelectScenario(e: Event) {
     this._selectedScenario = (e.target as HTMLSelectElement).value;
     this._expandedEntity = null;
+    this._resetView();
     this._fireSimulationChange();
   }
 
   private _onTimeRange(e: Event) {
     this._timeRangeMs = Number((e.target as HTMLSelectElement).value);
+    this._resetView();
     this._fireSimulationChange();
   }
 

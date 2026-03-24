@@ -12,17 +12,24 @@ export class TseSignalChart extends LitElement {
   @property({ type: String }) signalType: 'numeric' | 'binary' | 'enum' = 'numeric';
   @property({ type: Object }) timeRange: { start: number; end: number } = { start: 0, end: 60000 };
   @property({ type: String }) label = '';
+  @property({ type: Number }) viewStart = -1;
+  @property({ type: Number }) viewEnd = -1;
   @state() private _hoverIndex = -1;
-  @state() private _viewStart = -1;
-  @state() private _viewEnd = -1;
 
   createRenderRoot() { return this; }
 
   private get _effectiveRange(): { start: number; end: number } {
-    if (this._viewStart >= 0 && this._viewEnd > this._viewStart) {
-      return { start: this._viewStart, end: this._viewEnd };
+    if (this.viewStart >= 0 && this.viewEnd > this.viewStart) {
+      return { start: this.viewStart, end: this.viewEnd };
     }
     return this.timeRange;
+  }
+
+  private _emitViewChange(start: number, end: number) {
+    this.dispatchEvent(new CustomEvent('tse-view-change', {
+      bubbles: true, composed: true,
+      detail: { start, end },
+    }));
   }
 
   private _visibleEvents(): SignalEvent[] {
@@ -227,8 +234,7 @@ export class TseSignalChart extends LitElement {
       const delta = (e.shiftKey ? e.deltaY : e.deltaX);
       const shift = (delta / 600) * duration;
       const newStart = Math.max(this.timeRange.start, Math.min(this.timeRange.end - duration, range.start + shift));
-      this._viewStart = newStart;
-      this._viewEnd = newStart + duration;
+      this._emitViewChange(newStart, newStart + duration);
       return;
     }
 
@@ -236,8 +242,9 @@ export class TseSignalChart extends LitElement {
     const zoomFactor = e.deltaY > 0 ? 1.2 : 0.8;
     const mid = (range.start + range.end) / 2;
     const newDuration = Math.max(1000, Math.min(fullDuration, duration * zoomFactor));
-    this._viewStart = Math.max(this.timeRange.start, mid - newDuration / 2);
-    this._viewEnd = Math.min(this.timeRange.end, mid + newDuration / 2);
+    const newStart = Math.max(this.timeRange.start, mid - newDuration / 2);
+    const newEnd = Math.min(this.timeRange.end, mid + newDuration / 2);
+    this._emitViewChange(newStart, newEnd);
   }
 
   private _fmtTime(ms: number): string {
