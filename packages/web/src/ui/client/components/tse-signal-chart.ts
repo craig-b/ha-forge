@@ -212,13 +212,30 @@ export class TseSignalChart extends LitElement {
   }
 
   private _onWheel(e: WheelEvent) {
-    if (!e.ctrlKey && !e.metaKey) return; // plain scroll passes through to page
-    e.preventDefault();
+    const isZoom = e.ctrlKey || e.metaKey;
+    const isPan = e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY);
+    if (!isZoom && !isPan) return;
+
     const range = this._effectiveRange;
+    const fullDuration = this.timeRange.end - this.timeRange.start;
     const duration = range.end - range.start;
+
+    // Only pan when actually zoomed in
+    if (isPan && !isZoom) {
+      if (duration >= fullDuration) return;
+      e.preventDefault();
+      const delta = (e.shiftKey ? e.deltaY : e.deltaX);
+      const shift = (delta / 600) * duration;
+      const newStart = Math.max(this.timeRange.start, Math.min(this.timeRange.end - duration, range.start + shift));
+      this._viewStart = newStart;
+      this._viewEnd = newStart + duration;
+      return;
+    }
+
+    e.preventDefault();
     const zoomFactor = e.deltaY > 0 ? 1.2 : 0.8;
     const mid = (range.start + range.end) / 2;
-    const newDuration = Math.max(1000, Math.min(this.timeRange.end - this.timeRange.start, duration * zoomFactor));
+    const newDuration = Math.max(1000, Math.min(fullDuration, duration * zoomFactor));
     this._viewStart = Math.max(this.timeRange.start, mid - newDuration / 2);
     this._viewEnd = Math.min(this.timeRange.end, mid + newDuration / 2);
   }
