@@ -666,6 +666,17 @@ export function runShimSimulation(
 function buildResult(state: SimState): SimulationShimResult {
   const entities = new Map<string, EntitySimSummary>();
 
+  // Sources first so the chain flow bar reads left-to-right (source → downstream)
+  for (const [entityId, events] of state.outputEvents) {
+    if (!state.registeredEntities.has(entityId)) {
+      entities.set(entityId, {
+        kind: 'source',
+        eventCount: events.length,
+        simulated: true,
+      });
+    }
+  }
+
   for (const [entityId, reg] of state.registeredEntities) {
     const events = state.outputEvents.get(entityId);
     entities.set(entityId, {
@@ -673,16 +684,6 @@ function buildResult(state: SimState): SimulationShimResult {
       eventCount: events?.length ?? 0,
       simulated: (events?.length ?? 0) > 0,
     });
-  }
-
-  for (const [entityId, events] of state.outputEvents) {
-    if (!entities.has(entityId)) {
-      entities.set(entityId, {
-        kind: 'source',
-        eventCount: events.length,
-        simulated: true,
-      });
-    }
   }
 
   return {

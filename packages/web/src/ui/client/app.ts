@@ -2343,8 +2343,9 @@ export class TseApp extends LitElement {
     const allEntities: EntityDefinitionLocation[] = [];
     const allScenarios: ScenarioLocation[] = [];
     for (const file of this._openFiles) {
-      allEntities.push(...findEntityDefinitions(file.content, file.path));
-      allScenarios.push(...findScenarios(file.content, file.path));
+      const content = file.model.getValue();
+      allEntities.push(...findEntityDefinitions(content, file.path));
+      allScenarios.push(...findScenarios(content, file.path));
     }
     this._simEntities = allEntities;
     this._simScenarios = allScenarios;
@@ -2364,11 +2365,11 @@ export class TseApp extends LitElement {
       return;
     }
 
-    // Transpile all open files for shim execution
+    // Transpile all open files for shim execution (use live editor content, not last-saved)
     const transpiledParts: string[] = [];
     for (const file of this._openFiles) {
       try {
-        const result = tsApi.transpileModule(file.content, {
+        const result = tsApi.transpileModule(file.model.getValue(), {
           compilerOptions: {
             target: tsApi.ScriptTarget.ES2020,
             module: tsApi.ModuleKind.None,
