@@ -212,6 +212,7 @@ export class TseSignalChart extends LitElement {
   }
 
   private _onWheel(e: WheelEvent) {
+    if (!e.ctrlKey && !e.metaKey) return; // plain scroll passes through to page
     e.preventDefault();
     const range = this._effectiveRange;
     const duration = range.end - range.start;
