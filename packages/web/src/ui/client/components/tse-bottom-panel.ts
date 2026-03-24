@@ -18,6 +18,7 @@ export class TseBottomPanel extends LitElement {
   @property({ type: Array }) simulations: SimulationLocation[] = [];
   @property({ type: Array }) streams: StreamSubscriptionLocation[] = [];
   @property({ type: Object }) simulationResults: Map<string, unknown> = new Map();
+  @property({ type: Object }) chainResults: Map<string, unknown> = new Map();
   @state() private _activePanel = 'build-output';
 
   createRenderRoot() { return this; }
@@ -54,7 +55,8 @@ export class TseBottomPanel extends LitElement {
         <tse-simulate-panel
           .simulations=${this.simulations}
           .streams=${this.streams}
-          .simulationResults=${this.simulationResults}>
+          .simulationResults=${this.simulationResults}
+          .chainResults=${this.chainResults}>
         </tse-simulate-panel>
       </div>
     `;

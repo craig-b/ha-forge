@@ -1736,6 +1736,21 @@ export interface EntityDefinitionLocation {
   endLine: number;
   /** Number of member entities (only for device definitions) */
   memberCount?: number;
+  /** Behavior wrapper name if wrapped (e.g. 'debounced', 'filtered', 'sampled', 'buffered') */
+  wrapper?: string;
+  /** Literal params passed to the behavior wrapper (e.g. { wait: 500 } or { interval: 30000 }) */
+  wrapperParams?: Record<string, unknown>;
+}
+
+/** Extract wrapper name and params from an outer call if it's a behavior wrapper. */
+function extractWrapperInfo(outerCall: import('typescript').CallExpression): { wrapper: string; wrapperParams: Record<string, unknown> } | null {
+  if (!ts) return null;
+  const name = getCalledName(outerCall);
+  if (!name || !WRAPPER_NAMES.has(name)) return null;
+  // Wrapper params are in the second argument: debounced(factory({...}), { wait: 500 })
+  const paramsArg = outerCall.arguments[1];
+  const wrapperParams = paramsArg ? extractObjectLiteral(paramsArg) : {};
+  return { wrapper: name, wrapperParams };
 }
 
 /** Find all entity definitions in source with their positions and HA entity IDs. */
@@ -1785,6 +1800,7 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
               if (entityId) {
                 const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
                 const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+                const wrapperInfo = extractWrapperInfo(outerCall);
                 results.push({
                   entityId,
                   fullEntityId: `${domain}.${entityId}`,
@@ -1793,6 +1809,7 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
                   isExported,
                   line: startPos.line + 1,
                   endLine: endPos.line + 1,
+                  ...(wrapperInfo && { wrapper: wrapperInfo.wrapper, wrapperParams: wrapperInfo.wrapperParams }),
                 });
               }
             }
@@ -1834,6 +1851,7 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
               if (entityId) {
                 const startPos = sf.getLineAndCharacterOfPosition(node.getStart(sf));
                 const endPos = sf.getLineAndCharacterOfPosition(node.getEnd());
+                const wrapperInfo = extractWrapperInfo(outerCall);
                 results.push({
                   entityId,
                   fullEntityId: `${domain}.${entityId}`,
@@ -1842,6 +1860,7 @@ export function findEntityDefinitions(sourceText: string, fileName = 'file.ts'):
                   isExported: true,
                   line: startPos.line + 1,
                   endLine: endPos.line + 1,
+                  ...(wrapperInfo && { wrapper: wrapperInfo.wrapper, wrapperParams: wrapperInfo.wrapperParams }),
                 });
               }
             }
@@ -2069,7 +2088,7 @@ export interface SimulationLocation {
 }
 
 /** Extract literal values from an AST object literal expression (numbers, strings, arrays of numbers). */
-function extractObjectLiteral(node: import('typescript').Node): Record<string, unknown> {
+export function extractObjectLiteral(node: import('typescript').Node): Record<string, unknown> {
   if (!ts || !ts.isObjectLiteralExpression(node)) return {};
   const result: Record<string, unknown> = {};
   for (const prop of node.properties) {

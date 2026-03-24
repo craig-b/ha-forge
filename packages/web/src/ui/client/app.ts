@@ -4,6 +4,9 @@ import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './typ
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findSimulations, findStreamSubscriptions, type SimulationLocation, type StreamSubscriptionLocation } from './ast-analyzers.js';
 import { signals as clientSignals, runSimulation as clientRunSimulation } from './simulation.js';
+import { buildChainPaths } from './dependency-graph.js';
+import { extractCompute, setTypeScriptApi as setExtractorTsApi } from './compute-extractor.js';
+import { runChainSimulation, type ChainSimulationResult } from './chain-simulation.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -206,6 +209,7 @@ export class TseApp extends LitElement {
   @state() private _simulations: SimulationLocation[] = [];
   @state() private _streams: StreamSubscriptionLocation[] = [];
   @state() private _simulationResults: Map<string, unknown> = new Map();
+  @state() private _chainResults: Map<string, ChainSimulationResult> = new Map();
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
 
@@ -272,6 +276,7 @@ export class TseApp extends LitElement {
             .simulations=${this._simulations}
             .streams=${this._streams}
             .simulationResults=${this._simulationResults}
+            .chainResults=${this._chainResults}
           ></tse-bottom-panel>
         </div>
       </div>
@@ -397,6 +402,7 @@ export class TseApp extends LitElement {
       const tsGlobal = (globalThis as Record<string, unknown>).ts as typeof import('typescript') | undefined;
       if (tsGlobal?.createSourceFile) {
         setTypeScriptApi(tsGlobal);
+        setExtractorTsApi(tsGlobal);
         setAstAnalyzerActive();
         this._runDiagnostics();
         console.debug('[ha-forge] TypeScript API loaded');
@@ -2405,6 +2411,7 @@ export class TseApp extends LitElement {
     }
 
     this._runSimulations();
+    this._runChainSimulations();
   }
 
   private _runSimulations() {
@@ -2474,6 +2481,75 @@ export class TseApp extends LitElement {
     }
 
     this._simulationResults = results;
+  }
+
+  private _runChainSimulations() {
+    if (this._simulations.length === 0) {
+      this._chainResults = new Map();
+      return;
+    }
+
+    // Collect entity definitions and dependencies from all open files
+    const allDefs: import('./ast-analyzers.js').EntityDefinitionLocation[] = [];
+    const allDeps = new Map<string, import('./ast-analyzers.js').EntityDependencies>();
+    const allStreams: import('./ast-analyzers.js').StreamSubscriptionLocation[] = [];
+    const fileDataByEntity = new Map<string, string>();
+
+    for (const file of this._openFiles) {
+      const defs = findEntityDefinitions(file.content, file.path);
+      allDefs.push(...defs);
+      const deps = findEntityDependencies(file.content, file.path);
+      for (const [k, v] of deps) allDeps.set(k, v);
+      const streams = findStreamSubscriptions(file.content, file.path);
+      allStreams.push(...streams);
+      for (const def of defs) fileDataByEntity.set(def.fullEntityId, file.path);
+    }
+
+    // Build chain paths
+    const chainPaths = buildChainPaths(this._simulations, allDefs, allDeps, allStreams, fileDataByEntity);
+    if (chainPaths.length === 0) {
+      this._chainResults = new Map();
+      return;
+    }
+
+    // Extract and compile compute functions for chain nodes
+    const computeFns = new Map<string, import('./compute-extractor.js').ComputeFn>();
+    for (const chain of chainPaths) {
+      for (const node of chain.nodes) {
+        if (node.kind !== 'computed') continue;
+        // Find source text for this entity
+        const filePath = node.sourceFile;
+        const file = this._openFiles.find(f => f.path === filePath);
+        if (!file) continue;
+
+        const extracted = extractCompute(file.content, node.entityId, filePath);
+        if (extracted?.compiled) {
+          computeFns.set(node.entityId, extracted.compiled);
+        } else if (extracted && !extracted.safe) {
+          node.simulability = 'unsafe';
+          node.unsafeReason = extracted.unsafeReason;
+        }
+      }
+    }
+
+    // Run chain simulations using existing single-hop results as source events
+    const chainResults = new Map<string, ChainSimulationResult>();
+    const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
+
+    for (const chain of chainPaths) {
+      const sim = this._simulations.find(s => s.id === chain.simulationId);
+      if (!sim) continue;
+
+      // Get source events from the single-hop simulation result
+      const singleResult = this._simulationResults.get(sim.id) as { input: Array<{ t: number; value: string | number }> } | undefined;
+      const sourceEvents = singleResult?.input;
+      if (!sourceEvents || sourceEvents.length === 0) continue;
+
+      const result = runChainSimulation(chain, sourceEvents, { computeFns });
+      chainResults.set(chain.simulationId, result);
+    }
+
+    this._chainResults = chainResults;
   }
 
   // ---- Keyboard shortcuts ----
