@@ -47,6 +47,8 @@ export interface EntitySimSummary {
   simulated: boolean;
   /** If not simulated, why. */
   skipReason?: string;
+  /** Upstream entity IDs this entity watches. */
+  watches?: string[];
 }
 
 // ---- Virtual timer queue (reused pattern from SDK simulate-context) ----
@@ -105,7 +107,9 @@ interface SimState {
   /** Entity IDs accessed but had no simulation source. */
   missingEntities: Set<string>;
   /** Registered entity metadata. */
-  registeredEntities: Map<string, { kind: string; init?: () => void }>;
+  registeredEntities: Map<string, { kind: string; init?: () => void; watches?: string[] }>;
+  /** Entity mock contexts — needed so behavior wrappers can intercept update(). */
+  entityContexts: Map<string, Record<string, unknown>>;
   /** Errors. */
   errors: SimulationError[];
 }
@@ -121,6 +125,7 @@ function createSimState(): SimState {
     serviceCalls: [],
     missingEntities: new Set(),
     registeredEntities: new Map(),
+    entityContexts: new Map(),
     errors: [],
   };
 }
@@ -423,9 +428,13 @@ function createEntityFactory(state: SimState, kind: string): EntityFactoryFn {
     const fullId = `${domain}.${id}`;
 
     const ctx = createMockContext(state, fullId);
+    state.entityContexts.set(fullId, ctx);
+
+    const watchIds = (kind === 'computed' && config.watch) ? config.watch as string[] : undefined;
 
     state.registeredEntities.set(fullId, {
       kind,
+      watches: watchIds,
       init: config.init ? () => {
         try {
           (config.init as (this: Record<string, unknown>) => unknown).call(ctx);
@@ -440,8 +449,7 @@ function createEntityFactory(state: SimState, kind: string): EntityFactoryFn {
     });
 
     // Computed entities: set up watch + compute pipeline
-    if (kind === 'computed' && config.watch && config.compute) {
-      const watchIds = config.watch as string[];
+    if (kind === 'computed' && watchIds && config.compute) {
       const computeFn = config.compute as (states: Record<string, { state: string | number }>) => unknown;
       const debounce = typeof config.debounce === 'number' ? config.debounce : 0;
       let debounceTimerId: number | null = null;
@@ -551,10 +559,6 @@ export function runShimSimulation(
     count: (vals) => vals.length,
   };
 
-  // Track behavior wrappers applied to entities (entityId → config)
-  interface BehaviorWrap { type: string; intervalMs?: number; reduceFn?: (values: number[]) => number; waitMs?: number; predicate?: (v: unknown) => boolean }
-  const behaviorWraps = new Map<string, BehaviorWrap>();
-
   function resolveReducer(reduce: unknown): (values: number[]) => number {
     if (typeof reduce === 'function') return reduce as (values: number[]) => number;
     if (typeof reduce === 'string' && builtinReducers[reduce]) return builtinReducers[reduce];
@@ -563,11 +567,21 @@ export function runShimSimulation(
 
   function resolveEntityId(inner: Record<string, unknown>): string {
     const id = inner.id as string;
-    // Try to find matching registered entity
     for (const fullId of state.registeredEntities.keys()) {
       if (fullId.endsWith(`.${id}`)) return fullId;
     }
     return id;
+  }
+
+  /** Patch ctx.update to intercept updates, matching real SDK behavior. */
+  function patchUpdate(
+    entityId: string,
+    patcher: (originalUpdate: (v: unknown, attrs?: Record<string, unknown>) => void) => (v: unknown, attrs?: Record<string, unknown>) => void,
+  ) {
+    const ctx = state.entityContexts.get(entityId);
+    if (!ctx) return;
+    const original = ctx.update as (v: unknown, attrs?: Record<string, unknown>) => void;
+    ctx.update = patcher(original);
   }
 
   const shimGlobals: Record<string, unknown> = {
@@ -580,25 +594,96 @@ export function runShimSimulation(
     },
     signals,
     device: (config: Record<string, unknown>) => ({ __kind: 'device', ...config }),
+    // Behavior wrappers — intercept ctx.update to match real SDK behavior
     debounced: (inner: Record<string, unknown>, opts?: { wait?: number }) => {
-      behaviorWraps.set(resolveEntityId(inner), { type: 'debounced', waitMs: opts?.wait || 1000 });
+      const entityId = resolveEntityId(inner);
+      const waitMs = opts?.wait || 1000;
+      patchUpdate(entityId, (originalUpdate) => {
+        let timer: number | null = null;
+        let first = true;
+        return (value, attributes) => {
+          // First update passes through immediately (matches SDK)
+          if (first) {
+            first = false;
+            originalUpdate(value, attributes);
+            return;
+          }
+          if (timer !== null) {
+            const idx = state.timers.findIndex(t => t.id === timer);
+            if (idx !== -1) state.timers.splice(idx, 1);
+          }
+          timer = state.nextTimerId++;
+          const captured = { value, attributes };
+          insertTimer(state.timers, {
+            id: timer,
+            fireAt: state.currentTime + waitMs,
+            callback: () => { timer = null; originalUpdate(captured.value, captured.attributes); },
+          });
+        };
+      });
       return inner;
     },
     filtered: (inner: Record<string, unknown>, opts?: { predicate?: unknown }) => {
       if (typeof opts?.predicate === 'function') {
-        behaviorWraps.set(resolveEntityId(inner), { type: 'filtered', predicate: opts.predicate as (v: unknown) => boolean });
+        const entityId = resolveEntityId(inner);
+        const predicate = opts.predicate as (v: unknown) => boolean;
+        patchUpdate(entityId, (originalUpdate) => {
+          return (value, attributes) => {
+            try {
+              if (predicate(value)) originalUpdate(value, attributes);
+            } catch { originalUpdate(value, attributes); }
+          };
+        });
       }
       return inner;
     },
     sampled: (inner: Record<string, unknown>, opts?: { interval?: number }) => {
-      behaviorWraps.set(resolveEntityId(inner), { type: 'sampled', intervalMs: opts?.interval || 30_000 });
+      const entityId = resolveEntityId(inner);
+      const intervalMs = opts?.interval || 30_000;
+      patchUpdate(entityId, (originalUpdate) => {
+        let latest: { value: unknown; attributes?: Record<string, unknown> } | undefined;
+        let started = false;
+        return (value, attributes) => {
+          latest = { value, attributes };
+          if (!started) {
+            started = true;
+            originalUpdate(value, attributes);
+            const id = state.nextTimerId++;
+            insertTimer(state.timers, {
+              id,
+              fireAt: state.currentTime + intervalMs,
+              callback: function sampleTick() {
+                if (latest) originalUpdate(latest.value, latest.attributes);
+              },
+              interval: intervalMs,
+            });
+          }
+        };
+      });
       return inner;
     },
     buffered: (inner: Record<string, unknown>, opts?: { interval?: number; reduce?: unknown }) => {
-      behaviorWraps.set(resolveEntityId(inner), {
-        type: 'buffered',
-        intervalMs: opts?.interval || 30_000,
-        reduceFn: resolveReducer(opts?.reduce),
+      const entityId = resolveEntityId(inner);
+      const intervalMs = opts?.interval || 30_000;
+      const reduceFn = resolveReducer(opts?.reduce);
+      patchUpdate(entityId, (originalUpdate) => {
+        let buffer: unknown[] = [];
+        const id = state.nextTimerId++;
+        insertTimer(state.timers, {
+          id,
+          fireAt: state.currentTime + intervalMs,
+          callback: function flushBuffer() {
+            if (buffer.length > 0) {
+              const result = reduceFn(buffer.map(v => typeof v === 'number' ? v : Number(v)).filter(n => !isNaN(n)));
+              buffer = [];
+              originalUpdate(Math.round(result * 100) / 100);
+            }
+          },
+          interval: intervalMs,
+        });
+        return (value) => {
+          buffer.push(value);
+        };
       });
       return inner;
     },
@@ -707,67 +792,6 @@ export function runShimSimulation(
   // Final flush
   flushTimersUpTo(state.timers, state.currentTime + timeRangeMs, (t) => { state.currentTime = t; });
 
-  // Post-process behavior wrappers on output events
-  for (const [entityId, wrap] of behaviorWraps) {
-    const raw = state.outputEvents.get(entityId);
-    if (!raw || raw.length === 0) continue;
-
-    if (wrap.type === 'buffered' && wrap.intervalMs && wrap.reduceFn) {
-      // Window events into intervals and apply reducer
-      const processed: SignalEvent[] = [];
-      let windowStart = raw[0].t;
-      let windowValues: number[] = [];
-
-      for (const event of raw) {
-        if (event.t >= windowStart + wrap.intervalMs) {
-          // Flush current window
-          if (windowValues.length > 0) {
-            const reduced = wrap.reduceFn(windowValues);
-            processed.push({ t: windowStart + wrap.intervalMs, value: Math.round(reduced * 100) / 100 });
-          }
-          windowStart = windowStart + wrap.intervalMs * Math.floor((event.t - windowStart) / wrap.intervalMs);
-          windowValues = [];
-        }
-        const num = typeof event.value === 'number' ? event.value : Number(event.value);
-        if (!isNaN(num)) windowValues.push(num);
-      }
-      // Flush last window
-      if (windowValues.length > 0) {
-        const reduced = wrap.reduceFn(windowValues);
-        processed.push({ t: windowStart + wrap.intervalMs, value: Math.round(reduced * 100) / 100 });
-      }
-      state.outputEvents.set(entityId, processed);
-    } else if (wrap.type === 'debounced' && wrap.waitMs) {
-      // Keep only events that have no successor within waitMs
-      const processed: SignalEvent[] = [];
-      for (let i = 0; i < raw.length; i++) {
-        const next = raw[i + 1];
-        if (!next || next.t - raw[i].t >= wrap.waitMs) {
-          processed.push(raw[i]);
-        }
-      }
-      state.outputEvents.set(entityId, processed);
-    } else if (wrap.type === 'sampled' && wrap.intervalMs) {
-      // Take the latest value at each interval boundary
-      const processed: SignalEvent[] = [];
-      let nextSample = raw[0].t + wrap.intervalMs;
-      let latest = raw[0];
-      for (const event of raw) {
-        if (event.t >= nextSample) {
-          processed.push({ t: nextSample, value: latest.value });
-          nextSample += wrap.intervalMs;
-        }
-        latest = event;
-      }
-      state.outputEvents.set(entityId, processed);
-    } else if (wrap.type === 'filtered' && wrap.predicate) {
-      const pred = wrap.predicate;
-      state.outputEvents.set(entityId, raw.filter(e => {
-        try { return pred(e.value); } catch { return true; }
-      }));
-    }
-  }
-
   return buildResult(state);
 }
 
@@ -791,6 +815,7 @@ function buildResult(state: SimState): SimulationShimResult {
       kind: reg.kind,
       eventCount: events?.length ?? 0,
       simulated: (events?.length ?? 0) > 0,
+      watches: reg.watches,
     });
   }
 

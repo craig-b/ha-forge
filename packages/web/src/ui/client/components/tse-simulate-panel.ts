@@ -99,6 +99,30 @@ export class TseSimulatePanel extends LitElement {
     `;
   }
 
+  /** Walk backwards from an entity to find its dependency chain (source → ... → entity). */
+  private _buildChain(
+    result: SimulationShimResult,
+    entityId: string,
+  ): [string, EntitySimSummary][] {
+    const chain: [string, EntitySimSummary][] = [];
+    const visited = new Set<string>();
+
+    const walk = (id: string) => {
+      if (visited.has(id)) return;
+      visited.add(id);
+      const summary = result.entities.get(id);
+      if (!summary) return;
+      // Walk upstream first
+      if (summary.watches) {
+        for (const wid of summary.watches) walk(wid);
+      }
+      chain.push([id, summary]);
+    };
+
+    walk(entityId);
+    return chain;
+  }
+
   private _renderResult(
     result: SimulationShimResult,
     entity: EntityDefinitionLocation,
@@ -107,24 +131,21 @@ export class TseSimulatePanel extends LitElement {
   ) {
     const entityEvents = result.events.get(entity.fullEntityId) || [];
 
-    // Find source entities from the scenario
-    const sourceIds = scenario?.sources || [];
-    const primarySourceId = sourceIds[0];
-    const sourceEvents = primarySourceId ? (result.events.get(primarySourceId) || []) : [];
-
-    // Build entity flow from result
-    const entityEntries = [...result.entities.entries()];
+    // Build dependency chain for the selected entity
+    const chain = this._buildChain(result, entity.fullEntityId);
+    const sourceEntry = chain.length > 0 ? chain[0] : undefined;
+    const sourceEvents = sourceEntry ? (result.events.get(sourceEntry[0]) || []) : [];
 
     return html`
       <div class="simulate-charts simulate-charts-chain">
-        ${sourceEvents.length > 0 ? html`
+        ${sourceEntry && sourceEntry[0] !== entity.fullEntityId ? html`
           <tse-signal-chart
             .events=${sourceEvents}
             .signalType=${this._detectSignalType(sourceEvents)}
             .timeRange=${timeRange}
             .viewStart=${this._viewStart}
             .viewEnd=${this._viewEnd}
-            label="Source: ${this._shortId(primarySourceId || '')}">
+            label="Source: ${this._shortId(sourceEntry[0])}">
           </tse-signal-chart>
         ` : ''}
         <tse-signal-chart
@@ -137,7 +158,7 @@ export class TseSimulatePanel extends LitElement {
         </tse-signal-chart>
       </div>
 
-      ${entityEntries.length > 1 ? this._renderEntityFlow(entityEntries) : nothing}
+      ${chain.length > 1 ? this._renderEntityFlow(chain, entity.fullEntityId) : nothing}
 
       ${this._expandedEntity ? this._renderExpandedEntity(result, timeRange) : nothing}
 
@@ -157,24 +178,21 @@ export class TseSimulatePanel extends LitElement {
         </div>
       ` : ''}
 
-      <div class="simulation-stats">
-        <span class="operator-stat">
-          ${sourceEvents.length} source → ${entityEvents.length} output
-        </span>
-        ${result.serviceCalls.length > 0 ? html`
+      ${result.serviceCalls.length > 0 ? html`
+        <div class="simulation-stats">
           <span class="operator-stat">${result.serviceCalls.length} service calls</span>
-        ` : ''}
-      </div>
+        </div>
+      ` : ''}
     `;
   }
 
-  private _renderEntityFlow(entities: [string, EntitySimSummary][]) {
+  private _renderEntityFlow(entities: [string, EntitySimSummary][], selectedEntityId: string) {
     return html`
       <div class="chain-flow-bar">
         ${entities.map(([entityId, summary], i) => html`
           ${i > 0 ? html`<span class="chain-arrow">→</span>` : nothing}
           <button
-            class="chain-node ${this._entityNodeClass(summary)}"
+            class="chain-node ${this._entityNodeClass(summary)}${entityId === selectedEntityId ? ' chain-node-selected' : ''}"
             title=${summary.simulated ? `${summary.kind}: ${summary.eventCount} events` : `${summary.kind}: no events`}
             @click=${() => this._toggleEntity(entityId)}>
             ${this._shortId(entityId)}
