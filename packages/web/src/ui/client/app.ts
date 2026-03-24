@@ -212,6 +212,7 @@ export class TseApp extends LitElement {
   @state() private _shimResult: SimulationShimResult | null = null;
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
+  private _simSelectedScenario = '';
 
   private _editor: MonacoEditorInstance | null = null;
   private _completionRegistry: { domains: Record<string, unknown>; entities: Record<string, unknown> } | null = null;
@@ -241,6 +242,7 @@ export class TseApp extends LitElement {
     }) as EventListener);
     this.addEventListener('tse-simulation-change', ((e: CustomEvent) => {
       if (e.detail.timeRangeMs) this._simTimeRangeMs = e.detail.timeRangeMs;
+      if (e.detail.scenario) this._simSelectedScenario = e.detail.scenario;
       this._runSimulations();
       this._runShimSimulation();
     }) as EventListener);
@@ -2525,9 +2527,10 @@ export class TseApp extends LitElement {
       return;
     }
 
-    // Generate source events from the first scenario's sources
-    // (the panel will re-trigger when the user picks a different scenario)
-    const scenario = this._simScenarios[0];
+    // Use the selected scenario, falling back to the first one
+    const scenario = (this._simSelectedScenario
+      ? this._simScenarios.find(s => s.name === this._simSelectedScenario)
+      : null) || this._simScenarios[0];
     const timeRange = { start: 0, end: this._simTimeRangeMs, stepMs: 1000 };
     const sourceEvents = new Map<string, Array<{ t: number; value: string | number }>>();
 
