@@ -3,7 +3,7 @@ import { customElement, state } from 'lit/decorators.js';
 import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
 import { runAllAnalyzers, findEntitySymbols, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
 import { setTypeScriptApi, analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findCronStrings, findEntityDefinitions, findEntityDependencies, FACTORY_DOMAINS, findScenarios, type EntityDefinitionLocation, type ScenarioLocation } from './ast-analyzers.js';
-import { runShimSimulation, type SimulationShimResult } from './simulation-shim.js';
+import { runShimSimulation, type SimulationShimResult, type CaptureData } from './simulation-shim.js';
 
 import './components/tse-header.js';
 import './components/tse-sidebar.js';
@@ -209,6 +209,7 @@ export class TseApp extends LitElement {
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
   private _simSelectedScenario = '';
+  private _captureCache: CaptureData[] = [];
 
   private _editor: MonacoEditorInstance | null = null;
   private _completionRegistry: { domains: Record<string, unknown>; entities: Record<string, unknown> } | null = null;
@@ -239,6 +240,11 @@ export class TseApp extends LitElement {
     this.addEventListener('tse-simulation-change', ((e: CustomEvent) => {
       if (e.detail.timeRangeMs) this._simTimeRangeMs = e.detail.timeRangeMs;
       if (e.detail.scenario) this._simSelectedScenario = e.detail.scenario;
+      this._runShimSimulation();
+    }) as EventListener);
+    this.addEventListener('tse-capture-saved', (async () => {
+      await this._loadCaptures();
+      this._api('POST', '/api/types/regenerate');
       this._runShimSimulation();
     }) as EventListener);
   }
@@ -2332,7 +2338,30 @@ export class TseApp extends LitElement {
   private _onPanelChange(panel: string) {
     if (panel === 'exports') this._loadEntities();
     if (panel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
-    if (panel === 'simulate') this._updateSimulationData();
+    if (panel === 'simulate') { this._loadCaptures(); this._updateSimulationData(); }
+  }
+
+  // ---- Captures ----
+
+  private async _loadCaptures() {
+    try {
+      const index = await this._api('GET', '/api/captures');
+      const captures = (index.captures as Array<{ entity_id: string; name: string; eventCount: number }>) ?? [];
+      if (captures.length === 0) { this._captureCache = []; return; }
+      const loaded: CaptureData[] = [];
+      for (const cap of captures) {
+        try {
+          const resp = await fetch(this._base + `/api/captures/${encodeURIComponent(cap.name)}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            loaded.push({ entity_id: data.entity_id, name: data.name, events: data.events });
+          }
+        } catch { /* skip */ }
+      }
+      this._captureCache = loaded;
+    } catch {
+      this._captureCache = [];
+    }
   }
 
   // ---- Simulation ----
@@ -2394,7 +2423,7 @@ export class TseApp extends LitElement {
     const transpiledJs = transpiledParts.join('\n;\n');
 
     try {
-      this._shimResult = await runShimSimulation(transpiledJs, this._simSelectedScenario, this._simTimeRangeMs);
+      this._shimResult = await runShimSimulation(transpiledJs, this._simSelectedScenario, this._simTimeRangeMs, this._captureCache);
     } catch {
       this._shimResult = null;
     }

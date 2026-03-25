@@ -266,7 +266,7 @@ export function selectorToType(selector: Record<string, unknown>, entityIds?: st
 
 // ---- Type generator ----
 
-export function generateTypes(data: HARegistryData, outputDir: string): TypeGenResult {
+export function generateTypes(data: HARegistryData, outputDir: string, capturesDir?: string): TypeGenResult {
   const startTime = Date.now();
   const errors: string[] = [];
 
@@ -588,6 +588,7 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     `/** Library of pure signal generators for use with simulate.scenario(). */`,
     `declare const signals: typeof import('@ha-forge/sdk').signals;`,
     ``,
+    ...generateCaptureMapDeclarations(capturesDir),
   ].join('\n');
 
   // ---- Generate ha-validators.ts ----
@@ -637,6 +638,53 @@ export function generateTypes(data: HARegistryData, outputDir: string): TypeGenR
     errors,
     duration: Date.now() - startTime,
   };
+}
+
+// ---- Capture map generation ----
+
+function generateCaptureMapDeclarations(capturesDir?: string): string[] {
+  if (!capturesDir || !fs.existsSync(capturesDir)) return [];
+
+  const files = fs.readdirSync(capturesDir).filter(f => f.endsWith('.json'));
+  if (files.length === 0) return [];
+
+  // Group capture names by entity_id
+  const capturesByEntity = new Map<string, Set<string>>();
+  for (const file of files) {
+    try {
+      const fullPath = path.join(capturesDir, file);
+      const raw = fs.readFileSync(fullPath, 'utf-8');
+      // Parse only the first portion to extract entity_id and name (skip events for performance)
+      const match = raw.match(/"entity_id"\s*:\s*"([^"]+)".*?"name"\s*:\s*"([^"]+)"/s);
+      if (match) {
+        const entityId = match[1];
+        const name = match[2];
+        const names = capturesByEntity.get(entityId) || new Set<string>();
+        names.add(name);
+        capturesByEntity.set(entityId, names);
+      }
+    } catch {
+      // Skip malformed files
+    }
+  }
+
+  if (capturesByEntity.size === 0) return [];
+
+  const lines: string[] = [
+    `/** Map of captured entity IDs to their available capture names. Auto-generated from captures/ directory. */`,
+    `interface CaptureMap {`,
+  ];
+  for (const [entityId, names] of capturesByEntity) {
+    const union = [...names].map(n => `'${escapeQuotes(n)}'`).join(' | ');
+    lines.push(`  '${escapeQuotes(entityId)}': ${union};`);
+  }
+  lines.push(`}`);
+  lines.push(``);
+  lines.push(`/** Load a captured history signal for use in simulate.scenario(). */`);
+  lines.push(`declare function capture<K extends keyof CaptureMap>(entityId: K, name: CaptureMap[K]): import('@ha-forge/sdk').SignalGenerator;`);
+  lines.push(``);
+
+  return lines;
 }
 
 // ---- Helper functions ----

@@ -175,7 +175,7 @@ async function main(): Promise<void> {
         log('First boot: generating types...');
         const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');
         const data = await fetchRegistryData(wsClient);
-        const result = generateTypes(data, '/config/.generated');
+        const result = generateTypes(data, '/config/.generated', '/config/captures');
         log(`Types generated: ${result.entityCount} entities, ${result.serviceCount} services`);
       } catch (err) {
         log(`Type generation failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -207,6 +207,14 @@ async function main(): Promise<void> {
     const { app, wsHub } = createServer({
       scriptsDir: '/config',
       generatedDir: '/config/.generated',
+      capturesDir: '/config/captures',
+      fetchFromHA: async (path) => {
+        const token = process.env.SUPERVISOR_TOKEN;
+        if (!token) throw new Error('SUPERVISOR_TOKEN not available');
+        return fetch(`http://supervisor/core/api${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      },
       triggerBuild: async () => {
         if (building) return { building: true, lastBuild: lastBuildResult };
         building = true;
@@ -279,7 +287,7 @@ async function main(): Promise<void> {
         if (!wsClient) return { success: false, entityCount: 0, serviceCount: 0, errors: ['No WebSocket connection'] };
         const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');
         const data = await fetchRegistryData(wsClient);
-        return generateTypes(data, '/config/.generated');
+        return generateTypes(data, '/config/.generated', '/config/captures');
       },
     });
 
@@ -395,7 +403,7 @@ async function main(): Promise<void> {
           // Regenerate types and run validation
           const { generateTypes, fetchRegistryData, runValidation } = await import('@ha-forge/build');
           const data = await fetchRegistryData(wsClient!);
-          const typeResult = generateTypes(data, '/config/.generated');
+          const typeResult = generateTypes(data, '/config/.generated', '/config/captures');
           logger.info('Types regenerated', { entityCount: typeResult.entityCount, serviceCount: typeResult.serviceCount });
 
           const valResult = await runValidation({ scriptsDir: '/config', generatedDir: '/config/.generated', wsClient: wsClient! });

@@ -21,6 +21,14 @@ import {
 } from '@ha-forge/sdk';
 import type { SignalEvent } from '@ha-forge/sdk';
 
+// ---- Capture data ----
+
+export interface CaptureData {
+  entity_id: string;
+  name: string;
+  events: SignalEvent[];
+}
+
 // ---- Result types ----
 
 export interface SimulationShimResult {
@@ -519,6 +527,7 @@ export async function runShimSimulation(
   transpiledJs: string,
   scenarioName: string,
   timeRangeMs: number,
+  captures?: CaptureData[],
 ): Promise<SimulationShimResult> {
   const state = createSimState();
   const collectedDefs = new Map<string, Record<string, unknown>>();
@@ -564,6 +573,18 @@ export async function runShimSimulation(
       },
     },
     signals,
+
+    // Capture — load recorded history data as a signal generator
+    capture: (entityId: string, name: string) => {
+      const match = (captures || []).find(c => c.entity_id === entityId && c.name === name);
+      if (!match) {
+        state.errors.push({ message: `Capture not found: ${entityId} / ${name}`, phase: 'init' });
+        return signals.recorded([]);
+      }
+      const gen = signals.recorded(match.events);
+      gen.duration = match.events.reduce((m, e) => Math.max(m, e.t), 0);
+      return gen;
+    },
 
     // Device — real SDK
     device,

@@ -11,6 +11,9 @@ import type { QueryLogsFn, GetLogEntityIdsFn } from './routes/logs.js';
 import { createPackagesRoutes } from './routes/packages.js';
 import { createTypesRoutes } from './routes/types.js';
 import type { TypeRegenFn } from './routes/types.js';
+import { createHARoutes } from './routes/ha.js';
+import type { FetchFromHA } from './routes/ha.js';
+import { createCapturesRoutes } from './routes/captures.js';
 import { WSHub } from './ws-hub.js';
 import { generateUIHtml } from './ui/index.js';
 
@@ -35,6 +38,10 @@ export interface WebServerConfig {
   getLogEntityIds?: GetLogEntityIdsFn;
   /** Function to regenerate types */
   regenerateTypes: TypeRegenFn;
+  /** Function to proxy requests to the HA REST API */
+  fetchFromHA?: FetchFromHA;
+  /** Directory for capture files */
+  capturesDir?: string;
 }
 
 // ---- Server creation ----
@@ -67,6 +74,12 @@ export function createServer(config: WebServerConfig) {
     generatedDir: config.generatedDir,
     regenerateTypes: config.regenerateTypes,
   }));
+  if (config.fetchFromHA) {
+    app.route('/api/ha', createHARoutes({ fetchFromHA: config.fetchFromHA }));
+  }
+  if (config.capturesDir) {
+    app.route('/api/captures', createCapturesRoutes({ capturesDir: config.capturesDir }));
+  }
 
   // UI — serve the single-page application
   app.get('/', (c) => {

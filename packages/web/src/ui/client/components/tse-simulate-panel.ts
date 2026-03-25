@@ -4,6 +4,7 @@ import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-analyzer
 import type { SimulationShimResult, EntitySimSummary } from '../simulation-shim.js';
 
 import './tse-signal-chart.js';
+import './tse-capture-modal.js';
 
 interface SignalEvent {
   t: number;
@@ -24,6 +25,7 @@ export class TseSimulatePanel extends LitElement {
   @state() private _expandedEntity: string | null = null;
   @state() private _viewStart = -1;
   @state() private _viewEnd = -1;
+  @state() private _showCaptureModal = false;
   /** Track which scenario we last auto-applied duration for, to avoid re-triggering. */
   private _lastAutoScenario = '';
 
@@ -34,6 +36,9 @@ export class TseSimulatePanel extends LitElement {
     this.addEventListener('tse-view-change', ((e: CustomEvent) => {
       this._viewStart = e.detail.start;
       this._viewEnd = e.detail.end;
+    }) as EventListener);
+    this.addEventListener('tse-capture-close', (() => {
+      this._showCaptureModal = false;
     }) as EventListener);
   }
 
@@ -104,6 +109,7 @@ export class TseSimulatePanel extends LitElement {
               `)}
             </select>
           </label>
+          <button class="capture-btn" @click=${() => { this._showCaptureModal = true; }}>Capture</button>
         </div>
 
         ${this.shimResult && selectedEntity
@@ -111,6 +117,8 @@ export class TseSimulatePanel extends LitElement {
           : this.scenarios.length === 0
             ? html`<div class="sim-warning">Define scenarios with <code>simulate.scenario('name', [...])</code> to preview.</div>`
             : html`<div class="sim-warning">Running simulation...</div>`}
+
+        ${this._showCaptureModal ? html`<tse-capture-modal></tse-capture-modal>` : nothing}
       </div>
     `;
   }
