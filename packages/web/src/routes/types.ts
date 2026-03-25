@@ -83,12 +83,19 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
       // Extract the interface blocks (SensorOptions, SwitchOptions, etc.)
       const optionInterfaces = indexDts
         .split('\n')
-        .filter(line => !line.startsWith('import ') && !line.startsWith('export '))
+        .filter(line => !line.startsWith('import ') && !line.startsWith('export ')
+          && !line.startsWith('declare const simulate')
+          && !line.startsWith('declare const signals'))
         .join('\n');
 
       // Check if generated registry types exist
       const registryPath = path.join(opts.generatedDir, 'ha-registry.d.ts');
       const hasGeneratedTypes = fs.existsSync(registryPath);
+
+      // Narrow shadows: string → HAEntityId in ScenarioSource when registry types exist
+      if (hasGeneratedTypes) {
+        types = types.replace(/\bshadows: string\b/g, 'shadows: HAEntityId');
+      }
 
       // When no generated types, provide empty HAClient/HAEventsContext stubs.
       // Users must generate types from their HA instance to get typed entity IDs and autocomplete.

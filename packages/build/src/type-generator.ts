@@ -584,7 +584,7 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
     `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
     `/** Define simulation scenarios — groups of signal sources that run together. */`,
-    `declare const simulate: { scenario(name: string, sources: Array<Omit<import('@ha-forge/sdk').ScenarioSource, 'shadows'> & { shadows: HAEntityId }>): import('@ha-forge/sdk').ScenarioDefinition };`,
+    `declare const simulate: { scenario(name: string, sources: ScenarioSource[]): import('@ha-forge/sdk').ScenarioDefinition };`,
     `/** Library of pure signal generators for use with simulate.scenario(). */`,
     `declare const signals: typeof import('@ha-forge/sdk').signals;`,
     ``,
