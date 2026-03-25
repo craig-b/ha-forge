@@ -133,6 +133,7 @@ export class TseCaptureModal extends LitElement {
                   .events=${this._previewEvents}
                   .signalType=${this._detectSignalType(this._previewEvents)}
                   .timeRange=${timeRange}
+                  .timeOrigin=${this._start ? new Date(this._start).getTime() : 0}
                   label="Preview">
                 </tse-signal-chart>
                 <div class="capture-preview-stats">${this._previewStats}</div>

@@ -14,6 +14,8 @@ export class TseSignalChart extends LitElement {
   @property({ type: String }) label = '';
   @property({ type: Number }) viewStart = -1;
   @property({ type: Number }) viewEnd = -1;
+  /** When set, x-axis labels show wall-clock times (HH:MM) instead of relative durations. Value is epoch ms of t=0. */
+  @property({ type: Number }) timeOrigin = 0;
   @state() private _hoverIndex = -1;
 
   createRenderRoot() { return this; }
@@ -164,9 +166,10 @@ export class TseSignalChart extends LitElement {
     for (let i = 0; i <= tickCount; i++) {
       const t = range.start + (duration * i) / tickCount;
       const x = pad.left + (plotW * i) / tickCount;
+      const label = this.timeOrigin ? this._fmtWallTime(t) : this._fmtTime(t - range.start);
       ticks.push(svg`
         <line x1="${x}" y1="${H - pad.bottom}" x2="${x}" y2="${H - pad.bottom + 4}" stroke="var(--text-secondary)" />
-        <text x="${x}" y="${H - 4}" class="chart-axis-label" text-anchor="middle">${this._fmtTime(t - range.start)}</text>
+        <text x="${x}" y="${H - 4}" class="chart-axis-label" text-anchor="middle">${label}</text>
       `);
     }
     return svg`
@@ -187,7 +190,7 @@ export class TseSignalChart extends LitElement {
       <line x1="${x}" y1="${pad.top}" x2="${x}" y2="${H - pad.bottom}"
         stroke="var(--text-secondary)" stroke-dasharray="2,2" class="chart-crosshair" />
       <text x="${x + 4}" y="${pad.top - 4}" class="chart-tooltip"
-        fill="var(--text-bright)" font-size="10">${this._fmtTime(event.t - range.start)}: ${event.value}</text>
+        fill="var(--text-bright)" font-size="10">${this.timeOrigin ? this._fmtWallTime(event.t) : this._fmtTime(event.t - range.start)}: ${event.value}</text>
     `;
   }
 
@@ -253,6 +256,18 @@ export class TseSignalChart extends LitElement {
     const m = Math.floor(s / 60);
     const rem = s % 60;
     return rem > 0 ? `${m}m${rem}s` : `${m}m`;
+  }
+
+  private _fmtWallTime(ms: number): string {
+    const d = new Date(this.timeOrigin + ms);
+    const pad2 = (n: number) => String(n).padStart(2, '0');
+    // Include date if range spans more than 24h
+    const range = this._effectiveRange;
+    const duration = range.end - range.start;
+    if (duration > 24 * 60 * 60 * 1000) {
+      return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    }
+    return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
   }
 
   private _fmtNum(n: number): string {
