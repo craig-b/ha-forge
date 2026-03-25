@@ -468,6 +468,17 @@ declare const simulate: typeof import('@ha-forge/sdk').simulate;
  */
 declare const signals: typeof import('@ha-forge/sdk').signals;
 /**
+ * Load a captured history signal for use in \`simulate.scenario()\`.
+ * Capture history data from the Simulate panel's "Capture" button, then reference it here.
+ * Entity IDs and capture names are fully typed when \`CaptureMap\` is generated.
+ * @param entityId - The entity ID that was captured.
+ * @param name - The name given to the capture.
+ * @returns A \`SignalGenerator\` that replays the captured events.
+ */
+declare function capture<K extends keyof CaptureMap>(entityId: K, name: CaptureMap[K]): import('@ha-forge/sdk').SignalGenerator;
+/** Map of captured entity IDs to their available capture names. Populated by saving captures from the Simulate panel. */
+interface CaptureMap {}
+/**
  * Global stateless Home Assistant client API.
  * Call services, query state, and list entities. For event subscriptions, use \`this.events\` inside entity callbacks.
  * All entity IDs and service parameters are fully typed when registry types are generated.
