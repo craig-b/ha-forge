@@ -584,11 +584,11 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
     `declare function computed<TWatch extends HAEntityId>(fn: (states: { [K in TWatch]: TypedEntitySnapshot<K> | null }) => unknown, opts: ComputedAttributeOptions<TWatch>): ComputedAttribute<TWatch>;`,
     ``,
     `/** Define simulation scenarios — groups of signal sources that run together. */`,
-    `declare const simulate: { scenario(name: string, sources: Array<{ shadows: HAEntityId; signal: import('@ha-forge/sdk').SignalGenerator }>): import('@ha-forge/sdk').ScenarioDefinition };`,
+    `declare const simulate: { scenario(name: string, sources: Array<{ shadows: HAEntityId; signal: import('@ha-forge/sdk').SignalGenerator }>): import('@ha-forge/sdk').ScenarioDefinition<HAEntityId> };`,
     `/** Library of pure signal generators for use with simulate.scenario(). */`,
     `declare const signals: typeof import('@ha-forge/sdk').signals;`,
     ``,
-    ...generateCaptureMapDeclarations(capturesDir),
+    ...generateCaptureDeclarations(capturesDir),
   ].join('\n');
 
   // ---- Generate ha-validators.ts ----
@@ -640,48 +640,52 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
   };
 }
 
-// ---- Capture map generation ----
+// ---- Capture declarations ----
 
-function generateCaptureMapDeclarations(capturesDir?: string): string[] {
-  if (!capturesDir || !fs.existsSync(capturesDir)) return [];
-
-  const files = fs.readdirSync(capturesDir).filter(f => f.endsWith('.json'));
-  if (files.length === 0) return [];
-
-  // Group capture names by entity_id
+function generateCaptureDeclarations(capturesDir?: string): string[] {
+  // Group capture names by entity_id from captures/ directory
   const capturesByEntity = new Map<string, Set<string>>();
-  for (const file of files) {
-    try {
-      const fullPath = path.join(capturesDir, file);
-      const raw = fs.readFileSync(fullPath, 'utf-8');
-      // Parse only the first portion to extract entity_id and name (skip events for performance)
-      const match = raw.match(/"entity_id"\s*:\s*"([^"]+)".*?"name"\s*:\s*"([^"]+)"/s);
-      if (match) {
-        const entityId = match[1];
-        const name = match[2];
-        const names = capturesByEntity.get(entityId) || new Set<string>();
-        names.add(name);
-        capturesByEntity.set(entityId, names);
+
+  if (capturesDir && fs.existsSync(capturesDir)) {
+    const files = fs.readdirSync(capturesDir).filter(f => f.endsWith('.json'));
+    for (const file of files) {
+      try {
+        const fullPath = path.join(capturesDir, file);
+        const raw = fs.readFileSync(fullPath, 'utf-8');
+        // Parse only the first portion to extract entity_id and name (skip events for performance)
+        const match = raw.match(/"entity_id"\s*:\s*"([^"]+)".*?"name"\s*:\s*"([^"]+)"/s);
+        if (match) {
+          const entityId = match[1];
+          const name = match[2];
+          const names = capturesByEntity.get(entityId) || new Set<string>();
+          names.add(name);
+          capturesByEntity.set(entityId, names);
+        }
+      } catch {
+        // Skip malformed files
       }
-    } catch {
-      // Skip malformed files
     }
   }
 
-  if (capturesByEntity.size === 0) return [];
+  const lines: string[] = [];
 
-  const lines: string[] = [
-    `/** Map of captured entity IDs to their available capture names. Auto-generated from captures/ directory. */`,
-    `interface CaptureMap {`,
-  ];
-  for (const [entityId, names] of capturesByEntity) {
-    const union = [...names].map(n => `'${escapeQuotes(n)}'`).join(' | ');
-    lines.push(`  '${escapeQuotes(entityId)}': ${union};`);
+  if (capturesByEntity.size > 0) {
+    // Typed overloads when captures exist
+    lines.push(`/** Map of captured entity IDs to their available capture names. Auto-generated from captures/ directory. */`);
+    lines.push(`interface CaptureMap {`);
+    for (const [entityId, names] of capturesByEntity) {
+      const union = [...names].map(n => `'${escapeQuotes(n)}'`).join(' | ');
+      lines.push(`  '${escapeQuotes(entityId)}': ${union};`);
+    }
+    lines.push(`}`);
+    lines.push(``);
+    lines.push(`/** Load a captured history signal for use in simulate.scenario(). */`);
+    lines.push(`declare function capture<K extends keyof CaptureMap>(entityId: K, name: CaptureMap[K]): import('@ha-forge/sdk').SignalGenerator;`);
+  } else {
+    // No captures yet — declare with string args so usage doesn't error
+    lines.push(`/** Load a captured history signal for use in simulate.scenario(). Save captures via the Simulate panel's "Capture" button. */`);
+    lines.push(`declare function capture(entityId: string, name: string): import('@ha-forge/sdk').SignalGenerator;`);
   }
-  lines.push(`}`);
-  lines.push(``);
-  lines.push(`/** Load a captured history signal for use in simulate.scenario(). */`);
-  lines.push(`declare function capture<K extends keyof CaptureMap>(entityId: K, name: CaptureMap[K]): import('@ha-forge/sdk').SignalGenerator;`);
   lines.push(``);
 
   return lines;

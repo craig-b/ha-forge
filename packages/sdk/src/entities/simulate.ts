@@ -1,9 +1,9 @@
 import type { SignalGenerator, ScenarioDefinition } from '../types.js';
 
-/** A single source within a scenario. */
-export interface ScenarioSource {
+/** A single source within a scenario — `shadows` is typed by the generated registry. */
+export interface ScenarioSource<T extends string = string> {
   /** The real HA entity_id this source stands in for. */
-  shadows: string;
+  shadows: T;
   /** Signal generator that produces synthetic events. */
   signal: SignalGenerator;
 }
@@ -29,7 +29,7 @@ export interface ScenarioSource {
  * ```
  */
 export const simulate = {
-  scenario(name: string, sources: ScenarioSource[]): ScenarioDefinition {
+  scenario<T extends string>(name: string, sources: ScenarioSource<T>[]): ScenarioDefinition<T> {
     return { __kind: 'scenario', name, sources };
   },
 };
