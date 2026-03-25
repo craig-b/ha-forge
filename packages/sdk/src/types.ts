@@ -63,7 +63,11 @@ export interface TimeRange {
 }
 
 /** A pure function that generates signal events for a given time range. */
-export type SignalGenerator = (range: TimeRange) => SignalEvent[];
+export interface SignalGenerator {
+  (range: TimeRange): SignalEvent[];
+  /** Total duration in ms, if known (e.g. sum of sequence segment durations). */
+  duration?: number;
+}
 
 /** A named simulation scenario — a group of signal sources that run together. */
 export interface ScenarioDefinition {

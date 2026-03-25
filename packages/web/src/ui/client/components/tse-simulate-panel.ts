@@ -24,6 +24,8 @@ export class TseSimulatePanel extends LitElement {
   @state() private _expandedEntity: string | null = null;
   @state() private _viewStart = -1;
   @state() private _viewEnd = -1;
+  /** Track which scenario we last auto-applied duration for, to avoid re-triggering. */
+  private _lastAutoScenario = '';
 
   createRenderRoot() { return this; }
 
@@ -33,6 +35,20 @@ export class TseSimulatePanel extends LitElement {
       this._viewStart = e.detail.start;
       this._viewEnd = e.detail.end;
     }) as EventListener);
+  }
+
+  updated(changed: Map<string, unknown>) {
+    // When a new result arrives with a suggested duration for a different scenario,
+    // auto-switch the duration and re-run the simulation.
+    if (changed.has('shimResult') && this.shimResult?.suggestedDurationMs) {
+      const scenario = this._selectedScenario || this.scenarios[0]?.name || '';
+      if (scenario !== this._lastAutoScenario && this._timeRangeMs !== this.shimResult.suggestedDurationMs) {
+        this._lastAutoScenario = scenario;
+        this._timeRangeMs = this.shimResult.suggestedDurationMs;
+        this._resetView();
+        this._fireSimulationChange();
+      }
+    }
   }
 
   render() {
@@ -81,7 +97,7 @@ export class TseSimulatePanel extends LitElement {
           <label class="simulate-time-label">
             Duration:
             <select class="scenario-picker" @change=${this._onTimeRange}>
-              ${[10_000, 30_000, 60_000, 300_000, 600_000, 3600_000].map(ms => html`
+              ${this._durationOptions().map(ms => html`
                 <option value="${ms}" ?selected=${ms === this._timeRangeMs}>
                   ${this._fmtDuration(ms)}
                 </option>
@@ -286,6 +302,17 @@ export class TseSimulatePanel extends LitElement {
         timeRangeMs: this._timeRangeMs,
       },
     }));
+  }
+
+  private _durationOptions(): number[] {
+    const defaults = [10_000, 30_000, 60_000, 300_000, 600_000, 3600_000];
+    const suggested = this.shimResult?.suggestedDurationMs;
+    if (!suggested || defaults.includes(suggested)) return defaults;
+    // Insert suggested duration in sorted position
+    const result = [...defaults];
+    const idx = result.findIndex(d => d > suggested);
+    result.splice(idx === -1 ? result.length : idx, 0, suggested);
+    return result;
   }
 
   private _fmtDuration(ms: number): string {

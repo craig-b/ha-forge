@@ -34,6 +34,8 @@ export interface SimulationShimResult {
   errors: SimulationError[];
   /** Summary per entity. */
   entities: Map<string, EntitySimSummary>;
+  /** Suggested duration from scenario signals (e.g. sum of sequence segment durations). */
+  suggestedDurationMs?: number;
 }
 
 export interface ServiceCallEvent {
@@ -608,7 +610,7 @@ export async function runShimSimulation(
       message: `Module execution failed: ${err instanceof Error ? err.message : String(err)}`,
       phase: 'init',
     });
-    return buildResult(state);
+    return buildResult(state, undefined);
   }
 
   // Select scenario and generate source events from captured signal generators
@@ -618,8 +620,16 @@ export async function runShimSimulation(
 
   if (!scenario) {
     state.errors.push({ message: 'No scenarios found — use simulate.scenario() to define one', phase: 'init' });
-    return buildResult(state);
+    return buildResult(state, undefined);
   }
+
+  // Compute suggested duration from source signals (e.g. sequence total duration)
+  const sourceDurations = scenario.sources
+    .map(s => (s.signal as { duration?: number }).duration)
+    .filter((d): d is number => typeof d === 'number' && d > 0);
+  const suggestedDurationMs = sourceDurations.length > 0
+    ? Math.max(...sourceDurations)
+    : undefined;
 
   const timeRange = { start: 0, end: timeRangeMs, stepMs: 1000 };
   const sourceEvents = new Map<string, SignalEvent[]>();
@@ -705,10 +715,10 @@ export async function runShimSimulation(
   // Final flush
   flushTimersUpTo(state.timers, state.currentTime + timeRangeMs, (t) => { state.currentTime = t; });
 
-  return buildResult(state);
+  return buildResult(state, suggestedDurationMs);
 }
 
-function buildResult(state: SimState): SimulationShimResult {
+function buildResult(state: SimState, suggestedDurationMs: number | undefined): SimulationShimResult {
   const entities = new Map<string, EntitySimSummary>();
 
   // Sources first so the chain flow bar reads left-to-right (source → downstream)
@@ -738,5 +748,6 @@ function buildResult(state: SimState): SimulationShimResult {
     missingEntities: [...state.missingEntities],
     errors: state.errors,
     entities,
+    ...(suggestedDurationMs !== undefined && { suggestedDurationMs }),
   };
 }

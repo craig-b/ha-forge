@@ -228,7 +228,8 @@ export interface SequenceSegment {
 }
 
 function sequenceGenerator(segments: SequenceSegment[]): SignalGenerator {
-  return (range: TimeRange): SignalEvent[] => {
+  const totalDuration = segments.reduce((sum, s) => sum + s.duration, 0);
+  const gen: SignalGenerator = (range: TimeRange): SignalEvent[] => {
     const events: SignalEvent[] = [];
     let offset = range.start;
 
@@ -252,6 +253,8 @@ function sequenceGenerator(segments: SequenceSegment[]): SignalGenerator {
 
     return events;
   };
+  gen.duration = totalDuration;
+  return gen;
 }
 
 /** Library of pure signal generators for use with `simulate()`. */
