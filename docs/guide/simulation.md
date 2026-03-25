@@ -81,6 +81,50 @@ export const replaySim = simulate({
 });
 ```
 
+### `signals.sine(options)`
+
+Generates a sine wave between `min` and `max`. Set `period` to twice the simulation duration for a single bell curve arch (starts at `min`, peaks at midpoint, returns to `min`).
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `min` | `number` | Trough value |
+| `max` | `number` | Peak value |
+| `period` | `number` | Duration of one full cycle in ms |
+| `phase` | `number?` | Start position in cycle (0-1). 0 = rising from midpoint, 0.25 = at peak |
+| `noise` | `number?` | Max noise amplitude |
+| `interval` | `number` | Milliseconds between events |
+| `seed` | `number` | PRNG seed |
+
+### `signals.ramp(options)`
+
+Generates a linear transition from one value to another. Stretches to fill whatever time range it receives -- a ramp from 0 to 100 produces different slopes depending on segment duration.
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `from` | `number` | Starting value |
+| `to` | `number` | Ending value |
+| `noise` | `number?` | Max noise amplitude |
+| `interval` | `number` | Milliseconds between events |
+| `seed` | `number` | PRNG seed |
+
+### `signals.sequence(segments)`
+
+Concatenates multiple signal generators in time. Each segment gets a `duration` and a `signal` generator. The generator receives a time range starting at 0, and timestamps are offset to the segment's position in the overall timeline.
+
+```ts
+// Ramp up, noisy plateau, ramp down
+signals.sequence([
+  { duration: 300_000,  signal: signals.ramp({ from: 0, to: 4500, noise: 50, interval: 5000, seed: 1 }) },
+  { duration: 600_000,  signal: signals.numeric({ base: 4500, noise: 200, interval: 5000, seed: 2 }) },
+  { duration: 300_000,  signal: signals.ramp({ from: 4500, to: 0, noise: 50, interval: 5000, seed: 3 }) },
+])
+```
+
+| Segment Field | Type | Description |
+|---------------|------|-------------|
+| `duration` | `number` | Segment duration in ms |
+| `signal` | `SignalGenerator` | Any signal generator |
+
 ## Using the Simulate Panel
 
 1. Define one or more `simulate()` calls in any open file

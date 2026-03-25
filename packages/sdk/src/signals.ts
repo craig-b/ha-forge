@@ -150,6 +150,110 @@ function recordedGenerator(events: SignalEvent[]): SignalGenerator {
   };
 }
 
+// ---- Shaped signal generators ----
+
+export interface SineSignalOptions {
+  /** Minimum value (trough). */
+  min: number;
+  /** Maximum value (peak). */
+  max: number;
+  /** Duration of one full cycle in milliseconds. */
+  period: number;
+  /** Where in the cycle to start (0–1). 0 = rising from midpoint, 0.25 = at peak, 0.5 = falling from midpoint, 0.75 = at trough. Default: 0 */
+  phase?: number;
+  /** Maximum noise amplitude added/subtracted from the wave. Default: 0 */
+  noise?: number;
+  /** Time between events in milliseconds. */
+  interval: number;
+  /** PRNG seed for deterministic noise. */
+  seed: number;
+}
+
+function sineGenerator(opts: SineSignalOptions): SignalGenerator {
+  return (range: TimeRange): SignalEvent[] => {
+    const rng = xoshiro128ss(opts.seed);
+    const events: SignalEvent[] = [];
+    const amplitude = (opts.max - opts.min) / 2;
+    const midpoint = opts.min + amplitude;
+    const phase = opts.phase ?? 0;
+    const noiseAmp = opts.noise ?? 0;
+
+    for (let t = range.start; t <= range.end; t += opts.interval) {
+      const angle = ((t - range.start) / opts.period + phase) * 2 * Math.PI;
+      const base = midpoint + amplitude * Math.sin(angle);
+      const noise = noiseAmp > 0 ? (rng() * 2 - 1) * noiseAmp : 0;
+      events.push({ t, value: Math.round((base + noise) * 100) / 100 });
+    }
+
+    return events;
+  };
+}
+
+export interface RampSignalOptions {
+  /** Starting value. */
+  from: number;
+  /** Ending value. */
+  to: number;
+  /** Maximum noise amplitude added/subtracted from the ramp. Default: 0 */
+  noise?: number;
+  /** Time between events in milliseconds. */
+  interval: number;
+  /** PRNG seed for deterministic noise. */
+  seed: number;
+}
+
+function rampGenerator(opts: RampSignalOptions): SignalGenerator {
+  return (range: TimeRange): SignalEvent[] => {
+    const rng = xoshiro128ss(opts.seed);
+    const events: SignalEvent[] = [];
+    const duration = range.end - range.start;
+    const noiseAmp = opts.noise ?? 0;
+
+    for (let t = range.start; t <= range.end; t += opts.interval) {
+      const progress = duration > 0 ? (t - range.start) / duration : 1;
+      const base = opts.from + (opts.to - opts.from) * progress;
+      const noise = noiseAmp > 0 ? (rng() * 2 - 1) * noiseAmp : 0;
+      events.push({ t, value: Math.round((base + noise) * 100) / 100 });
+    }
+
+    return events;
+  };
+}
+
+export interface SequenceSegment {
+  /** Duration of this segment in milliseconds. */
+  duration: number;
+  /** Signal generator for this segment. Receives a range from 0 to duration. */
+  signal: SignalGenerator;
+}
+
+function sequenceGenerator(segments: SequenceSegment[]): SignalGenerator {
+  return (range: TimeRange): SignalEvent[] => {
+    const events: SignalEvent[] = [];
+    let offset = range.start;
+
+    for (const segment of segments) {
+      if (offset >= range.end) break;
+      const segEnd = Math.min(offset + segment.duration, range.end);
+      const segRange: TimeRange = {
+        start: 0,
+        end: segEnd - offset,
+        stepMs: range.stepMs,
+      };
+      const segEvents = segment.signal(segRange);
+      for (const e of segEvents) {
+        const absoluteT = e.t + offset;
+        if (absoluteT >= range.start && absoluteT <= range.end) {
+          events.push({ t: absoluteT, value: e.value });
+        }
+      }
+      offset += segment.duration;
+    }
+
+    return events;
+  };
+}
+
 /** Library of pure signal generators for use with `simulate()`. */
 export const signals = {
   /** Generate numeric signals with noise, optional spikes and dropouts. */
@@ -160,4 +264,10 @@ export const signals = {
   enum: enumGenerator,
   /** Replay a fixed array of recorded events. */
   recorded: recordedGenerator,
+  /** Generate a sine wave between min and max with optional noise. Use a half-period for bell curves. */
+  sine: sineGenerator,
+  /** Generate a linear ramp from one value to another with optional noise. Stretches to fill the time range. */
+  ramp: rampGenerator,
+  /** Concatenate multiple signal segments in time. Each segment's generator receives a range starting at 0. */
+  sequence: sequenceGenerator,
 };

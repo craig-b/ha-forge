@@ -136,6 +136,141 @@ describe('signals', () => {
       ]);
     });
   });
+
+  describe('sine', () => {
+    it('produces values between min and max', () => {
+      const gen = signals.sine({ min: 10, max: 30, period: 10_000, interval: 1000, seed: 1 });
+      const events = gen(range);
+      for (const e of events) {
+        expect(e.value).toBeGreaterThanOrEqual(10);
+        expect(e.value).toBeLessThanOrEqual(30);
+      }
+    });
+
+    it('is deterministic with same seed', () => {
+      const gen = signals.sine({ min: 0, max: 100, period: 10_000, interval: 1000, seed: 42 });
+      expect(gen(range)).toEqual(gen(range));
+    });
+
+    it('reaches peak and trough over a full cycle', () => {
+      const gen = signals.sine({ min: 0, max: 100, period: 10_000, interval: 500, seed: 1 });
+      const events = gen({ start: 0, end: 10_000, stepMs: 500 });
+      const values = events.map(e => e.value as number);
+      // Should get close to 100 (peak) and close to 0 (trough)
+      expect(Math.max(...values)).toBeGreaterThan(90);
+      expect(Math.min(...values)).toBeLessThan(10);
+    });
+
+    it('adds noise when specified', () => {
+      const clean = signals.sine({ min: 0, max: 100, period: 10_000, interval: 1000, seed: 1 });
+      const noisy = signals.sine({ min: 0, max: 100, period: 10_000, noise: 5, interval: 1000, seed: 1 });
+      const cleanEvents = clean(range);
+      const noisyEvents = noisy(range);
+      expect(cleanEvents.length).toBe(noisyEvents.length);
+      // At least some values should differ due to noise
+      const diffs = cleanEvents.filter((e, i) => e.value !== noisyEvents[i].value);
+      expect(diffs.length).toBeGreaterThan(0);
+    });
+
+    it('phase shifts the wave', () => {
+      const atZero = signals.sine({ min: 0, max: 100, period: 10_000, phase: 0, interval: 10_000, seed: 1 });
+      const atPeak = signals.sine({ min: 0, max: 100, period: 10_000, phase: 0.25, interval: 10_000, seed: 1 });
+      // At t=0 with phase=0, value should be at midpoint (50)
+      const zeroVal = atZero({ start: 0, end: 0, stepMs: 1000 })[0].value as number;
+      // At t=0 with phase=0.25, value should be at peak (100)
+      const peakVal = atPeak({ start: 0, end: 0, stepMs: 1000 })[0].value as number;
+      expect(zeroVal).toBeCloseTo(50, 0);
+      expect(peakVal).toBeCloseTo(100, 0);
+    });
+  });
+
+  describe('ramp', () => {
+    it('starts at from and ends at to', () => {
+      const gen = signals.ramp({ from: 0, to: 100, interval: 1000, seed: 1 });
+      const events = gen(range);
+      expect(events[0].value).toBe(0);
+      expect(events[events.length - 1].value).toBe(100);
+    });
+
+    it('is deterministic with same seed', () => {
+      const gen = signals.ramp({ from: 10, to: 50, interval: 1000, seed: 42 });
+      expect(gen(range)).toEqual(gen(range));
+    });
+
+    it('interpolates linearly', () => {
+      const gen = signals.ramp({ from: 0, to: 100, interval: 2500, seed: 1 });
+      const events = gen(range);
+      // At 25%, 50%, 75% of range
+      expect(events[1].value).toBe(25);
+      expect(events[2].value).toBe(50);
+      expect(events[3].value).toBe(75);
+    });
+
+    it('supports descending ramps', () => {
+      const gen = signals.ramp({ from: 100, to: 0, interval: 5000, seed: 1 });
+      const events = gen(range);
+      expect(events[0].value).toBe(100);
+      expect(events[events.length - 1].value).toBe(0);
+    });
+
+    it('adds noise when specified', () => {
+      const clean = signals.ramp({ from: 0, to: 100, interval: 1000, seed: 1 });
+      const noisy = signals.ramp({ from: 0, to: 100, noise: 3, interval: 1000, seed: 1 });
+      const cleanEvents = clean(range);
+      const noisyEvents = noisy(range);
+      const diffs = cleanEvents.filter((e, i) => e.value !== noisyEvents[i].value);
+      expect(diffs.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('sequence', () => {
+    it('concatenates segments in time', () => {
+      const gen = signals.sequence([
+        { duration: 5000, signal: signals.numeric({ base: 10, noise: 0, interval: 2500, seed: 1 }) },
+        { duration: 5000, signal: signals.numeric({ base: 90, noise: 0, interval: 2500, seed: 1 }) },
+      ]);
+      const events = gen(range);
+      // First segment: t=0,2500,5000 → 3 events at value 10
+      // Second segment: t=5000,7500,10000 → 3 events at value 90
+      // But t=5000 appears in both — sequence just appends, so 6 total
+      const firstHalf = events.filter(e => e.value === 10);
+      const secondHalf = events.filter(e => e.value === 90);
+      expect(firstHalf.length).toBeGreaterThan(0);
+      expect(secondHalf.length).toBeGreaterThan(0);
+      expect(firstHalf[0].t).toBe(0);
+      expect(secondHalf[0].t).toBe(5000);
+    });
+
+    it('passes normalized range to each segment', () => {
+      const gen = signals.sequence([
+        { duration: 5000, signal: signals.ramp({ from: 0, to: 100, interval: 5000, seed: 1 }) },
+        { duration: 5000, signal: signals.ramp({ from: 100, to: 0, interval: 5000, seed: 1 }) },
+      ]);
+      const events = gen(range);
+      // First ramp: 0→100 over 0-5000, second ramp: 100→0 over 5000-10000
+      expect(events[0].value).toBe(0);
+      expect(events[0].t).toBe(0);
+      // Midpoint — end of first ramp
+      const mid = events.find(e => e.t === 5000);
+      expect(mid).toBeDefined();
+      expect(mid!.value).toBe(100);
+      // End of second ramp
+      expect(events[events.length - 1].value).toBe(0);
+      expect(events[events.length - 1].t).toBe(10000);
+    });
+
+    it('stops when range is exhausted', () => {
+      const gen = signals.sequence([
+        { duration: 20_000, signal: signals.numeric({ base: 50, noise: 0, interval: 5000, seed: 1 }) },
+      ]);
+      // Range is shorter than the segment
+      const events = gen(range);
+      expect(events.length).toBeGreaterThan(0);
+      for (const e of events) {
+        expect(e.t).toBeLessThanOrEqual(10_000);
+      }
+    });
+  });
 });
 
 // ---- Simulated time engine ----
