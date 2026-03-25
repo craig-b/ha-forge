@@ -2353,7 +2353,7 @@ export class TseApp extends LitElement {
     this._runShimSimulation();
   }
 
-  private _runShimSimulation() {
+  private async _runShimSimulation() {
     if (this._simScenarios.length === 0 || !isAstReady()) {
       this._shimResult = null;
       return;
@@ -2394,7 +2394,7 @@ export class TseApp extends LitElement {
     const transpiledJs = transpiledParts.join('\n;\n');
 
     try {
-      this._shimResult = runShimSimulation(transpiledJs, this._simSelectedScenario, this._simTimeRangeMs);
+      this._shimResult = await runShimSimulation(transpiledJs, this._simSelectedScenario, this._simTimeRangeMs);
     } catch {
       this._shimResult = null;
     }

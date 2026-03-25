@@ -2,17 +2,24 @@
  * Simulation shim — sandboxed runtime for executing user entity code
  * with mocked HA APIs and virtual time.
  *
- * Instead of extracting function bodies from AST and compiling them,
- * we transpile the user's source and run it directly. The shim provides
- * all SDK exports as mock implementations that capture entity registrations,
- * state updates, stream subscriptions, and service calls.
+ * Uses the real SDK entity factories and behavior wrappers as globals.
+ * The user's transpiled code calls the real `computed()`, `buffered()`, etc.
+ * These return definition objects with `init()` functions. The shim then
+ * calls `init()` on each definition with a mock `EntityContext` as `this`.
  *
  * Security model: the user's own code from their own editor is executed
  * with a restricted set of globals (same trust model as Monaco's TS worker).
  * External APIs (fetch, fs, process) are simply not provided.
  */
 
-import { signals, type SignalEvent } from './simulation.js';
+import {
+  computed, sensor, binarySensor, defineSwitch, light, cover, climate,
+  fan, lock, number, select, text, button, automation, task, mode, cron,
+  device, simulate, signals, entityFactory,
+  debounced, filtered, sampled, buffered,
+  average, sum, min, max, last, count,
+} from '@ha-forge/sdk';
+import type { SignalEvent } from '@ha-forge/sdk';
 
 // ---- Result types ----
 
@@ -107,9 +114,7 @@ interface SimState {
   /** Entity IDs accessed but had no simulation source. */
   missingEntities: Set<string>;
   /** Registered entity metadata. */
-  registeredEntities: Map<string, { kind: string; init?: () => void; watches?: string[] }>;
-  /** Entity mock contexts — needed so behavior wrappers can intercept update(). */
-  entityContexts: Map<string, Record<string, unknown>>;
+  registeredEntities: Map<string, { kind: string; init?: () => void | Promise<void>; watches?: string[] }>;
   /** Errors. */
   errors: SimulationError[];
 }
@@ -125,7 +130,6 @@ function createSimState(): SimState {
     serviceCalls: [],
     missingEntities: new Set(),
     registeredEntities: new Map(),
-    entityContexts: new Map(),
     errors: [],
   };
 }
@@ -298,7 +302,10 @@ function createMockContext(
           const subs = state.streamSubs.get(eid) || [];
           subs.push(() => {
             const snapshot: Record<string, unknown> = {};
-            for (const e of entities) snapshot[e] = state.stateStore.get(e) ?? null;
+            for (const e of entities) {
+              const s = state.stateStore.get(e);
+              snapshot[e] = s ? { state: String(s.state), attributes: s.attributes } : null;
+            }
             callback(snapshot);
           });
           state.streamSubs.set(eid, subs);
@@ -382,17 +389,18 @@ function createMockHaApi(state: SimState): Record<string, unknown> {
   return {
     callService(entityId: string, service: string) {
       state.serviceCalls.push({ t: state.currentTime, entityId, service });
+      return Promise.resolve(null);
     },
     getState(entityId: string) {
       const s = state.stateStore.get(entityId);
       if (!s) {
         state.missingEntities.add(entityId);
-        return { state: 'unavailable', attributes: {} };
+        return Promise.resolve({ state: 'unavailable', attributes: {} });
       }
-      return s;
+      return Promise.resolve({ state: String(s.state), attributes: s.attributes });
     },
-    getEntities() { return [...state.stateStore.keys()]; },
-    fireEvent() {},
+    getEntities() { return Promise.resolve([...state.stateStore.keys()]); },
+    fireEvent() { return Promise.resolve(); },
     friendlyName(entityId: string) { return entityId; },
   };
 }
@@ -417,94 +425,9 @@ function notifyStreamSubs(
   }
 }
 
-// ---- Entity factory shims ----
+// ---- Collection infrastructure ----
 
-type EntityFactoryFn = (config: Record<string, unknown>) => Record<string, unknown>;
-
-function createEntityFactory(state: SimState, kind: string): EntityFactoryFn {
-  return (config: Record<string, unknown>) => {
-    const id = config.id as string;
-    const domain = factoryDomain(kind);
-    const fullId = `${domain}.${id}`;
-
-    const ctx = createMockContext(state, fullId);
-    state.entityContexts.set(fullId, ctx);
-
-    const watchIds = (kind === 'computed' && config.watch) ? config.watch as string[] : undefined;
-
-    state.registeredEntities.set(fullId, {
-      kind,
-      watches: watchIds,
-      init: config.init ? () => {
-        try {
-          (config.init as (this: Record<string, unknown>) => unknown).call(ctx);
-        } catch (err) {
-          state.errors.push({
-            entityId: fullId,
-            message: err instanceof Error ? err.message : String(err),
-            phase: 'init',
-          });
-        }
-      } : undefined,
-    });
-
-    // Computed entities: set up watch + compute pipeline
-    if (kind === 'computed' && watchIds && config.compute) {
-      const computeFn = config.compute as (states: Record<string, { state: string | number }>) => unknown;
-      const debounce = typeof config.debounce === 'number' ? config.debounce : 0;
-      let debounceTimerId: number | null = null;
-
-      const runCompute = () => {
-        const states: Record<string, { state: string | number }> = {};
-        for (const wid of watchIds) {
-          const s = state.stateStore.get(wid);
-          if (s) {
-            states[wid] = { state: s.state };
-          } else {
-            state.missingEntities.add(wid);
-            states[wid] = { state: 'unavailable' };
-          }
-        }
-        try {
-          const value = computeFn(states);
-          if (value !== undefined && value !== null) {
-            (ctx.update as (v: unknown) => void)(value);
-          }
-        } catch (err) {
-          state.errors.push({
-            entityId: fullId,
-            message: err instanceof Error ? err.message : String(err),
-            phase: 'compute',
-          });
-        }
-      };
-
-      for (const wid of watchIds) {
-        const subs = state.streamSubs.get(wid) || [];
-        subs.push(() => {
-          if (debounce > 0) {
-            if (debounceTimerId !== null) {
-              const idx = state.timers.findIndex(t => t.id === debounceTimerId);
-              if (idx !== -1) state.timers.splice(idx, 1);
-            }
-            debounceTimerId = state.nextTimerId++;
-            insertTimer(state.timers, {
-              id: debounceTimerId,
-              fireAt: state.currentTime + debounce,
-              callback: () => { debounceTimerId = null; runCompute(); },
-            });
-          } else {
-            runCompute();
-          }
-        });
-        state.streamSubs.set(wid, subs);
-      }
-    }
-
-    return { __kind: kind, ...config };
-  };
-}
-
+/** Map from HA domain kind to MQTT domain prefix. */
 function factoryDomain(kind: string): string {
   const map: Record<string, string> = {
     sensor: 'sensor', binarySensor: 'binary_sensor', switch: 'switch',
@@ -516,181 +439,137 @@ function factoryDomain(kind: string): string {
   return map[kind] || kind;
 }
 
+function collectDef(
+  collectedDefs: Map<string, Record<string, unknown>>,
+  def: Record<string, unknown>,
+) {
+  const id = def.id as string | undefined;
+  const type = def.type as string | undefined;
+  if (!id || !type) return;
+  const domain = factoryDomain(type);
+  const fullId = `${domain}.${id}`;
+  collectedDefs.set(fullId, def);
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function wrapFactory(fn: (...args: any[]) => any, collectedDefs: Map<string, Record<string, unknown>>) {
+  return (...args: unknown[]) => {
+    const def = fn(...args);
+    collectDef(collectedDefs, def as Record<string, unknown>);
+    return def;
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function wrapBehavior(fn: (entity: any, ...rest: any[]) => any, collectedDefs: Map<string, Record<string, unknown>>) {
+  return (entity: unknown, ...rest: unknown[]) => {
+    const def = fn(entity, ...rest);
+    collectDef(collectedDefs, def as Record<string, unknown>);
+    return def;
+  };
+}
+
+/** Topological sort of definitions by their watch arrays (dependencies first). */
+function topoSort(defs: Map<string, Record<string, unknown>>): Array<[string, Record<string, unknown>]> {
+  const result: Array<[string, Record<string, unknown>]> = [];
+  const visited = new Set<string>();
+  const visiting = new Set<string>();
+
+  function visit(fullId: string) {
+    if (visited.has(fullId)) return;
+    if (visiting.has(fullId)) return; // cycle — just skip
+    visiting.add(fullId);
+
+    const def = defs.get(fullId);
+    if (def) {
+      const watches = def.watch as string[] | undefined;
+      if (watches) {
+        for (const wid of watches) {
+          if (defs.has(wid)) visit(wid);
+        }
+      }
+    }
+
+    visiting.delete(fullId);
+    visited.add(fullId);
+    if (def) result.push([fullId, def]);
+  }
+
+  for (const fullId of defs.keys()) visit(fullId);
+  return result;
+}
+
 // ---- Main simulation runner ----
 
 /**
  * Run a simulation by executing transpiled user code with the shim runtime.
  *
- * The user's code is executed with a controlled set of globals — SDK factory
- * functions, mock HA APIs, and virtual timers. External APIs (fetch, fs, etc.)
- * are not provided. This is the user's own code from their editor, same trust
- * model as Monaco's TypeScript worker.
+ * The user's code is executed with a controlled set of globals — real SDK
+ * factory functions wrapped with collection, mock HA APIs, and virtual timers.
+ * External APIs (fetch, fs, etc.) are not provided. This is the user's own code
+ * from their editor, same trust model as Monaco's TypeScript worker.
  *
  * @param transpiledJs - User code transpiled to JS (from ts.transpileModule).
  * @param scenarioName - Name of the scenario to run (empty = first scenario found).
  * @param timeRangeMs - Duration to simulate in virtual time.
  */
-export function runShimSimulation(
+export async function runShimSimulation(
   transpiledJs: string,
   scenarioName: string,
   timeRangeMs: number,
-): SimulationShimResult {
+): Promise<SimulationShimResult> {
   const state = createSimState();
+  const collectedDefs = new Map<string, Record<string, unknown>>();
   const capturedScenarios: Array<{ name: string; sources: Array<{ shadows: string; signal: (range: { start: number; end: number; stepMs: number }) => SignalEvent[] }> }> = [];
 
-  // Build the shim globals — only what we explicitly provide is available
-  const factories: Record<string, EntityFactoryFn> = {};
-  const factoryNames = [
-    'sensor', 'binarySensor', 'defineSwitch', 'light', 'cover', 'climate',
-    'fan', 'lock', 'number', 'select', 'text', 'button', 'scene',
-    'event', 'computed', 'automation', 'task', 'mode',
-  ];
-  for (const name of factoryNames) {
-    factories[name] = createEntityFactory(state, name);
-  }
-
-  // Built-in reducer implementations matching the SDK
-  const builtinReducers: Record<string, (values: number[]) => number> = {
-    average: (vals) => vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : 0,
-    sum: (vals) => vals.reduce((a, b) => a + b, 0),
-    min: (vals) => vals.length > 0 ? Math.min(...vals) : 0,
-    max: (vals) => vals.length > 0 ? Math.max(...vals) : 0,
-    last: (vals) => vals.length > 0 ? vals[vals.length - 1] : 0,
-    count: (vals) => vals.length,
-  };
-
-  function resolveReducer(reduce: unknown): (values: number[]) => number {
-    if (typeof reduce === 'function') return reduce as (values: number[]) => number;
-    if (typeof reduce === 'string' && builtinReducers[reduce]) return builtinReducers[reduce];
-    return builtinReducers.average;
-  }
-
-  function resolveEntityId(inner: Record<string, unknown>): string {
-    const id = inner.id as string;
-    for (const fullId of state.registeredEntities.keys()) {
-      if (fullId.endsWith(`.${id}`)) return fullId;
-    }
-    return id;
-  }
-
-  /** Patch ctx.update to intercept updates, matching real SDK behavior. */
-  function patchUpdate(
-    entityId: string,
-    patcher: (originalUpdate: (v: unknown, attrs?: Record<string, unknown>) => void) => (v: unknown, attrs?: Record<string, unknown>) => void,
-  ) {
-    const ctx = state.entityContexts.get(entityId);
-    if (!ctx) return;
-    const original = ctx.update as (v: unknown, attrs?: Record<string, unknown>) => void;
-    ctx.update = patcher(original);
-  }
-
+  // Build the shim globals — real SDK functions wrapped with collection
   const shimGlobals: Record<string, unknown> = {
-    ...factories,
+    // Entity factories — real SDK, wrapped to collect definitions
+    sensor: wrapFactory(sensor, collectedDefs),
+    binarySensor: wrapFactory(binarySensor, collectedDefs),
+    defineSwitch: wrapFactory(defineSwitch, collectedDefs),
+    light: wrapFactory(light, collectedDefs),
+    cover: wrapFactory(cover, collectedDefs),
+    climate: wrapFactory(climate, collectedDefs),
+    fan: wrapFactory(fan, collectedDefs),
+    lock: wrapFactory(lock, collectedDefs),
+    number: wrapFactory(number, collectedDefs),
+    select: wrapFactory(select, collectedDefs),
+    text: wrapFactory(text, collectedDefs),
+    button: wrapFactory(button, collectedDefs),
+    computed: wrapFactory(computed, collectedDefs),
+    automation: wrapFactory(automation, collectedDefs),
+    task: wrapFactory(task, collectedDefs),
+    mode: wrapFactory(mode, collectedDefs),
+    cron: wrapFactory(cron, collectedDefs),
+    entityFactory: wrapFactory(entityFactory, collectedDefs),
+
+    // Behavior wrappers — real SDK, overwrites previous def for same entity ID
+    debounced: wrapBehavior(debounced, collectedDefs),
+    filtered: wrapBehavior(filtered, collectedDefs),
+    sampled: wrapBehavior(sampled, collectedDefs),
+    buffered: wrapBehavior(buffered, collectedDefs),
+
+    // Reducers — real SDK values directly
+    average, sum, min, max, last, count,
+
+    // Simulation — real SDK, wrapped to capture scenarios
     simulate: {
       scenario(name: string, sources: Array<{ shadows: string; signal: unknown }>) {
+        const def = simulate.scenario(name, sources as Parameters<typeof simulate.scenario>[1]);
         capturedScenarios.push({ name, sources: sources as typeof capturedScenarios[0]['sources'] });
-        return { __kind: 'scenario', name, sources };
+        return def;
       },
     },
     signals,
-    device: (config: Record<string, unknown>) => ({ __kind: 'device', ...config }),
-    // Behavior wrappers — intercept ctx.update to match real SDK behavior
-    debounced: (inner: Record<string, unknown>, opts?: { wait?: number }) => {
-      const entityId = resolveEntityId(inner);
-      const waitMs = opts?.wait || 1000;
-      patchUpdate(entityId, (originalUpdate) => {
-        let timer: number | null = null;
-        let first = true;
-        return (value, attributes) => {
-          // First update passes through immediately (matches SDK)
-          if (first) {
-            first = false;
-            originalUpdate(value, attributes);
-            return;
-          }
-          if (timer !== null) {
-            const idx = state.timers.findIndex(t => t.id === timer);
-            if (idx !== -1) state.timers.splice(idx, 1);
-          }
-          timer = state.nextTimerId++;
-          const captured = { value, attributes };
-          insertTimer(state.timers, {
-            id: timer,
-            fireAt: state.currentTime + waitMs,
-            callback: () => { timer = null; originalUpdate(captured.value, captured.attributes); },
-          });
-        };
-      });
-      return inner;
-    },
-    filtered: (inner: Record<string, unknown>, opts?: { predicate?: unknown }) => {
-      if (typeof opts?.predicate === 'function') {
-        const entityId = resolveEntityId(inner);
-        const predicate = opts.predicate as (v: unknown) => boolean;
-        patchUpdate(entityId, (originalUpdate) => {
-          return (value, attributes) => {
-            try {
-              if (predicate(value)) originalUpdate(value, attributes);
-            } catch { originalUpdate(value, attributes); }
-          };
-        });
-      }
-      return inner;
-    },
-    sampled: (inner: Record<string, unknown>, opts?: { interval?: number }) => {
-      const entityId = resolveEntityId(inner);
-      const intervalMs = opts?.interval || 30_000;
-      patchUpdate(entityId, (originalUpdate) => {
-        let latest: { value: unknown; attributes?: Record<string, unknown> } | undefined;
-        let started = false;
-        return (value, attributes) => {
-          latest = { value, attributes };
-          if (!started) {
-            started = true;
-            originalUpdate(value, attributes);
-            const id = state.nextTimerId++;
-            insertTimer(state.timers, {
-              id,
-              fireAt: state.currentTime + intervalMs,
-              callback: function sampleTick() {
-                if (latest) originalUpdate(latest.value, latest.attributes);
-              },
-              interval: intervalMs,
-            });
-          }
-        };
-      });
-      return inner;
-    },
-    buffered: (inner: Record<string, unknown>, opts?: { interval?: number; reduce?: unknown }) => {
-      const entityId = resolveEntityId(inner);
-      const intervalMs = opts?.interval || 30_000;
-      const reduceFn = resolveReducer(opts?.reduce);
-      patchUpdate(entityId, (originalUpdate) => {
-        let buffer: unknown[] = [];
-        const id = state.nextTimerId++;
-        insertTimer(state.timers, {
-          id,
-          fireAt: state.currentTime + intervalMs,
-          callback: function flushBuffer() {
-            if (buffer.length > 0) {
-              const result = reduceFn(buffer.map(v => typeof v === 'number' ? v : Number(v)).filter(n => !isNaN(n)));
-              buffer = [];
-              originalUpdate(Math.round(result * 100) / 100);
-            }
-          },
-          interval: intervalMs,
-        });
-        return (value) => {
-          buffer.push(value);
-        };
-      });
-      return inner;
-    },
-    average: 'average', sum: 'sum', min: 'min', max: 'max', last: 'last', count: 'count',
-    exports: {},  // absorb CommonJS-style exports emitted by transpiler
-    module: { exports: {} },  // absorb module.exports patterns
-    console,      // pass through real console so user logs appear in devtools
+
+    // Device — real SDK
+    device,
+
+    // Module stubs, console, timers, builtins
+    exports: {},
+    module: { exports: {} },
+    console,
     setTimeout: (cb: () => void, ms: number) => {
       const id = state.nextTimerId++;
       insertTimer(state.timers, { id, fireAt: state.currentTime + ms, callback: cb });
@@ -718,10 +597,11 @@ export function runShimSimulation(
   // User's own code from their editor, restricted to shim globals only.
   // We pass a single _g object and generate var declarations to avoid
   // reserved-word issues with names like 'switch' as function parameters.
+  // NOTE: new Function() is intentional here — sandboxed execution of the
+  // user's own editor code (same trust model as Monaco's TypeScript worker).
   try {
     const varDecls = Object.keys(shimGlobals).map(k => `var ${k} = _g[${JSON.stringify(k)}];`).join('\n');
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval -- intentional: sandbox for user's own editor code
-    const fn = new Function('_g', varDecls + '\n' + transpiledJs);
+    const fn = new Function('_g', varDecls + '\n' + transpiledJs); // eslint-disable-line no-new-func
     fn(shimGlobals);
   } catch (err) {
     state.errors.push({
@@ -729,11 +609,6 @@ export function runShimSimulation(
       phase: 'init',
     });
     return buildResult(state);
-  }
-
-  // Initialize entities that have init()
-  for (const [, reg] of state.registeredEntities) {
-    if (reg.init) reg.init();
   }
 
   // Select scenario and generate source events from captured signal generators
@@ -761,20 +636,58 @@ export function runShimSimulation(
     }
   }
 
+  // Pre-populate state store with first source event values
   for (const [entityId, events] of sourceEvents) {
     const sorted = [...events].sort((a, b) => a.t - b.t);
-
-    // Initialize source entity state
     if (sorted.length > 0) {
       state.stateStore.set(entityId, { state: sorted[0].value, attributes: {} });
     }
+  }
+
+  // Build registeredEntities from collected definitions, sorted topologically
+  const sortedDefs = topoSort(collectedDefs);
+  for (const [fullId, def] of sortedDefs) {
+    const kind = (def.type as string) || 'unknown';
+    const watches = def.watch as string[] | undefined;
+    const initFn = def.init as ((this: Record<string, unknown>) => unknown) | undefined;
+
+    state.registeredEntities.set(fullId, {
+      kind,
+      watches,
+      init: initFn ? async () => {
+        const ctx = createMockContext(state, fullId);
+        try {
+          const result = await initFn.call(ctx);
+          // If init returns a value, publish it as initial state
+          if (result !== undefined && result !== null) {
+            (ctx.update as (v: unknown) => void)(result);
+          }
+        } catch (err) {
+          state.errors.push({
+            entityId: fullId,
+            message: err instanceof Error ? err.message : String(err),
+            phase: 'init',
+          });
+        }
+      } : undefined,
+    });
+  }
+
+  // Initialize entities in topological order (dependencies first)
+  for (const [, reg] of state.registeredEntities) {
+    if (reg.init) await reg.init();
+  }
+
+  // Feed source events
+  for (const [entityId, events] of sourceEvents) {
+    const sortedEvents = [...events].sort((a, b) => a.t - b.t);
 
     // Record source events
-    state.outputEvents.set(entityId, [...sorted]);
+    state.outputEvents.set(entityId, [...sortedEvents]);
 
     // Feed each event
-    for (let i = 0; i < sorted.length; i++) {
-      const event = sorted[i];
+    for (let i = 0; i < sortedEvents.length; i++) {
+      const event = sortedEvents[i];
       state.currentTime = event.t;
 
       flushTimersUpTo(state.timers, event.t, (t) => { state.currentTime = t; });
@@ -784,7 +697,7 @@ export function runShimSimulation(
 
       notifyStreamSubs(state, entityId, event.value, oldState);
 
-      const nextTime = i + 1 < sorted.length ? sorted[i + 1].t : event.t + 60_000;
+      const nextTime = i + 1 < sortedEvents.length ? sortedEvents[i + 1].t : event.t + 60_000;
       flushTimersUpTo(state.timers, nextTime - 1, (t) => { state.currentTime = t; });
     }
   }
