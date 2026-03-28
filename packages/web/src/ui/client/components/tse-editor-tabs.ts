@@ -13,7 +13,8 @@ export class TseEditorTabs extends LitElement {
     return html`
       ${this.openFiles.map((file) => html`
         <div class="editor-tab ${this.activeFile === file.path ? 'active' : ''} ${file.modified ? 'modified' : ''}"
-          @click=${() => this._onActivate(file.path)}>
+          @click=${() => this._onActivate(file.path)}
+          @auxclick=${(e: MouseEvent) => { if (e.button === 1) { e.preventDefault(); this._onClose(file.path); } }}>
           <span class="name">${file.path.split('/').pop()}</span>
           <span class="close" @click=${(e: Event) => { e.stopPropagation(); this._onClose(file.path); }}>&times;</span>
         </div>
