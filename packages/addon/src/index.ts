@@ -228,7 +228,7 @@ async function main(): Promise<void> {
             await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
           }
           let entityCount = 0;
-          if (result.bundle?.success && buildManager) {
+          if (result.bundle?.files.some((f) => f.success) && buildManager) {
             entityCount = (await buildManager.smartDeploy()).entityCount;
             wsHub.broadcast('entities', 'deployed', { entityCount });
           }
@@ -350,7 +350,7 @@ async function main(): Promise<void> {
           if (healthEntities && result.tscCheck) {
             await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
           }
-          if (result.bundle?.success && buildManager) {
+          if (result.bundle?.files.some((f) => f.success) && buildManager) {
             const deployResult = await buildManager.smartDeploy();
             wsHub.broadcast('entities', 'deployed', { entityCount: deployResult.entityCount });
             logger.info('Auto-build complete', { entityCount: deployResult.entityCount, duration: result.totalDuration });
