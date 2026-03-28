@@ -90,7 +90,7 @@ describe('tse-sidebar', () => {
   it('renders file tree', async () => {
     const el = await renderElement('tse-sidebar', { files: testFiles });
     const items = el.querySelectorAll('.file-item');
-    expect(items.length).toBe(3); // sensors.ts, lights dir, living.ts
+    expect(items.length).toBe(2); // sensors.ts, lights dir (collapsed by default)
   });
 
   it('highlights active file', async () => {

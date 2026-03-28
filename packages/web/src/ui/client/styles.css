@@ -172,8 +172,9 @@ tse-sidebar {
 }
 .file-item:hover { background: var(--bg-hover); }
 .file-item.active { background: var(--bg-tertiary); color: var(--text-bright); }
-.file-item .icon { margin-right: 6px; font-size: 12px; opacity: 0.7; }
-.file-item.directory { color: var(--text-secondary); }
+.file-item .icon { margin-right: 6px; font-size: 12px; opacity: 0.7; transition: transform 0.15s; display: inline-block; }
+.file-item .icon.expanded { transform: rotate(90deg); }
+.file-item.directory { color: var(--text-secondary); cursor: pointer; }
 .file-item.indent-1 { padding-left: 28px; }
 .file-item.indent-2 { padding-left: 40px; }
 .rename-input {

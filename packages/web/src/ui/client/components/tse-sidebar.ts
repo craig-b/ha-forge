@@ -10,6 +10,7 @@ export class TseSidebar extends LitElement {
 
   @state() private _ctxMenu: { x: number; y: number; path: string; name: string } | null = null;
   @state() private _renaming: string | null = null;
+  @state() private _expanded = new Set<string>();
 
   createRenderRoot() { return this; }
 
@@ -97,11 +98,13 @@ export class TseSidebar extends LitElement {
   private _renderEntries(entries: FileEntry[], depth: number): unknown {
     return entries.map((entry) => {
       const isRenaming = this._renaming === entry.path;
+      const isDir = entry.type === 'directory';
+      const isExpanded = this._expanded.has(entry.path);
       return html`
-        <div class="file-item ${entry.type === 'directory' ? 'directory' : ''} ${this.activeFile === entry.path ? 'active' : ''} ${depth > 0 ? `indent-${Math.min(depth, 2)}` : ''}"
-          @click=${entry.type === 'file' ? () => this._onOpenFile(entry.path) : nothing}
-          @contextmenu=${entry.type === 'file' ? (e: MouseEvent) => this._onContext(e, entry) : nothing}>
-          <span class="icon">${entry.type === 'directory' ? '\u25B6' : '\u25A0'}</span>
+        <div class="file-item ${isDir ? 'directory' : ''} ${this.activeFile === entry.path ? 'active' : ''} ${depth > 0 ? `indent-${Math.min(depth, 2)}` : ''}"
+          @click=${isDir ? () => this._toggleDir(entry.path) : () => this._onOpenFile(entry.path)}
+          @contextmenu=${!isDir ? (e: MouseEvent) => this._onContext(e, entry) : nothing}>
+          <span class="icon${isDir && isExpanded ? ' expanded' : ''}">${isDir ? '\u25B6' : this._fileIcon(entry)}</span>
           ${isRenaming ? html`
             <input class="rename-input" type="text" .value=${entry.name}
               @keydown=${(e: KeyboardEvent) => this._onRenameKey(e, entry)}
@@ -109,9 +112,22 @@ export class TseSidebar extends LitElement {
               @click=${(e: Event) => e.stopPropagation()} />
           ` : html`<span>${entry.name}</span>`}
         </div>
-        ${entry.children ? this._renderEntries(entry.children, depth + 1) : nothing}
+        ${isDir && isExpanded && entry.children ? this._renderEntries(entry.children, depth + 1) : nothing}
       `;
     });
+  }
+
+  private _toggleDir(path: string) {
+    const next = new Set(this._expanded);
+    if (next.has(path)) next.delete(path); else next.add(path);
+    this._expanded = next;
+  }
+
+  private _fileIcon(entry: FileEntry): string {
+    if (entry.path.startsWith('captures/')) return '\u25C9'; // ◉ capture
+    if (entry.name === 'package.json' || entry.name === 'tsconfig.json' || entry.name === 'package-lock.json') return '\u2699'; // ⚙ config
+    if (entry.name.endsWith('.ts')) return '\u25C7'; // ◇ typescript
+    return '\u25A0'; // ■ generic
   }
 
   updated() {
