@@ -151,13 +151,17 @@ export class MqttTransport implements Transport {
 
     let payload: string;
 
-    // Complex entities (light, climate) use JSON state — attributes merge into the object
+    // Complex entities (light, climate, fan, etc.) use JSON state objects
     if (typeof state === 'object' && state !== null) {
       payload = JSON.stringify(
         attributes ? { ...state, ...attributes } : state,
       );
     } else {
-      payload = String(state);
+      // Scalar entities always publish as JSON so HA can extract state + attributes
+      // via value_template and json_attributes_topic on the same topic
+      const json: Record<string, unknown> = { state: String(state) };
+      if (attributes) Object.assign(json, attributes);
+      payload = JSON.stringify(json);
     }
 
     await this.publish(topic, payload, { retain: true });
@@ -548,6 +552,10 @@ export class MqttTransport implements Transport {
     const { definition } = entity;
     const stateTopic = `ha-forge/${definition.id}/state`;
 
+    // Complex types use JSON object state; scalar types use value_template to extract state
+    const complexTypes = new Set(['light', 'climate', 'fan', 'humidifier', 'water_heater']);
+    const isScalar = !complexTypes.has(definition.type);
+
     const base: Record<string, unknown> = {
       p: definition.type,
       uniq_id: `ha_forge_${definition.id}`,
@@ -556,6 +564,12 @@ export class MqttTransport implements Transport {
       stat_t: stateTopic,
       json_attr_t: `ha-forge/${definition.id}/attributes`,
     };
+
+    // Scalar entities publish JSON {"state": "val", ...attrs} — tell HA how to parse it
+    if (isScalar) {
+      base.val_tpl = '{{ value_json.state }}';
+      base.json_attr_t = stateTopic;
+    }
 
     // Add icon if specified
     if (definition.icon) {
