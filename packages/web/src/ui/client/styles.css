@@ -169,6 +169,7 @@ tse-sidebar {
   font-size: 13px;
   cursor: pointer;
   color: var(--text-primary);
+  user-select: none;
 }
 .file-item:hover { background: var(--bg-hover); }
 .file-item.active { background: var(--bg-tertiary); color: var(--text-bright); }
