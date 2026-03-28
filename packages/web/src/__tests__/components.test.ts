@@ -2,6 +2,7 @@
  * @vitest-environment happy-dom
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { LitElement } from 'lit';
 
 // We test the compiled client bundle's components by importing the source directly.
 // happy-dom provides a minimal DOM environment for Lit rendering.
@@ -17,7 +18,7 @@ import '../ui/client/components/tse-log-viewer.js';
 import '../ui/client/components/tse-bottom-panel.js';
 import type { FileEntry, BuildStep, EntityInfo, LogEntry, OpenFile } from '../ui/client/types.js';
 
-async function renderElement<T extends HTMLElement>(tag: string, props?: Record<string, unknown>): Promise<T> {
+async function renderElement<T extends LitElement>(tag: string, props?: Record<string, unknown>): Promise<T> {
   const el = document.createElement(tag) as T;
   if (props) {
     for (const [key, value] of Object.entries(props)) {
@@ -25,7 +26,7 @@ async function renderElement<T extends HTMLElement>(tag: string, props?: Record<
     }
   }
   document.body.appendChild(el);
-  await (el as unknown as { updateComplete: Promise<boolean> }).updateComplete;
+  await el.updateComplete;
   return el;
 }
 
