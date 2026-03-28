@@ -117,8 +117,8 @@ function findTsc(scriptsDir: string): string | null {
   const projectTsc = path.resolve(scriptsDir, '..', 'node_modules', '.bin', 'tsc');
   if (fs.existsSync(projectTsc)) return projectTsc;
 
-  // Try global tsc
-  return 'tsc';
+  // No tsc available — caller will skip type checking
+  return null;
 }
 
 function runTsc(tscPath: string, tsconfigPath: string): Promise<string> {
