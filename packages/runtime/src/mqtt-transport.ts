@@ -151,18 +151,22 @@ export class MqttTransport implements Transport {
 
     let payload: string;
 
-    // Complex entities (light, climate) use JSON state
+    // Complex entities (light, climate) use JSON state — attributes merge into the object
     if (typeof state === 'object' && state !== null) {
       payload = JSON.stringify(
         attributes ? { ...state, ...attributes } : state,
       );
-    } else if (attributes && Object.keys(attributes).length > 0) {
-      payload = JSON.stringify({ state: String(state), ...attributes });
     } else {
       payload = String(state);
     }
 
     await this.publish(topic, payload, { retain: true });
+
+    // Publish attributes to a separate topic so HA picks them up via json_attributes_topic
+    if (attributes && Object.keys(attributes).length > 0 && (typeof state !== 'object' || state === null)) {
+      const attrTopic = `ha-forge/${entityId}/attributes`;
+      await this.publish(attrTopic, JSON.stringify(attributes), { retain: true });
+    }
 
     if (entity && typeof state === 'object' && state !== null) {
       const cs = state as Record<string, unknown>;
@@ -550,6 +554,7 @@ export class MqttTransport implements Transport {
       name: definition.name,
       def_ent_id: `${definition.type}.${definition.id}`,
       stat_t: stateTopic,
+      json_attr_t: `ha-forge/${definition.id}/attributes`,
     };
 
     // Add icon if specified
