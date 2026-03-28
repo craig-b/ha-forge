@@ -10,6 +10,7 @@ export interface AddonOptions {
   mqtt_port: number;
   mqtt_username: string;
   mqtt_password: string;
+  secrets: Array<{ name: string; value: string }>;
 }
 
 const DEFAULT_OPTIONS: AddonOptions = {
@@ -22,6 +23,7 @@ const DEFAULT_OPTIONS: AddonOptions = {
   mqtt_port: 1883,
   mqtt_username: '',
   mqtt_password: '',
+  secrets: [],
 };
 
 export async function fetchMqttCredentials(options: AddonOptions): Promise<MqttCredentials> {
@@ -69,6 +71,17 @@ function log(msg: string): void {
 async function main(): Promise<void> {
   const options = await readOptions();
   log(`Starting with log_level=${options.log_level}`);
+
+  // Populate secrets store so ha.secret() works in user scripts
+  if (options.secrets.length > 0) {
+    const { setSecrets } = await import('@ha-forge/runtime');
+    const secretsMap: Record<string, string> = {};
+    for (const { name, value } of options.secrets) {
+      if (name) secretsMap[name] = value;
+    }
+    setSecrets(secretsMap);
+    log(`Loaded ${Object.keys(secretsMap).length} secret(s)`);
+  }
   log(`Node ${process.version}`);
 
   // Hoisted so scheduled validation can update health entities

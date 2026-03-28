@@ -22,7 +22,7 @@ import type {
 import { createEventStream } from '@ha-forge/sdk';
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { ResolvedAutomation, ResolvedCron, ResolvedDevice, ResolvedMode, ResolvedTask } from './loader.js';
-import { isTaskDefinition, isModeDefinition, isCronDefinition, isAutomationDefinition } from './loader.js';
+import { isTaskDefinition, isModeDefinition, isCronDefinition, isAutomationDefinition, getSecret } from './loader.js';
 import type { RegistrableEntity, Transport } from './transport.js';
 import type { HAApiImpl } from './ha-api.js';
 import { CronExpressionParser } from 'cron-parser';
@@ -733,6 +733,7 @@ export class EntityLifecycleManager {
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(id: string) { return id; },
+      secret: getSecret,
     };
 
     const stubEvents: EventsContext = {
@@ -1091,6 +1092,7 @@ export class EntityLifecycleManager {
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(id: string) { return id; },
+      secret: getSecret,
     };
 
     return {
@@ -1551,6 +1553,7 @@ export class EntityLifecycleManager {
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(id: string) { return id; },
+      secret: getSecret,
     };
 
     const stubEvents: EventsContext = {
@@ -1689,6 +1692,7 @@ export class EntityLifecycleManager {
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(id: string) { return id; },
+      secret: getSecret,
     };
 
     const stubEvents: EventsContext = {
@@ -1762,6 +1766,7 @@ export class EntityLifecycleManager {
       async getEntities() { entityLogger.warn('this.ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { entityLogger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(id: string) { return id; },
+      secret: getSecret,
     };
 
     return {

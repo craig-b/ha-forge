@@ -27,6 +27,7 @@ options:
   mqtt_port: 1883
   mqtt_username: ""
   mqtt_password: ""
+  secrets: []
 schema:
   log_level: list(debug|info|warn|error)
   log_retention_days: int
@@ -37,3 +38,6 @@ schema:
   mqtt_port: port?
   mqtt_username: str?
   mqtt_password: str?
+  secrets:
+    - name: str
+      value: password

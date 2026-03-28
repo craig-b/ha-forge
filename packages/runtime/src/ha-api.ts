@@ -2,6 +2,7 @@ import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, Subscri
 import { CronExpressionParser } from 'cron-parser';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
+import { getSecret } from './loader.js';
 
 // ---- Event types ----
 
@@ -346,6 +347,7 @@ export class HAApiImpl implements HAApi {
       getEntities: this.getEntities.bind(this),
       fireEvent: this.fireEvent.bind(this),
       friendlyName: this.friendlyName.bind(this),
+      secret: getSecret,
     };
   }
 

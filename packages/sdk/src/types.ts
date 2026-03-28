@@ -663,6 +663,12 @@ export interface StatelessHAApi {
    * @param entityId - The entity ID (e.g. `'light.kitchen'`).
    */
   friendlyName(entityId: string): string;
+  /**
+   * Retrieve a secret configured in the add-on options.
+   * @param key - The secret name (e.g. `'OPENAI_KEY'`).
+   * @returns The secret value string, or `undefined` if not configured.
+   */
+  secret(key: string): string | undefined;
 }
 
 // HAClient is NOT defined in the SDK — it comes from either:

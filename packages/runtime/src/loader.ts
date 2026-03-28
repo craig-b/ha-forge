@@ -5,6 +5,19 @@ import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
 
+/** Module-level secrets store, populated by installGlobals and read by ha.secret(). */
+let _secrets: Record<string, string> = {};
+
+/** Set the secrets map. Called once at startup from the addon. */
+export function setSecrets(secrets: Record<string, string>): void {
+  _secrets = { ...secrets };
+}
+
+/** Look up a secret by key. Used by ha.secret() and entity contexts. */
+export function getSecret(key: string): string | undefined {
+  return _secrets[key];
+}
+
 /** A resolved device definition with its source file and entity IDs. */
 export interface ResolvedDevice {
   definition: DeviceDefinition;
@@ -106,7 +119,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
     debug() {}, info() {}, warn() {}, error() {},
   };
   if (haClient) {
-    g.ha = haClient.asStateless();
+    g.ha = { ...haClient.asStateless(), secret: getSecret };
   } else {
     const stubLog = logger ?? noopLogger;
     g.ha = {
@@ -115,6 +128,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
       async getEntities() { stubLog.warn('ha.getEntities() unavailable — no WebSocket connection'); return []; },
       async fireEvent() { stubLog.warn('ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(entityId: string) { return entityId; },
+      secret: getSecret,
     } satisfies StatelessHAApi;
   }
 }
