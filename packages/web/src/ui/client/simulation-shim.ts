@@ -404,7 +404,10 @@ function createMockHaApi(state: SimState): Record<string, unknown> {
     getState(entityId: string) {
       const s = state.stateStore.get(entityId);
       if (!s) {
-        state.missingEntities.add(entityId);
+        // Only flag as missing if it's not a registered entity (those just haven't published yet)
+        if (!state.registeredEntities.has(entityId)) {
+          state.missingEntities.add(entityId);
+        }
         return Promise.resolve({ state: 'unavailable', attributes: {} });
       }
       return Promise.resolve({ state: String(s.state), attributes: s.attributes });
