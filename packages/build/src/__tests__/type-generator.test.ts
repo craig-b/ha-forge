@@ -538,8 +538,8 @@ describe('generateTypes()', () => {
       generateTypes(makeRegistryData(), outputDir);
       const content = fs.readFileSync(path.join(outputDir, 'ha-registry.d.ts'), 'utf-8');
 
-      // Typed reactions with mapped entity keys
-      expect(content).toContain('reactions<K extends HAEntityId>(rules: {');
+      // Typed reactions with concrete mapped type (no generic — avoids Monaco lockup)
+      expect(content).toContain('reactions(rules: { [E in HAEntityId]?:');
       expect(content).toContain("to?: HAEntityMap[E]['state']");
       // reactions when callback uses TypedStateChangedEvent
       expect(content).toContain("when?: (event: TypedStateChangedEvent<HAEntityMap[E]['state'], HAEntityMap[E]['attributes'], E>) => boolean;");
@@ -547,7 +547,7 @@ describe('generateTypes()', () => {
       expect(content).not.toContain('reactions(rules: Record<string, ReactionRule>): () => void;');
       // reactions() should be inside HAEventsContext, not HAClient
       const haClientBlock = content.match(/interface HAClient \{[\s\S]*?\n\}/)?.[0] ?? '';
-      expect(haClientBlock).not.toContain('reactions<K');
+      expect(haClientBlock).not.toContain('reactions(');
       cleanup();
     });
 
