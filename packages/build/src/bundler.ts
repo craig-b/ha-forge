@@ -77,6 +77,7 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
         external,
         sourcemap: true,
         logLevel: 'silent',
+        absWorkingDir: options.inputDir,
       });
 
       const errors = result.errors.map((e) => esbuild.formatMessagesSync([e], { kind: 'error' }).join('\n'));
