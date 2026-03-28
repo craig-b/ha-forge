@@ -79,6 +79,7 @@ export class TseSidebar extends LitElement {
         @mousedown=${this._onResizeStart}></div>
       ${this._ctxMenu ? html`
         <div class="ctx-menu" style="top:${this._ctxMenu.y}px;left:${this._ctxMenu.x}px">
+          <div class="ctx-item" @click=${this._ctxDownload}>Download</div>
           <div class="ctx-item" @click=${this._ctxRename}>Rename</div>
           <div class="ctx-item ctx-danger" @click=${this._ctxDelete}>Delete</div>
         </div>
@@ -128,6 +129,26 @@ export class TseSidebar extends LitElement {
     e.preventDefault();
     e.stopPropagation();
     this._ctxMenu = { x: e.clientX, y: e.clientY, path: entry.path, name: entry.name };
+  }
+
+  private async _ctxDownload() {
+    if (!this._ctxMenu) return;
+    const filePath = this._ctxMenu.path;
+    const name = this._ctxMenu.name;
+    this._ctxMenu = null;
+    const base = (window as unknown as Record<string, unknown>).__INGRESS_PATH__ as string || '';
+    try {
+      const resp = await fetch(`${base}/api/files/${encodeURIComponent(filePath)}`);
+      const data = await resp.json() as { content?: string };
+      if (!data.content) return;
+      const blob = new Blob([data.content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch { /* ignore */ }
   }
 
   private _ctxRename() {
