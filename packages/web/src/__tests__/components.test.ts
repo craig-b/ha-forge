@@ -41,9 +41,11 @@ function cleanup() {
 describe('tse-header', () => {
   beforeEach(cleanup);
 
-  it('renders build button and status badge', async () => {
+  it('renders regen types button and status badge', async () => {
     const el = await renderElement('tse-header');
-    expect(el.querySelector('.btn-primary')?.textContent).toContain('Rebuild All');
+    const buttons = el.querySelectorAll('.btn');
+    expect(buttons[0]?.textContent).toContain('Regen Types');
+    expect(buttons[1]?.textContent).toContain('Build');
     expect(el.querySelector('.status-badge')?.textContent).toBe('Ready');
   });
 
@@ -51,16 +53,20 @@ describe('tse-header', () => {
     const el = await renderElement('tse-header', {
       building: true, statusText: 'Building...', statusClass: 'building',
     });
-    expect(el.querySelector('.btn-primary')?.hasAttribute('disabled')).toBe(true);
     expect(el.querySelector('.status-badge')?.textContent).toBe('Building...');
     expect(el.querySelector('.status-badge')?.classList.contains('building')).toBe(true);
   });
 
-  it('dispatches tse-build event on button click', async () => {
+  it('dispatches tse-build event via build dropdown', async () => {
     const el = await renderElement('tse-header');
     const handler = vi.fn();
     el.addEventListener('tse-build', handler);
-    (el.querySelector('.btn-primary') as HTMLButtonElement).click();
+    // Open the build dropdown
+    const buildBtn = el.querySelectorAll('.btn')[1] as HTMLButtonElement;
+    buildBtn.click();
+    await el.updateComplete;
+    // Click "Rebuild All" menu item
+    (el.querySelector('.header-dropdown-menu .ctx-item') as HTMLElement).click();
     expect(handler).toHaveBeenCalledOnce();
   });
 
@@ -68,9 +74,8 @@ describe('tse-header', () => {
     const el = await renderElement('tse-header');
     const handler = vi.fn();
     el.addEventListener('tse-regen-types', handler);
-    const buttons = el.querySelectorAll('.btn');
-    // Second button is Regen Types
-    (buttons[1] as HTMLButtonElement).click();
+    // First button is Regen Types
+    (el.querySelectorAll('.btn')[0] as HTMLButtonElement).click();
     expect(handler).toHaveBeenCalledOnce();
   });
 });

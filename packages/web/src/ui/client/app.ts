@@ -225,6 +225,8 @@ export class TseApp extends LitElement {
 
     this.addEventListener('tse-build', () => this._triggerBuild());
     this.addEventListener('tse-regen-types', () => this._regenTypes());
+    this.addEventListener('tse-open-packages', () => console.log('tse-open-packages: not yet implemented'));
+    this.addEventListener('tse-open-settings', () => console.log('tse-open-settings: not yet implemented'));
     this.addEventListener('tse-open-file', ((e: CustomEvent) => this._openFile(e.detail.path)) as EventListener);
     this.addEventListener('tse-new-file', () => this._createNewFile());
     this.addEventListener('tse-activate-file', ((e: CustomEvent) => this._activateFile(e.detail.path)) as EventListener);
