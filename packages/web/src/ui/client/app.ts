@@ -244,6 +244,7 @@ export class TseApp extends LitElement {
     }) as EventListener);
     this.addEventListener('tse-capture-saved', (async () => {
       await this._loadCaptures();
+      await this._loadFileTree();
       this._api('POST', '/api/types/regenerate');
       this._runShimSimulation();
     }) as EventListener);
