@@ -254,6 +254,15 @@ function checkSuggestComputed(
       }
     }
 
+    // Mutable local state (let declarations) means the entity maintains
+    // closure state across events — computed() can't express this
+    if (ts.isVariableStatement(node)) {
+      const decl = node.declarationList;
+      if (!(decl.flags & ts.NodeFlags.Const)) {
+        hasOtherLogic = true;
+      }
+    }
+
     ts.forEachChild(node, walkInit);
   }
 
