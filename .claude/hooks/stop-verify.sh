@@ -2,9 +2,16 @@
 # Stop hook: run build, tests, and type checks if code changed since last commit
 cd "$(git rev-parse --show-toplevel)" || exit 0
 
-# Skip if no uncommitted changes to source files
-if git diff --quiet HEAD -- 'packages/*/src/**'; then
-  exit 0
+# Skip if no source changes vs remote (uncommitted or committed-but-unpushed)
+remote_ref=$(git rev-parse --verify origin/main 2>/dev/null || echo "")
+if [ -n "$remote_ref" ]; then
+  if git diff --quiet "$remote_ref" -- 'packages/*/src/**' && git diff --quiet -- 'packages/*/src/**'; then
+    exit 0
+  fi
+else
+  if git diff --quiet HEAD -- 'packages/*/src/**'; then
+    exit 0
+  fi
 fi
 
 echo "Running build..."
