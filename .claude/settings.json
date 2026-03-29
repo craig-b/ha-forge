@@ -2,15 +2,24 @@
   "hooks": {
     "Stop": [
       {
-        "type": "command",
-        "command": ".claude/hooks/stop-verify.sh"
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/stop-verify.sh"
+          }
+        ]
       }
     ],
     "PreToolUse": [
       {
-        "type": "command",
-        "command": ".claude/hooks/reject-bad-casts.sh",
-        "matcher": "Edit|Write"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": ".claude/hooks/reject-bad-casts.sh"
+          }
+        ]
       }
     ]
   }
