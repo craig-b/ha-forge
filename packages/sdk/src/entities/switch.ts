@@ -1,4 +1,4 @@
-import type { SwitchConfig, SwitchDefinition, EntityContext, ComputedAttribute } from '../types.js';
+import type { SwitchConfig, SwitchDefinition, BinaryState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a switch entity. */
 export interface SwitchOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
@@ -27,13 +27,13 @@ export interface SwitchOptions<TAttrs extends Record<string, unknown> = Record<s
    * @param command - `'ON'` or `'OFF'`.
    * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand?(this: EntityContext<'on' | 'off', TAttrs>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
+  onCommand?(this: EntityContext<BinaryState, TAttrs>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
   /**
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
    */
-  init?(this: EntityContext<'on' | 'off', TAttrs>): 'on' | 'off' | Promise<'on' | 'off'>;
+  init?(this: EntityContext<BinaryState, TAttrs>): BinaryState | Promise<BinaryState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<'on' | 'off', TAttrs>): void | Promise<void>;
+  destroy?(this: EntityContext<BinaryState, TAttrs>): void | Promise<void>;
 }
 
 /**

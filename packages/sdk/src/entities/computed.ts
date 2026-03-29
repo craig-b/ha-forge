@@ -29,7 +29,7 @@ export interface ComputedOptions<TWatch extends string = string> {
    * }
    * ```
    */
-  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number;
+  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number | Date | Date;
   /**
    * Debounce window in ms for coalescing rapid input changes. Default: `100`.
    * Set to `0` to re-evaluate immediately on every change.
@@ -145,8 +145,8 @@ export function computed(
     ...(options.config && { config: options.config }),
 
     // Generated init — sets up watch subscriptions via this.events.combine()
-    async init(this: EntityContext<string | number>) {
-      let lastValue: string | number | undefined;
+    async init(this: EntityContext<string | number | Date>) {
+      let lastValue: string | number | Date | undefined;
 
       const evaluate = (states: Record<string, EntitySnapshot | null>) => {
         try {
@@ -194,7 +194,7 @@ export function computed(
       }
 
       // Lazy: no initial state — entity stays unknown until first watched entity changes
-      return undefined as unknown as string | number;
+      return undefined as unknown as string | number | Date;
     },
   } as ComputedDefinition;
 }

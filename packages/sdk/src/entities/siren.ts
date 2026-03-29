@@ -1,4 +1,4 @@
-import type { SirenConfig, SirenDefinition, SirenCommand, EntityContext, ComputedAttribute } from '../types.js';
+import type { SirenConfig, SirenDefinition, SirenCommand, BinaryState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a siren entity. */
 export interface SirenOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
@@ -20,13 +20,13 @@ export interface SirenOptions<TAttrs extends Record<string, unknown> = Record<st
    * Called when HA sends a command to this siren.
    * @param command - The siren command with desired state, tone, duration, and volume.
    */
-  onCommand(this: EntityContext<'on' | 'off', TAttrs>, command: SirenCommand): void | Promise<void>;
+  onCommand(this: EntityContext<BinaryState, TAttrs>, command: SirenCommand): void | Promise<void>;
   /**
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
    */
-  init?(this: EntityContext<'on' | 'off', TAttrs>): 'on' | 'off' | Promise<'on' | 'off'>;
+  init?(this: EntityContext<BinaryState, TAttrs>): BinaryState | Promise<BinaryState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<'on' | 'off', TAttrs>): void | Promise<void>;
+  destroy?(this: EntityContext<BinaryState, TAttrs>): void | Promise<void>;
 }
 
 /**

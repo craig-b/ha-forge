@@ -159,8 +159,13 @@ export class MqttTransport implements Transport {
     } else {
       // Scalar entities always publish as JSON so HA can extract state + attributes
       // via value_template and json_attributes_topic on the same topic
-      // null maps to HA's "unknown" state (no data available)
-      const stateStr = state === null ? 'unknown' : String(state);
+      // Coerce TS-friendly types to HA-expected strings:
+      //   null → 'unknown', boolean → 'on'/'off', Date → ISO 8601
+      const stateStr =
+        state === null ? 'unknown' :
+        typeof state === 'boolean' ? (state ? 'on' : 'off') :
+        state instanceof Date ? state.toISOString() :
+        String(state);
       const json: Record<string, unknown> = { state: stateStr };
       if (attributes) Object.assign(json, attributes);
       payload = JSON.stringify(json);

@@ -20,9 +20,9 @@ export interface SensorOptions<TAttrs extends Record<string, unknown> = Record<s
    * Called once when the entity is deployed. Return the initial state value.
    * Use `this.poll()`, `this.ha.on()`, etc. to set up ongoing state updates.
    */
-  init?(this: EntityContext<string | number, TAttrs>): string | number | Promise<string | number>;
+  init?(this: EntityContext<string | number | Date, TAttrs>): string | number | Date | Promise<string | number | Date>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<string | number, TAttrs>): void | Promise<void>;
+  destroy?(this: EntityContext<string | number | Date, TAttrs>): void | Promise<void>;
 }
 
 /**

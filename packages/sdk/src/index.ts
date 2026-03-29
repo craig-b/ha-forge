@@ -92,6 +92,7 @@ export type {
   SensorConfig,
   SensorDefinition,
   ComputedDefinition,
+  BinaryState,
   BinarySensorDeviceClass,
   BinarySensorConfig,
   BinarySensorDefinition,

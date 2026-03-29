@@ -916,8 +916,8 @@ export interface SensorConfig {
   suggested_display_precision?: number;
 }
 
-/** Entity definition for a read-only sensor. State is a string or number. */
-export interface SensorDefinition extends BaseEntity<string | number, SensorConfig> {
+/** Entity definition for a read-only sensor. State is a string, number, or Date (for timestamp/date device classes). */
+export interface SensorDefinition extends BaseEntity<string | number | Date, SensorConfig> {
   type: 'sensor';
 }
 
@@ -951,7 +951,7 @@ export interface ComputedDefinition<TWatch extends string = string> extends Sens
    * Receives a map of watched entity IDs to their current state snapshot (or `null` if unknown).
    * Return value becomes the entity's published state.
    */
-  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number;
+  compute: (states: { [K in TWatch]: EntitySnapshot | null }) => string | number | Date;
   /**
    * Debounce window in ms for coalescing rapid input changes.
    * When multiple watched entities change in quick succession, `compute()` runs
@@ -965,6 +965,9 @@ export interface ComputedDefinition<TWatch extends string = string> extends Sens
    */
   lazy?: boolean;
 }
+
+/** State type for binary (on/off) entities. Accepts boolean for ergonomic TS usage — the runtime coerces `true` → `'on'` and `false` → `'off'`. */
+export type BinaryState = boolean | 'on' | 'off';
 
 // ---- Binary sensor ----
 
@@ -1011,7 +1014,7 @@ export interface BinarySensorConfig {
 }
 
 /** Entity definition for a binary (on/off) sensor. */
-export interface BinarySensorDefinition extends BaseEntity<'on' | 'off', BinarySensorConfig> {
+export interface BinarySensorDefinition extends BaseEntity<BinaryState, BinarySensorConfig> {
   type: 'binary_sensor';
 }
 
@@ -1024,7 +1027,7 @@ export interface SwitchConfig {
 }
 
 /** Entity definition for a controllable on/off switch. */
-export interface SwitchDefinition extends BaseEntity<'on' | 'off', SwitchConfig> {
+export interface SwitchDefinition extends BaseEntity<BinaryState, SwitchConfig> {
   type: 'switch';
   /**
    * When `true` (default), the runtime auto-publishes the command as state after `onCommand` returns
@@ -1036,7 +1039,7 @@ export interface SwitchDefinition extends BaseEntity<'on' | 'off', SwitchConfig>
    * @param command - `'ON'` or `'OFF'`.
    * @returns `false` to reject the command (no state change). Any other return (including `void`) confirms the command.
    */
-  onCommand?(this: EntityContext<'on' | 'off'>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
+  onCommand?(this: EntityContext<BinaryState>, command: 'ON' | 'OFF'): void | boolean | Promise<void | boolean>;
 }
 
 // ---- Light ----
@@ -1573,13 +1576,13 @@ export interface SirenCommand {
 }
 
 /** Entity definition for a siren/alarm entity. */
-export interface SirenDefinition extends BaseEntity<'on' | 'off', SirenConfig> {
+export interface SirenDefinition extends BaseEntity<BinaryState, SirenConfig> {
   type: 'siren';
   /**
    * Called when HA sends a command to this siren.
    * @param command - The siren command with desired state and parameters.
    */
-  onCommand(this: EntityContext<'on' | 'off'>, command: SirenCommand): void | Promise<void>;
+  onCommand(this: EntityContext<BinaryState>, command: SirenCommand): void | Promise<void>;
 }
 
 // ---- Humidifier ----
@@ -2122,7 +2125,7 @@ export interface DeviceCommandEntityHandle<TState, TCommand> extends DeviceEntit
  * Sensors get update-only handles; bidirectional entities also get onCommand.
  */
 export type EntityHandleFor<T extends EntityDefinition> =
-  T extends SwitchDefinition ? DeviceCommandEntityHandle<'on' | 'off', 'ON' | 'OFF'> :
+  T extends SwitchDefinition ? DeviceCommandEntityHandle<BinaryState, 'ON' | 'OFF'> :
   T extends LightDefinition ? DeviceCommandEntityHandle<LightState, LightCommand> :
   T extends CoverDefinition ? DeviceCommandEntityHandle<CoverState, CoverCommand> :
   T extends ClimateDefinition ? DeviceCommandEntityHandle<ClimateState, ClimateCommand> :
@@ -2131,15 +2134,15 @@ export type EntityHandleFor<T extends EntityDefinition> =
   T extends NumberDefinition ? DeviceCommandEntityHandle<number, number> :
   T extends SelectDefinition ? DeviceCommandEntityHandle<string, string> :
   T extends TextDefinition ? DeviceCommandEntityHandle<string, string> :
-  T extends SirenDefinition ? DeviceCommandEntityHandle<'on' | 'off', SirenCommand> :
+  T extends SirenDefinition ? DeviceCommandEntityHandle<BinaryState, SirenCommand> :
   T extends HumidifierDefinition ? DeviceCommandEntityHandle<HumidifierState, HumidifierCommand> :
   T extends ValveDefinition ? DeviceCommandEntityHandle<ValveState, ValveCommand> :
   T extends WaterHeaterDefinition ? DeviceCommandEntityHandle<WaterHeaterState, WaterHeaterCommand> :
   T extends VacuumDefinition ? DeviceCommandEntityHandle<VacuumState, VacuumCommand> :
   T extends LawnMowerDefinition ? DeviceCommandEntityHandle<LawnMowerActivity, LawnMowerCommand> :
   T extends AlarmControlPanelDefinition ? DeviceCommandEntityHandle<AlarmControlPanelState, AlarmControlPanelCommand> :
-  T extends SensorDefinition ? DeviceEntityHandle<string | number> :
-  T extends BinarySensorDefinition ? DeviceEntityHandle<'on' | 'off'> :
+  T extends SensorDefinition ? DeviceEntityHandle<string | number | Date> :
+  T extends BinarySensorDefinition ? DeviceEntityHandle<BinaryState> :
   T extends UpdateDefinition ? DeviceEntityHandle<UpdateState> :
   T extends ImageDefinition ? DeviceEntityHandle<string> :
   DeviceEntityHandle<unknown>;

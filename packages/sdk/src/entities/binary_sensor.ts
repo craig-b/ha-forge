@@ -1,4 +1,4 @@
-import type { BinarySensorConfig, BinarySensorDefinition, EntityContext, ComputedAttribute } from '../types.js';
+import type { BinarySensorConfig, BinarySensorDefinition, BinaryState, EntityContext, ComputedAttribute } from '../types.js';
 
 /** Options for defining a binary sensor entity. */
 export interface BinarySensorOptions<TAttrs extends Record<string, unknown> = Record<string, unknown>> {
@@ -20,9 +20,9 @@ export interface BinarySensorOptions<TAttrs extends Record<string, unknown> = Re
    * Called once when the entity is deployed. Return `'on'` or `'off'` as the initial state.
    * Use `this.poll()`, `this.events.stream()`, etc. to set up ongoing state updates.
    */
-  init?(this: EntityContext<'on' | 'off', TAttrs>): 'on' | 'off' | Promise<'on' | 'off'>;
+  init?(this: EntityContext<BinaryState, TAttrs>): BinaryState | Promise<BinaryState>;
   /** Called when the entity is torn down. Use for cleanup of external resources. */
-  destroy?(this: EntityContext<'on' | 'off', TAttrs>): void | Promise<void>;
+  destroy?(this: EntityContext<BinaryState, TAttrs>): void | Promise<void>;
 }
 
 /**
