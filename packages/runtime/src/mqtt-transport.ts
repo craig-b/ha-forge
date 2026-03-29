@@ -152,7 +152,8 @@ export class MqttTransport implements Transport {
     let payload: string;
 
     // Complex entities (light, climate, fan, etc.) use JSON state objects
-    if (typeof state === 'object' && state !== null) {
+    // Date is typeof 'object' but is a scalar value — handle in the scalar branch
+    if (typeof state === 'object' && state !== null && !(state instanceof Date)) {
       payload = JSON.stringify(
         attributes ? { ...state, ...attributes } : state,
       );
@@ -174,7 +175,7 @@ export class MqttTransport implements Transport {
     await this.publish(topic, payload, { retain: true });
 
     // Publish attributes to a separate topic so HA picks them up via json_attributes_topic
-    if (attributes && Object.keys(attributes).length > 0 && (typeof state !== 'object' || state === null)) {
+    if (attributes && Object.keys(attributes).length > 0 && (typeof state !== 'object' || state === null || state instanceof Date)) {
       const attrTopic = `ha-forge/${entityId}/attributes`;
       await this.publish(attrTopic, JSON.stringify(attributes), { retain: true });
     }
