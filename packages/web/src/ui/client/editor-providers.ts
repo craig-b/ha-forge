@@ -1,6 +1,7 @@
 import type { Monaco, MonacoMarkerData, MonacoRange, MonacoDocumentSymbol, MonacoModelInstance, MonacoEditorInstance, OpenFileInternal } from './monaco-types.js';
 import { findEntitySymbols } from './analyzers.js';
-import { isReady as isAstReady, findCronStrings, findEntityDefinitions, findEntityDependencies, type EntityDefinitionLocation } from './ast-analyzers.js';
+import { isReady as isAstReady } from './ast-helpers.js';
+import { findCronStrings, findEntityDefinitions, findEntityDependencies, type EntityDefinitionLocation } from './ast-finders.js';
 import type { EntityInfo } from './types.js';
 
 export interface ProviderHost {

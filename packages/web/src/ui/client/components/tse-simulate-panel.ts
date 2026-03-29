@@ -1,6 +1,6 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-analyzers.js';
+import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-finders.js';
 import type { SimulationShimResult, EntitySimSummary } from '../simulation-shim.js';
 
 import './tse-signal-chart.js';

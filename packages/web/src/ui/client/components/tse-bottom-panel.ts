@@ -1,7 +1,7 @@
 import { LitElement, html } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { BuildStep, EntityInfo, LogEntry } from '../types.js';
-import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-analyzers.js';
+import type { EntityDefinitionLocation, ScenarioLocation } from '../ast-finders.js';
 import type { SimulationShimResult } from '../simulation-shim.js';
 
 import './tse-build-output.js';

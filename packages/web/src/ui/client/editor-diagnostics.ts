@@ -1,6 +1,9 @@
 import type { Monaco, MonacoMarkerData, MonacoCodeAction, MonacoRange, MonacoModelInstance, MonacoEditorInstance, MonacoDecorationOptions, MonacoDecorationsCollection } from './monaco-types.js';
 import { runAllAnalyzers, setAstAnalyzerActive, type AnalyzerDiagnostic } from './analyzers.js';
-import { analyzeWithAst, isReady as isAstReady, generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion, findEntityDefinitions } from './ast-analyzers.js';
+import { isReady as isAstReady } from './ast-helpers.js';
+import { analyzeWithAst } from './ast-analyzers.js';
+import { generateDeviceRefactor, generateMoveIntoDevice, generateSensorToComputed, getDeviceInfoInsertion } from './ast-code-actions.js';
+import { findEntityDefinitions } from './ast-finders.js';
 import type { EntityInfo } from './types.js';
 
 const DIAG_OWNER = 'ha-forge-lint';
