@@ -704,7 +704,7 @@ export interface EntityContext<TState = unknown, TAttrs extends Record<string, u
    * @param value - The new state value.
    * @param attributes - Optional attributes to publish alongside the state.
    */
-  update(value: TState, attributes?: Partial<TAttrs>): void;
+  update(value: TState | null, attributes?: Partial<TAttrs>): void;
   /**
    * Update attributes without changing the entity's state value.
    * Re-publishes the current state with the new attributes.
@@ -835,7 +835,7 @@ export interface BaseEntity<TState, TConfig = Record<string, never>, TAttrs exte
    * Called once when the entity is deployed. Return the initial state value.
    * Use `this.poll()`, `this.events.on()`, etc. to set up ongoing state updates.
    */
-  init?(this: EntityContext<TState, TAttrs>): TState | Promise<TState>;
+  init?(this: EntityContext<TState, TAttrs>): TState | null | Promise<TState | null>;
   /**
    * Called when the entity is torn down (before redeploy or shutdown).
    * Use for cleanup of external resources. Tracked timers/intervals are auto-cleared.
@@ -2105,7 +2105,7 @@ export type DeviceMemberDefinition =
  */
 export interface DeviceEntityHandle<TState> {
   /** Publish a new state value for this entity. */
-  update(value: TState, attributes?: Record<string, unknown>): void;
+  update(value: TState | null, attributes?: Record<string, unknown>): void;
 }
 
 /**
