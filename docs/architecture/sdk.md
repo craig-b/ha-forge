@@ -510,6 +510,24 @@ ha.fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<vo
 
 Fires a custom event on the HA event bus via WebSocket.
 
+### ha.history — Temporal Queries
+
+Historical state queries backed by HA's recorder REST API (not WebSocket). Time windows in milliseconds.
+
+```typescript
+ha.history.recentlyIn(entityId: string, state: string, opts: { within: number }): Promise<boolean>;
+ha.history.average(entityId: string, opts: { over: number }): Promise<number | null>;
+ha.history.countTransitions(entityId: string, opts: { to?: string; over: number }): Promise<number>;
+ha.history.duration(entityId: string, state: string, opts: { over: number }): Promise<number>;
+```
+
+- `recentlyIn` — was the entity in this state within the window?
+- `average` — time-weighted average of numeric state values
+- `countTransitions` — number of state changes (optionally filtered by target state)
+- `duration` — total milliseconds spent in a given state
+
+Returns safe defaults (`false`, `null`, `0`) when history is unavailable.
+
 ## Simulated Time Engine
 
 The SDK includes a deterministic simulation engine (`simulate-engine.ts`) for evaluating operator chains without real devices:

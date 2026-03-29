@@ -212,6 +212,7 @@ Persistent connection to `ws://supervisor/core/websocket` for interacting with H
 - `call_service` — service calls for `ha.callService()`
 - `fire_event` — event bus access for `ha.fireEvent()`
 - `get_states` (single entity) — state reads for `ha.getState()`
+- `GET /api/history/period/` (REST, not WebSocket) — temporal queries for `ha.history.*`
 
 ### State Subscriptions
 

@@ -238,6 +238,153 @@ friendlyName(entityId: string): string
 
 ---
 
+## history
+
+Temporal query helpers for querying entity state history from HA's recorder. Accessed via `this.ha.history` inside entity callbacks or `ha.history` at module scope.
+
+Unlike the other `ha.*` methods which use WebSocket, history queries use HA's REST API (`GET /api/history/period/`). Time windows are specified in milliseconds.
+
+### history.recentlyIn()
+
+Check whether an entity was in a given state within a recent time window.
+
+```ts
+history.recentlyIn(
+  entityId: string,
+  state: string,
+  opts: { within: number },
+): Promise<boolean>
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entityId` | `string` | Yes | The entity ID (e.g. `'person.alice'`). |
+| `state` | `string` | Yes | The state value to check for (e.g. `'home'`, `'on'`). |
+| `opts.within` | `number` | Yes | Time window in milliseconds to look back from now. |
+
+**Returns:** `Promise<boolean>` — `true` if the entity was in the given state at any point within the window, `false` otherwise.
+
+**Example:**
+
+```ts
+// Was anyone home in the last 30 minutes?
+const wasHome = await this.ha.history.recentlyIn('person.alice', 'home', {
+  within: 30 * 60_000,
+});
+```
+
+### history.average()
+
+Compute the time-weighted average of a numeric entity's state over a time window. Each state value is weighted by the duration it was held.
+
+```ts
+history.average(
+  entityId: string,
+  opts: { over: number },
+): Promise<number | null>
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entityId` | `string` | Yes | The entity ID (e.g. `'sensor.temperature'`). |
+| `opts.over` | `number` | Yes | Time window in milliseconds to average over. |
+
+**Returns:** `Promise<number | null>` — The time-weighted average, or `null` if no numeric data exists in the window.
+
+Non-numeric state values (e.g. `'unavailable'`, `'unknown'`) are skipped.
+
+**Example:**
+
+```ts
+// Average temperature over the last hour
+const avgTemp = await this.ha.history.average('sensor.outdoor_temp', {
+  over: 60 * 60_000,
+});
+if (avgTemp !== null && avgTemp > 30) {
+  await this.ha.callService('climate.living_room', 'set_temperature', {
+    temperature: 22,
+  });
+}
+```
+
+### history.countTransitions()
+
+Count the number of state transitions within a time window. Optionally filter to transitions to a specific state.
+
+```ts
+history.countTransitions(
+  entityId: string,
+  opts: { to?: string; over: number },
+): Promise<number>
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entityId` | `string` | Yes | The entity ID (e.g. `'binary_sensor.motion'`). |
+| `opts.to` | `string` | No | If specified, only count transitions to this state. |
+| `opts.over` | `number` | Yes | Time window in milliseconds. |
+
+**Returns:** `Promise<number>` — The number of transitions (0 if no history or fewer than 2 entries).
+
+**Example:**
+
+```ts
+// How many times did motion trigger in the last hour?
+const triggers = await this.ha.history.countTransitions('binary_sensor.hallway_motion', {
+  to: 'on',
+  over: 60 * 60_000,
+});
+```
+
+### history.duration()
+
+Calculate the total time an entity spent in a given state within a time window.
+
+```ts
+history.duration(
+  entityId: string,
+  state: string,
+  opts: { over: number },
+): Promise<number>
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `entityId` | `string` | Yes | The entity ID (e.g. `'light.kitchen'`). |
+| `state` | `string` | Yes | The state to measure (e.g. `'on'`). |
+| `opts.over` | `number` | Yes | Time window in milliseconds. |
+
+**Returns:** `Promise<number>` — Total duration in milliseconds that the entity was in the given state.
+
+**Example:**
+
+```ts
+// How long was the kitchen light on today?
+const onTime = await this.ha.history.duration('light.kitchen', 'on', {
+  over: 24 * 60 * 60_000,
+});
+this.log.info(`Kitchen light was on for ${Math.round(onTime / 60_000)} minutes today`);
+```
+
+### History error handling
+
+| Scenario | Behavior |
+|---|---|
+| No HTTP client configured | Returns safe default (`false`, `null`, `0`). Warning logged. |
+| HTTP request fails | Returns safe default. Warning logged with status code. |
+| Entity not recorded by HA | Returns safe default (empty history looks identical to excluded entity). |
+| All states non-numeric (for `average()`) | Returns `null`. |
+
+---
+
 ## Global ha.on() and ha.reactions()
 
 The global `ha` object (available at module scope) is an `HAClient`, which extends `StatelessHAApi` with two subscription methods: `on()` and `reactions()`. These are **only** on the global `ha` -- they are NOT available on `this.ha` inside entity callbacks (which is the `StatelessHAApi` interface). Inside entities, use `this.events.stream()` and `this.events.reactions()` instead, which are lifecycle-managed.
@@ -343,6 +490,10 @@ this.ha.callService() unavailable — no WebSocket connection
 this.ha.getState() unavailable — no WebSocket connection
 this.ha.getEntities() unavailable — no WebSocket connection
 this.ha.fireEvent() unavailable — no WebSocket connection
+this.ha.history.recentlyIn() unavailable — no connection
+this.ha.history.average() unavailable — no connection
+this.ha.history.countTransitions() unavailable — no connection
+this.ha.history.duration() unavailable — no connection
 ```
 
 The entity still initializes and can be used for MQTT-only operations. HA API methods become functional once the WebSocket connection is established.

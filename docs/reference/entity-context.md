@@ -148,6 +148,14 @@ interface StatelessHAApi {
   getEntities(domain?: string): Promise<string[]>;
   fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<void>;
   friendlyName(entityId: string): string;
+  history: HistoryApi;
+}
+
+interface HistoryApi {
+  recentlyIn(entityId: string, state: string, opts: { within: number }): Promise<boolean>;
+  average(entityId: string, opts: { over: number }): Promise<number | null>;
+  countTransitions(entityId: string, opts: { to?: string; over: number }): Promise<number>;
+  duration(entityId: string, state: string, opts: { over: number }): Promise<number>;
 }
 ```
 
