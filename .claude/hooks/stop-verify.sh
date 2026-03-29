@@ -1,5 +1,6 @@
 #!/bin/sh
-# Stop hook: run build, tests, and type checks if code changed since last commit
+# Stop hook: run build, tests, and type checks before stopping
+# Outputs JSON to block Claude from stopping if checks fail
 cd "$(git rev-parse --show-toplevel)" || exit 0
 
 # Skip if no source changes vs remote (uncommitted or committed-but-unpushed)
@@ -14,34 +15,32 @@ else
   fi
 fi
 
-echo "Running build..."
+errors=""
+
 pnpm -r build 2>&1
 if [ $? -ne 0 ]; then
-  echo "Build failed."
-  exit 1
+  errors="${errors}Build failed.\n"
 fi
 
-echo "Running tests..."
 npx vitest run 2>&1
 if [ $? -ne 0 ]; then
-  echo "Tests failed."
-  exit 1
+  errors="${errors}Tests failed.\n"
 fi
 
-echo "Running type checks..."
 tsc_failed=0
 for pkg in sdk build runtime web addon; do
-  echo "  tsc: packages/$pkg"
   (cd "packages/$pkg" && npx tsc --noEmit 2>&1)
   if [ $? -ne 0 ]; then
     tsc_failed=1
   fi
 done
-
 if [ $tsc_failed -ne 0 ]; then
-  echo "Type check failed."
-  exit 1
+  errors="${errors}Type check failed.\n"
 fi
 
-echo "All checks passed."
+if [ -n "$errors" ]; then
+  printf '{"continue":false,"stopReason":"Pre-push checks failed:\\n%s\\nFix these before stopping."}\n' "$errors"
+  exit 0
+fi
+
 exit 0
