@@ -9,7 +9,6 @@ import { getSecret } from './loader.js';
 
 interface TrackedHandles {
   mqttSubscriptions: Array<() => void>;
-  [key: string]: unknown;
 }
 
 export function createScopedLogger(logger: LifecycleLogger, entityId: string, sourceFile?: string): EntityLogger {
