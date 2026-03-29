@@ -3,41 +3,54 @@
 ## Status
 Phase: 6 - Complete
 Started: 2026-03-29
-Completed: 2026-03-29
+Completed: 2026-03-30
 
 ## Thesis
 
-**types.ts**: The SDK's monolithic type file (2,325 lines, 132 exports) contains all entity platform types in one file. Adding a new entity type means editing a single massive file. After refactoring, each platform's types live in their own focused module (30-135 lines), and the barrel re-export preserves all existing import paths.
+**ast-analyzers.ts** (2,134 lines, 61 functions) mixes three unrelated concerns: diagnostic analyzers (squiggly underlines), code action generators (quick-fix lightbulbs), and structure finders (CodeLens/minimap). Each has distinct consumers. After splitting, adding a new diagnostic or finder requires navigating a focused ~400-800 line module instead of a 2,134-line file.
 
-## Results
+## Scope
 
-### types.ts: 2,325 lines → 1 line (barrel re-export)
-Split into 30 focused files under `types/`:
-- `core.ts` (271 lines) — shared infrastructure: EntityContext, BaseEntity, EventStream, etc.
-- `simulation.ts` (33 lines) — SignalEvent, TimeRange, SignalGenerator, ScenarioDefinition
-- 22 per-platform files (11-135 lines each) — sensor, binary_sensor, switch, light, cover, climate, fan, lock, number, select, text, button, siren, humidifier, valve, water_heater, vacuum, lawn_mower, alarm_control_panel, notify, update, image
-- `automation.ts`, `task.ts`, `mode.ts`, `cron.ts` — meta entity types
-- `device.ts` (195 lines) — EntityDefinition union, device handles, DeviceContext
-- `index.ts` (86 lines) — barrel re-export
+### In scope
+- Split ast-analyzers.ts into 4 focused modules
+- Update imports in 3 consumer files (editor-diagnostics, editor-providers, app)
+- Move shared helpers to ast-helpers.ts
 
-### Zero consumer changes required
-Original `types.ts` is now a one-line `export type * from './types/index.js'`, so all existing `from '../types.js'` imports work unchanged.
+### Out of scope
+- Changing analyzer behavior
+- Refactoring consumers
+- mqtt-transport.ts (future work)
 
-### Tests: 445/445 passing, all 5 packages type-check clean
+## Phases
+
+### Phase A: Extract ast-helpers.ts
+Shared utilities: ts ref + setTypeScriptApi/isReady, getCalledName, findFactoryCall, markerAt, WRAPPER_NAMES, FACTORY_DOMAINS, extractObjectLiteral, idToTitle, toSnakeCase, toCamelCase, EntityInfo, AstAnalysisResult types.
+
+### Phase B: Extract ast-finders.ts
+Structure finders used by editor-providers and app: findCronStrings, findEntityDefinitions, findEntityDependencies, findScenarios + their types (CronStringLocation, EntityDefinitionLocation, ScenarioLocation, EntityDependencies) + private helpers (extractWrapperInfo, extractEntityId, countDeviceMembers, collectDeviceMembers).
+
+### Phase C: Extract ast-code-actions.ts
+Code action generators used by editor-diagnostics: generateSensorToComputed, generateDeviceRefactor, generateMoveIntoDevice, getDeviceInfoInsertion + private helpers (suggestVarName, reindent, findPropInFactory, extractUpdateExpr, escapeRegExp, getPropName, removePropsFromExpr, collectStandaloneEntities, hasExportModifier).
+
+### Phase D: Slim ast-analyzers.ts
+What remains: analyzeWithAst + all check* functions (the diagnostic analyzers). Update imports to pull from ast-helpers.
 
 ## Decision Log
 
 ### Orientation — 2026-03-29
-**Decision:** Target types.ts for refactoring.
-**Reasoning:** 2,325 lines, 132 exports, monolithic. Most-changed SDK file. Natural section boundaries already marked with `// ----` headers.
-**Alternatives considered:** mqtt-transport.ts (per-entity MQTT logic spread across 4 methods), ast-analyzers.ts (13+ independent analyzers). Both valid targets for future refactoring.
+**Decision:** Target ast-analyzers.ts for refactoring.
+**Reasoning:** 2,134 lines mixing three unrelated concerns with distinct consumers. Natural section boundaries already visible.
+**Alternatives considered:** mqtt-transport.ts — valid target but ast-analyzers has cleaner seams.
 
 ### Split strategy — 2026-03-29
-**Decision:** Per-platform split with barrel re-export, not category-based split.
-**Reasoning:** Entity platform types are ~1,500 of 2,325 lines — they're the bulk. A category split would leave an entities file still 1,400+ lines. Per-platform files are 30-135 lines each, dead simple, self-contained. Barrel re-export means zero import changes for consumers.
-**Alternatives considered:** Category split (entities vs reactive vs simulation) — would leave the core problem unsolved.
+**Decision:** 4-file split: helpers, finders, code-actions, analyzers (slimmed).
+**Reasoning:** Maps directly to consumer boundaries. editor-providers only needs finders, editor-diagnostics needs analyzers + code-actions, app needs finders only.
+**Alternatives considered:** 2-file split (analyzers + everything else) — less clean, still mixes code-actions with finders.
 
-### Barrel re-export pattern — 2026-03-29
-**Decision:** Keep original `types.ts` as `export type * from './types/index.js'` rather than deleting it.
-**Reasoning:** With `moduleResolution: "bundler"`, `import from '../types.js'` resolves to `types.ts` only — it won't fall through to `types/index.ts`. Keeping the barrel file preserves all existing import paths with zero changes.
-**Alternatives considered:** Updating all import paths to `../types/index.js` — unnecessary churn.
+### Execution complete — 2026-03-30
+**Result:** ast-analyzers.ts (2,134 lines) → 4 focused modules:
+- ast-helpers.ts (190 lines) — shared utilities, TypeScript API ref, constants
+- ast-finders.ts (468 lines) — structure finders for CodeLens/minimap/hover
+- ast-code-actions.ts (711 lines) — code action generators for quick-fixes
+- ast-analyzers.ts (840 lines) — diagnostic check functions only
+**Verification:** 445/445 tests pass, all packages type-check clean. All 5 consumer imports updated to import directly from new modules.
