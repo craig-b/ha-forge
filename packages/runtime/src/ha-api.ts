@@ -1,4 +1,4 @@
-import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, Subscription, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
+import type { HAClientBase, EntityLogger, EventsContext, StatelessHAApi, HistoryApi, Subscription, StateChangedCallback as SDKStateChangedCallback, EntitySnapshot, WatchdogRule, WatchdogExpect, InvariantOptions, SequenceOptions } from '@ha-forge/sdk';
 import { CronExpressionParser } from 'cron-parser';
 import { createEventStream } from '@ha-forge/sdk';
 import type { HAWebSocketClient, HAEvent, HAStateChangedData, HAStateObject } from './ws-client.js';
@@ -74,12 +74,14 @@ export class HAApiImpl implements HAApi {
   private reactionTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private stateCache = new Map<string, HAStateObject>();
   private validators: ValidatorMap | null;
+  private httpFetch: ((path: string) => Promise<Response>) | null;
   readonly log: EntityLogger;
 
-  constructor(wsClient: HAWebSocketClient, logger: EntityLogger, validators?: ValidatorMap | null) {
+  constructor(wsClient: HAWebSocketClient, logger: EntityLogger, validators?: ValidatorMap | null, httpFetch?: (path: string) => Promise<Response>) {
     this.wsClient = wsClient;
     this.log = logger;
     this.validators = validators ?? null;
+    this.httpFetch = httpFetch ?? null;
   }
 
   /**
@@ -339,6 +341,107 @@ export class HAApiImpl implements HAApi {
     return { state: cached.state, attributes: cached.attributes };
   }
 
+  // ---- History API ----
+
+  private async fetchHistory(entityId: string, startIso: string, endIso: string): Promise<Array<{ state: string; last_changed: string }>> {
+    if (!this.httpFetch) {
+      this.log.warn('history API unavailable — no HTTP client configured');
+      return [];
+    }
+    const path = `/history/period/${encodeURIComponent(startIso)}?end_time=${encodeURIComponent(endIso)}&filter_entity_id=${encodeURIComponent(entityId)}&minimal_response&no_attributes`;
+    const resp = await this.httpFetch(path);
+    if (!resp.ok) {
+      this.log.warn(`history fetch failed: HTTP ${resp.status}`);
+      return [];
+    }
+    const data = await resp.json() as Array<Array<{ state: string; last_changed: string }>>;
+    return data?.[0] ?? [];
+  }
+
+  private historyTimeRange(overMs: number): { start: string; end: string } {
+    const now = new Date();
+    const start = new Date(now.getTime() - overMs);
+    return { start: start.toISOString(), end: now.toISOString() };
+  }
+
+  async historyRecentlyIn(entityId: string, state: string, opts: { within: number }): Promise<boolean> {
+    const { start, end } = this.historyTimeRange(opts.within);
+    const entries = await this.fetchHistory(entityId, start, end);
+    return entries.some(e => e.state === state);
+  }
+
+  async historyAverage(entityId: string, opts: { over: number }): Promise<number | null> {
+    const { start, end } = this.historyTimeRange(opts.over);
+    const entries = await this.fetchHistory(entityId, start, end);
+    if (entries.length === 0) return null;
+
+    const windowStart = new Date(start).getTime();
+    const windowEnd = new Date(end).getTime();
+    let weightedSum = 0;
+    let totalDuration = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+      const val = parseFloat(entries[i].state);
+      if (isNaN(val)) continue;
+      const segStart = Math.max(new Date(entries[i].last_changed).getTime(), windowStart);
+      const segEnd = i + 1 < entries.length
+        ? Math.max(new Date(entries[i + 1].last_changed).getTime(), windowStart)
+        : windowEnd;
+      const dur = segEnd - segStart;
+      if (dur > 0) {
+        weightedSum += val * dur;
+        totalDuration += dur;
+      }
+    }
+    return totalDuration > 0 ? weightedSum / totalDuration : null;
+  }
+
+  async historyCountTransitions(entityId: string, opts: { to?: string; over: number }): Promise<number> {
+    const { start, end } = this.historyTimeRange(opts.over);
+    const entries = await this.fetchHistory(entityId, start, end);
+    if (entries.length < 2) return 0;
+
+    let count = 0;
+    for (let i = 1; i < entries.length; i++) {
+      if (entries[i].state !== entries[i - 1].state) {
+        if (opts.to === undefined || entries[i].state === opts.to) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  async historyDuration(entityId: string, state: string, opts: { over: number }): Promise<number> {
+    const { start, end } = this.historyTimeRange(opts.over);
+    const entries = await this.fetchHistory(entityId, start, end);
+    if (entries.length === 0) return 0;
+
+    const windowStart = new Date(start).getTime();
+    const windowEnd = new Date(end).getTime();
+    let total = 0;
+
+    for (let i = 0; i < entries.length; i++) {
+      if (entries[i].state !== state) continue;
+      const segStart = Math.max(new Date(entries[i].last_changed).getTime(), windowStart);
+      const segEnd = i + 1 < entries.length
+        ? Math.max(new Date(entries[i + 1].last_changed).getTime(), windowStart)
+        : windowEnd;
+      const dur = segEnd - segStart;
+      if (dur > 0) total += dur;
+    }
+    return total;
+  }
+
+  createHistoryApi(): HistoryApi {
+    return {
+      recentlyIn: this.historyRecentlyIn.bind(this),
+      average: this.historyAverage.bind(this),
+      countTransitions: this.historyCountTransitions.bind(this),
+      duration: this.historyDuration.bind(this),
+    };
+  }
+
   /** Returns a stateless view — no subscriptions or logging, safe to pass around. */
   asStateless(): StatelessHAApi {
     return {
@@ -348,6 +451,7 @@ export class HAApiImpl implements HAApi {
       fireEvent: this.fireEvent.bind(this),
       friendlyName: this.friendlyName.bind(this),
       secret: getSecret,
+      history: this.createHistoryApi(),
     };
   }
 

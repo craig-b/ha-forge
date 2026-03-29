@@ -159,7 +159,13 @@ async function main(): Promise<void> {
     const haLogger = logger.forEntity ? logger.forEntity('_ha', '_global') as typeof logger : logger;
     let haApi: import('@ha-forge/runtime').HAApiImpl | null = null;
     if (wsClient) {
-      haApi = new HAApiImpl(wsClient, haLogger);
+      haApi = new HAApiImpl(wsClient, haLogger, undefined, async (path) => {
+        const token = process.env.SUPERVISOR_TOKEN;
+        if (!token) throw new Error('SUPERVISOR_TOKEN not available');
+        return fetch(`http://supervisor/core/api${path}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      });
       // Wire up WebSocket events → HAApiImpl for ha.on()/reactions()
       handleHAEvent = (subId, event) => haApi!.handleEvent(subId, event);
       await haApi.init();

@@ -563,4 +563,187 @@ describe('HAApiImpl', () => {
       expect(api.friendlyName('sensor.bare')).toBe('sensor.bare');
     });
   });
+
+  // ---- History API ----
+
+  describe('history', () => {
+    function makeHistoryResponse(entries: Array<{ state: string; last_changed: string }>): Response {
+      return new Response(JSON.stringify([entries]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    function createApiWithHttp(httpFetch: (path: string) => Promise<Response>) {
+      const l = createMockLogger();
+      const a = new HAApiImpl(wsClient, l, undefined, httpFetch);
+      return { api: a, logger: l };
+    }
+
+    describe('recentlyIn()', () => {
+      it('returns true when entity was in the given state within the window', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'home', last_changed: new Date(now - 30_000).toISOString() },
+          { state: 'away', last_changed: new Date(now - 10_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyRecentlyIn('person.alice', 'home', { within: 60_000 })).toBe(true);
+        expect(httpFetch).toHaveBeenCalledOnce();
+      });
+
+      it('returns false when entity was never in the given state', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'away', last_changed: new Date().toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyRecentlyIn('person.alice', 'home', { within: 60_000 })).toBe(false);
+      });
+
+      it('returns false when no history data', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyRecentlyIn('person.alice', 'home', { within: 60_000 })).toBe(false);
+      });
+    });
+
+    describe('average()', () => {
+      it('computes time-weighted average of numeric states', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: '20', last_changed: new Date(now - 60_000).toISOString() },
+          { state: '30', last_changed: new Date(now - 30_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        const result = await a.historyAverage('sensor.temp', { over: 60_000 });
+        // 20 for ~30s, 30 for ~30s → ~25
+        expect(result).toBeCloseTo(25, 0);
+      });
+
+      it('returns null when no data', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyAverage('sensor.temp', { over: 60_000 })).toBeNull();
+      });
+
+      it('returns null when all states are non-numeric', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'unavailable', last_changed: new Date().toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyAverage('sensor.temp', { over: 60_000 })).toBeNull();
+      });
+    });
+
+    describe('countTransitions()', () => {
+      it('counts all state transitions', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'off', last_changed: new Date(now - 60_000).toISOString() },
+          { state: 'on', last_changed: new Date(now - 40_000).toISOString() },
+          { state: 'off', last_changed: new Date(now - 20_000).toISOString() },
+          { state: 'on', last_changed: new Date(now - 10_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyCountTransitions('light.hall', { over: 60_000 })).toBe(3);
+      });
+
+      it('counts only transitions to a specific state', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'off', last_changed: new Date(now - 60_000).toISOString() },
+          { state: 'on', last_changed: new Date(now - 40_000).toISOString() },
+          { state: 'off', last_changed: new Date(now - 20_000).toISOString() },
+          { state: 'on', last_changed: new Date(now - 10_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyCountTransitions('light.hall', { to: 'on', over: 60_000 })).toBe(2);
+      });
+
+      it('returns 0 with fewer than 2 entries', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'on', last_changed: new Date().toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyCountTransitions('light.hall', { over: 60_000 })).toBe(0);
+      });
+    });
+
+    describe('duration()', () => {
+      it('computes total time in a given state', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'on', last_changed: new Date(now - 60_000).toISOString() },
+          { state: 'off', last_changed: new Date(now - 40_000).toISOString() },
+          { state: 'on', last_changed: new Date(now - 10_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        const result = await a.historyDuration('light.hall', 'on', { over: 60_000 });
+        // on for 20s (60k-40k), off for 30s (40k-10k), on for ~10s (10k-now) → ~30s on
+        expect(result).toBeGreaterThan(29_000);
+        expect(result).toBeLessThan(31_000);
+      });
+
+      it('returns 0 when entity was never in the given state', async () => {
+        const now = Date.now();
+        const httpFetch = vi.fn(async () => makeHistoryResponse([
+          { state: 'off', last_changed: new Date(now - 60_000).toISOString() },
+        ]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyDuration('light.hall', 'on', { over: 60_000 })).toBe(0);
+      });
+
+      it('returns 0 when no history data', async () => {
+        const httpFetch = vi.fn(async () => makeHistoryResponse([]));
+        const { api: a } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyDuration('light.hall', 'on', { over: 60_000 })).toBe(0);
+      });
+    });
+
+    describe('no httpFetch configured', () => {
+      it('returns safe defaults and logs warning', async () => {
+        const l = createMockLogger();
+        const a = new HAApiImpl(wsClient, l);
+
+        expect(await a.historyRecentlyIn('person.alice', 'home', { within: 60_000 })).toBe(false);
+        expect(await a.historyAverage('sensor.temp', { over: 60_000 })).toBeNull();
+        expect(await a.historyCountTransitions('light.hall', { over: 60_000 })).toBe(0);
+        expect(await a.historyDuration('light.hall', 'on', { over: 60_000 })).toBe(0);
+        expect(l.warn).toHaveBeenCalled();
+      });
+    });
+
+    describe('HTTP error handling', () => {
+      it('returns safe defaults on HTTP error', async () => {
+        const httpFetch = vi.fn(async () => new Response(null, { status: 500 }));
+        const { api: a, logger: l } = createApiWithHttp(httpFetch);
+
+        expect(await a.historyRecentlyIn('person.alice', 'home', { within: 60_000 })).toBe(false);
+        expect(l.warn).toHaveBeenCalledWith(expect.stringContaining('500'));
+      });
+    });
+
+    describe('asStateless() includes history', () => {
+      it('exposes history methods on stateless API', () => {
+        const stateless = api.asStateless();
+        expect(stateless.history).toBeDefined();
+        expect(typeof stateless.history.recentlyIn).toBe('function');
+        expect(typeof stateless.history.average).toBe('function');
+        expect(typeof stateless.history.countTransitions).toBe('function');
+        expect(typeof stateless.history.duration).toBe('function');
+      });
+    });
+  });
 });

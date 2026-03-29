@@ -86,6 +86,7 @@ export type {
   HAClientBase,
   EventsContext,
   StatelessHAApi,
+  HistoryApi,
   EntityContext,
   BaseEntity,
   SensorDeviceClass,

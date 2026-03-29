@@ -215,6 +215,20 @@ export interface EventsContext {
 }
 
 /**
+ * Temporal query helpers backed by HA's recorder REST API.
+ */
+export interface HistoryApi {
+  /** Was the entity in the given state within the last `within` ms? */
+  recentlyIn(entityId: string, state: string, opts: { within: number }): Promise<boolean>;
+  /** Average numeric state over the last `over` ms. Returns null if no numeric data. */
+  average(entityId: string, opts: { over: number }): Promise<number | null>;
+  /** Count state transitions in the last `over` ms. If `to` is specified, only count transitions to that state. */
+  countTransitions(entityId: string, opts: { to?: string; over: number }): Promise<number>;
+  /** Total time (ms) the entity spent in the given state over the last `over` ms. */
+  duration(entityId: string, state: string, opts: { over: number }): Promise<number>;
+}
+
+/**
  * Stateless HA API — safe to pass to utility functions.
  */
 export interface StatelessHAApi {
@@ -224,6 +238,7 @@ export interface StatelessHAApi {
   fireEvent(eventType: string, eventData?: Record<string, unknown>): Promise<void>;
   friendlyName(entityId: string): string;
   secret(key: string): string | undefined;
+  history: HistoryApi;
 }
 
 // HAClient is NOT defined in the SDK — it comes from either:

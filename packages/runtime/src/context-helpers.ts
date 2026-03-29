@@ -24,6 +24,15 @@ export function createScopedLogger(logger: LifecycleLogger, entityId: string, so
   };
 }
 
+export function createStubHistoryApi(logger: EntityLogger): import('@ha-forge/sdk').HistoryApi {
+  return {
+    async recentlyIn() { logger.warn('this.ha.history.recentlyIn() unavailable — no connection'); return false; },
+    async average() { logger.warn('this.ha.history.average() unavailable — no connection'); return null; },
+    async countTransitions() { logger.warn('this.ha.history.countTransitions() unavailable — no connection'); return 0; },
+    async duration() { logger.warn('this.ha.history.duration() unavailable — no connection'); return 0; },
+  };
+}
+
 export function createStubHaApi(logger: EntityLogger): StatelessHAApi {
   return {
     async callService() { logger.warn('this.ha.callService() unavailable — no WebSocket connection'); return null; },
@@ -32,6 +41,7 @@ export function createStubHaApi(logger: EntityLogger): StatelessHAApi {
     async fireEvent() { logger.warn('this.ha.fireEvent() unavailable — no WebSocket connection'); },
     friendlyName(id: string) { return id; },
     secret: getSecret,
+    history: createStubHistoryApi(logger),
   };
 }
 

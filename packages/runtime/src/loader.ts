@@ -4,6 +4,7 @@ import type { EntityDefinition, EntityFactory, EntityLogger, DeviceDefinition, D
 import type { ResolvedEntity } from '@ha-forge/sdk/internal';
 import type { HAApiImpl } from './ha-api.js';
 import type { StatelessHAApi } from '@ha-forge/sdk';
+import { createStubHistoryApi } from './context-helpers.js';
 
 /** Module-level secrets store, populated by installGlobals and read by ha.secret(). */
 let _secrets: Record<string, string> = {};
@@ -129,6 +130,7 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
       async fireEvent() { stubLog.warn('ha.fireEvent() unavailable — no WebSocket connection'); },
       friendlyName(entityId: string) { return entityId; },
       secret: getSecret,
+      history: createStubHistoryApi(stubLog),
     } satisfies StatelessHAApi;
   }
 }
