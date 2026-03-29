@@ -904,10 +904,23 @@ export type SensorDeviceClass =
   | 'weight'
   | 'wind_speed';
 
+/**
+ * Maps a sensor device class to its state type.
+ * - `timestamp` / `date` → `Date` (runtime serializes to ISO 8601)
+ * - `enum` → `string`
+ * - All other device classes → `number`
+ * - No device class (`undefined`) → `string | number | Date`
+ */
+export type SensorStateFor<DC extends SensorDeviceClass | undefined> =
+  DC extends 'timestamp' | 'date' ? Date :
+  DC extends 'enum' ? string :
+  DC extends undefined ? string | number | Date :
+  number;
+
 /** MQTT discovery configuration for sensor entities. */
-export interface SensorConfig {
+export interface SensorConfig<DC extends SensorDeviceClass | undefined = SensorDeviceClass | undefined> {
   /** Sensor device class — determines icon and default unit in HA. */
-  device_class?: SensorDeviceClass;
+  device_class?: DC;
   /** Unit of measurement displayed alongside the state value (e.g. `'°C'`, `'kWh'`). */
   unit_of_measurement?: string;
   /** State class for long-term statistics. Use `'measurement'` for instantaneous values, `'total'` for cumulative totals. */
@@ -916,8 +929,8 @@ export interface SensorConfig {
   suggested_display_precision?: number;
 }
 
-/** Entity definition for a read-only sensor. State is a string, number, or Date (for timestamp/date device classes). */
-export interface SensorDefinition extends BaseEntity<string | number | Date, SensorConfig> {
+/** Entity definition for a read-only sensor. State type is inferred from the device class. */
+export interface SensorDefinition<DC extends SensorDeviceClass | undefined = SensorDeviceClass | undefined> extends BaseEntity<SensorStateFor<DC>, SensorConfig<DC>> {
   type: 'sensor';
 }
 
@@ -2141,7 +2154,7 @@ export type EntityHandleFor<T extends EntityDefinition> =
   T extends VacuumDefinition ? DeviceCommandEntityHandle<VacuumState, VacuumCommand> :
   T extends LawnMowerDefinition ? DeviceCommandEntityHandle<LawnMowerActivity, LawnMowerCommand> :
   T extends AlarmControlPanelDefinition ? DeviceCommandEntityHandle<AlarmControlPanelState, AlarmControlPanelCommand> :
-  T extends SensorDefinition ? DeviceEntityHandle<string | number | Date> :
+  T extends SensorDefinition<infer DC> ? DeviceEntityHandle<SensorStateFor<DC>> :
   T extends BinarySensorDefinition ? DeviceEntityHandle<BinaryState> :
   T extends UpdateDefinition ? DeviceEntityHandle<UpdateState> :
   T extends ImageDefinition ? DeviceEntityHandle<string> :

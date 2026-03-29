@@ -89,6 +89,7 @@ export type {
   EntityContext,
   BaseEntity,
   SensorDeviceClass,
+  SensorStateFor,
   SensorConfig,
   SensorDefinition,
   ComputedDefinition,
