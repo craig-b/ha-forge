@@ -38,7 +38,11 @@ export interface DiagnosticsHost {
   onDiagnosticsRun(): void;
 }
 
-export function setupDiagnostics(m: Monaco, editor: MonacoEditorInstance, host: DiagnosticsHost): void {
+export interface DiagnosticsHandles {
+  runDiagnostics(): void;
+}
+
+export function setupDiagnostics(m: Monaco, editor: MonacoEditorInstance, host: DiagnosticsHost): DiagnosticsHandles {
   let diagTimer: ReturnType<typeof setTimeout> | null = null;
   let csDiagLines = new Set<number>();
   let minimapDecorations: MonacoDecorationsCollection | null = null;
@@ -475,6 +479,8 @@ export function setupDiagnostics(m: Monaco, editor: MonacoEditorInstance, host: 
       return { actions, dispose() {} };
     },
   });
+
+  return { runDiagnostics };
 }
 
 // ---- Utility functions ----

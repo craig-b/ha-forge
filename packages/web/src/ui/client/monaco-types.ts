@@ -6,6 +6,7 @@ export interface MonacoMarkerData {
   endLineNumber: number;
   endColumn: number;
   source?: string;
+  code?: string;
 }
 
 export interface MonacoCodeAction {
@@ -118,7 +119,7 @@ export interface Monaco {
       triggerCharacters?: string[];
       provideCompletionItems(model: MonacoModelInstance, position: { lineNumber: number; column: number }): { suggestions: Array<{ label: string; kind: number; insertText: string; insertTextRules?: number; detail?: string; documentation?: string | { value: string }; range?: MonacoRange; sortText?: string }> };
     }): { dispose(): void };
-    CompletionItemKind: { Snippet: number; Function: number; Text: number };
+    CompletionItemKind: { Snippet: number; Function: number; Text: number; Property: number };
     CompletionItemInsertTextRule: { InsertAsSnippet: number };
     registerInlayHintsProvider(languageId: string, provider: {
       onDidChangeInlayHints?: { (listener: () => void): { dispose(): void } };
