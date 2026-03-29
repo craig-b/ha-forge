@@ -51,7 +51,7 @@ export function createMqttContext(
   rawMqtt: RawMqttAccess | null,
   logger: EntityLogger,
   handles: TrackedHandles,
-): { publish(topic: string, payload: string, opts?: Record<string, unknown>): void; subscribe(topic: string, handler: (topic: string, payload: Buffer) => void): void } {
+): { publish(topic: string, payload: string, opts?: Record<string, unknown>): void; subscribe(topic: string, handler: (payload: string) => void): void } {
   return {
     publish(topic, payload, opts) {
       if (!rawMqtt) { logger.warn('mqtt.publish() unavailable — no MQTT connection'); return; }
