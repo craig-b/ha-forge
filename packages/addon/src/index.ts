@@ -274,7 +274,7 @@ async function main(): Promise<void> {
         try {
           const result = await runBuild({
             scriptsDir: '/config', generatedDir: '/config/.generated',
-            outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            outputDir: '/data/deployed-bundles', wsClient: wsClient ?? undefined,
             nodeModulesDir: '/data/node_modules', storeDir: '/data/pnpm-store',
             onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
           });
@@ -435,7 +435,7 @@ async function main(): Promise<void> {
         try {
           const result = await runBuild({
             scriptsDir: '/config', generatedDir: '/config/.generated',
-            outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            outputDir: '/data/deployed-bundles', wsClient: wsClient ?? undefined,
             nodeModulesDir: '/data/node_modules', storeDir: '/data/pnpm-store',
             onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
           });
