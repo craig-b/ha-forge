@@ -63,20 +63,14 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
         return c.json({ error: 'SDK types not found' }, 404);
       }
 
-      // Find all type chunk files (excludes index, internal, validate entry points)
-      const skipFiles = new Set(['index.d.ts', 'internal.d.ts', 'validate.d.ts']);
-      const typeChunks = fs.readdirSync(sdkDist).filter(f => f.endsWith('.d.ts') && !skipFiles.has(f));
-      if (typeChunks.length === 0) {
-        return c.json({ error: 'SDK types chunk not found' }, 404);
+      // Use the pre-resolved editor bundle (single file, no imports/chunks)
+      const editorDts = path.join(sdkDist, 'editor', 'index.d.ts');
+      if (!fs.existsSync(editorDts)) {
+        return c.json({ error: 'SDK editor types not found' }, 404);
       }
 
-      // Read all chunks, strip cross-chunk imports and mangled export lines
-      let types = typeChunks
-        .sort()  // core before device — ensures types are declared before use
-        .map(f => fs.readFileSync(path.join(sdkDist!, f), 'utf-8'))
-        .join('\n');
-      types = types.replace(/^import .*;\s*$/gm, '');
-      types = types.replace(/^export type \{.*\};\s*$/gm, '');
+      let types = fs.readFileSync(editorDts, 'utf-8');
+      types = types.replace(/^export .*;\s*$/gm, '');
 
       // Replace base types with generated typed versions in EntityContext/DeviceContext
       // so users never see untyped `string` where a typed entity ID should be

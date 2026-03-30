@@ -19,7 +19,7 @@
     }
   },
   "scripts": {
-    "build": "tsup",
+    "build": "tsup && tsup src/index.ts --dts-only --dts-resolve --format esm --no-clean --out-dir dist/editor",
     "dev": "tsup --watch"
   },
   "devDependencies": {
