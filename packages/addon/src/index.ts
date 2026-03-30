@@ -413,19 +413,14 @@ async function main(): Promise<void> {
     server.listen(8099);
     log('Web server listening on port 8099');
 
-    // Step 5: Load deployed bundles from manifest (or fall back to last-build for migration)
+    // Step 5: Load deployed bundles (migration copies last-build → deployed-bundles)
     const fs = await import('node:fs');
-    if (buildManager) {
-      const manifest = manifestManager.read();
-      const hasManifest = Object.keys(manifest.files).length > 0;
-      const bundleDir = hasManifest ? '/data/deployed-bundles' : '/data/last-build';
-      if (fs.existsSync(bundleDir)) {
-        try {
-          const result = await buildManager.deploy();
-          log(`${hasManifest ? 'Manifest' : 'Cached'} build loaded: ${result.entityCount} entities`);
-        } catch (err) {
-          log(`Build load failed: ${err instanceof Error ? err.message : String(err)}`);
-        }
+    if (buildManager && fs.existsSync('/data/deployed-bundles')) {
+      try {
+        const result = await buildManager.deploy();
+        log(`Deployed build loaded: ${result.entityCount} entities`);
+      } catch (err) {
+        log(`Build load failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 

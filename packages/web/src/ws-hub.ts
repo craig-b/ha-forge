@@ -1,6 +1,6 @@
 /**
  * WebSocket hub for broadcasting real-time updates to connected clients.
- * Channels: build, entities, logs
+ * Channels: build, entities, logs, deploy
  */
 
 export type WSChannel = 'build' | 'entities' | 'logs' | 'deploy';
@@ -26,6 +26,7 @@ export class WSHub {
     this.clients.set('build', new Set());
     this.clients.set('entities', new Set());
     this.clients.set('logs', new Set());
+    this.clients.set('deploy', new Set());
   }
 
   subscribe(channel: WSChannel, client: WSClient): () => void {
