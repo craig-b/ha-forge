@@ -63,15 +63,18 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
         return c.json({ error: 'SDK types not found' }, 404);
       }
 
-      // Find the types chunk file (contains all interface/type definitions)
-      const typesChunk = fs.readdirSync(sdkDist).find(f => f.startsWith('types-') && f.endsWith('.d.ts'));
-      if (!typesChunk) {
+      // Find all type chunk files (excludes index, internal, validate entry points)
+      const skipFiles = new Set(['index.d.ts', 'internal.d.ts', 'validate.d.ts']);
+      const typeChunks = fs.readdirSync(sdkDist).filter(f => f.endsWith('.d.ts') && !skipFiles.has(f));
+      if (typeChunks.length === 0) {
         return c.json({ error: 'SDK types chunk not found' }, 404);
       }
 
-      // Read the chunk and strip the mangled export line at the end
-      let types = fs.readFileSync(path.join(sdkDist, typesChunk), 'utf-8');
-      types = types.replace(/^export type \{.*\};\s*$/m, '');
+      // Read all chunks and strip mangled export lines
+      let types = typeChunks
+        .map(f => fs.readFileSync(path.join(sdkDist!, f), 'utf-8'))
+        .join('\n');
+      types = types.replace(/^export type \{.*\};\s*$/gm, '');
 
       // Replace base types with generated typed versions in EntityContext/DeviceContext
       // so users never see untyped `string` where a typed entity ID should be
