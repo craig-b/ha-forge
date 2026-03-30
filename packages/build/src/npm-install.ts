@@ -135,6 +135,29 @@ function hashInstallInputs(scriptsDir: string): string {
   return hash.digest('hex');
 }
 
+/**
+ * Scan all *.package.json sidecar files and collect their dependencies
+ * into a single merged object. Used to build a combined package.json
+ * for the shared node_modules directory.
+ */
+export function collectSidecarDependencies(scriptsDir: string): Record<string, string> {
+  const merged: Record<string, string> = {};
+  if (!fs.existsSync(scriptsDir)) return merged;
+
+  const entries = fs.readdirSync(scriptsDir);
+  for (const entry of entries) {
+    if (!entry.endsWith('.package.json')) continue;
+    try {
+      const content = JSON.parse(fs.readFileSync(path.join(scriptsDir, entry), 'utf-8'));
+      const deps = content.dependencies as Record<string, string> | undefined;
+      if (deps) {
+        Object.assign(merged, deps);
+      }
+    } catch { /* skip malformed sidecars */ }
+  }
+  return merged;
+}
+
 function runPnpmInstall(cwd: string, storeDir?: string): Promise<string> {
   const args = ['install', '--no-frozen-lockfile'];
   if (storeDir) {
