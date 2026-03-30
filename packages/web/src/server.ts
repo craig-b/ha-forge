@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { ingressGuard, ingressPath, getIngressPath } from './middleware.js';
 import { createFilesRoutes } from './routes/files.js';
+import type { GitService } from '@ha-forge/runtime';
 import { createBuildRoutes } from './routes/build.js';
 import type { BuildTriggerFn, BuildStatusFn, DeployTriggerFn } from './routes/build.js';
 import { createEntitiesRoutes } from './routes/entities.js';
@@ -44,6 +45,8 @@ export interface WebServerConfig {
   fetchFromHA?: FetchFromHA;
   /** Directory for capture files */
   capturesDir?: string;
+  /** Git service for auto-commit on save */
+  gitService?: GitService;
 }
 
 // ---- Server creation ----
@@ -64,7 +67,7 @@ export function createServer(config: WebServerConfig) {
   app.use('*', ingressPath());
 
   // API routes
-  app.route('/api/files', createFilesRoutes({ scriptsDir: config.scriptsDir }));
+  app.route('/api/files', createFilesRoutes({ scriptsDir: config.scriptsDir, gitService: config.gitService }));
   app.route('/api/build', createBuildRoutes({
     triggerBuild: config.triggerBuild,
     getBuildStatus: config.getBuildStatus,

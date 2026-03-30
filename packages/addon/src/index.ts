@@ -1,4 +1,5 @@
 import type { MqttCredentials } from '@ha-forge/runtime';
+import { GitService } from '@ha-forge/runtime';
 
 export interface AddonOptions {
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -187,6 +188,15 @@ async function main(): Promise<void> {
       log(`npm install failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
+    // Initialize git repo for file versioning
+    const gitService = new GitService('/config');
+    try {
+      await gitService.ensureRepo();
+      log('Git repo initialized for /config');
+    } catch (err) {
+      log(`Git init failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+
     // Load responding services from meta JSON into HAApiImpl
     const fsCheck = await import('node:fs');
     const loadServiceMeta = () => {
@@ -242,6 +252,7 @@ async function main(): Promise<void> {
       scriptsDir: '/config',
       generatedDir: '/config/.generated',
       capturesDir: '/config/captures',
+      gitService,
       fetchFromHA: async (path) => {
         const token = process.env.SUPERVISOR_TOKEN;
         if (!token) throw new Error('SUPERVISOR_TOKEN not available');
@@ -407,7 +418,7 @@ async function main(): Promise<void> {
           if (!filename) return;
           const name = String(filename);
           if (!name.endsWith('.ts')) return;
-          if (name.startsWith('.') || name.includes('node_modules') || name.includes('.generated')) return;
+          if (name.startsWith('.') || name.includes('node_modules') || name.includes('.generated') || name.includes('.git')) return;
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = globalThis.setTimeout(triggerAutoBuild, DEBOUNCE_MS);
         });

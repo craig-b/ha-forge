@@ -1,9 +1,11 @@
 import { Hono } from 'hono';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import type { GitService } from '@ha-forge/runtime';
 
 export interface FilesRouteOptions {
   scriptsDir: string;
+  gitService?: GitService;
 }
 
 export function createFilesRoutes(opts: FilesRouteOptions) {
@@ -55,6 +57,13 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
       // Ensure parent directory exists
       fs.mkdirSync(path.dirname(fullPath), { recursive: true });
       fs.writeFileSync(fullPath, body.content, 'utf-8');
+
+      // Auto-commit to git (fire-and-forget)
+      if (opts.gitService) {
+        const sidecar = fullPath.replace(/\.ts$/, '.package.json');
+        opts.gitService.commitFile(fullPath, sidecar).catch(() => {});
+      }
+
       return c.json({ success: true, path: filePath });
     } catch (err) {
       return c.json({ error: 'Failed to write file' }, 500);
@@ -86,6 +95,22 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
       }
       fs.mkdirSync(path.dirname(newFullPath), { recursive: true });
       fs.renameSync(fullPath, newFullPath);
+
+      // Rename sidecar if it exists
+      const oldSidecar = fullPath.replace(/\.ts$/, '.package.json');
+      const newSidecar = newFullPath.replace(/\.ts$/, '.package.json');
+      if (fs.existsSync(oldSidecar)) {
+        fs.renameSync(oldSidecar, newSidecar);
+      }
+
+      // Auto-commit rename to git (fire-and-forget)
+      if (opts.gitService) {
+        opts.gitService.commitRename(
+          fullPath, newFullPath,
+          oldSidecar, fs.existsSync(newSidecar) ? newSidecar : undefined,
+        ).catch(() => {});
+      }
+
       return c.json({ success: true, path: body.newPath });
     } catch (err) {
       return c.json({ error: 'Failed to rename file' }, 500);
@@ -105,6 +130,18 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
         return c.json({ error: 'File not found' }, 404);
       }
       fs.unlinkSync(fullPath);
+
+      // Delete sidecar if it exists
+      const sidecar = fullPath.replace(/\.ts$/, '.package.json');
+      if (fs.existsSync(sidecar)) {
+        fs.unlinkSync(sidecar);
+      }
+
+      // Auto-commit deletion to git (fire-and-forget)
+      if (opts.gitService) {
+        opts.gitService.commitDelete(fullPath, sidecar).catch(() => {});
+      }
+
       return c.json({ success: true });
     } catch (err) {
       return c.json({ error: 'Failed to delete file' }, 500);
@@ -137,8 +174,8 @@ function listFiles(dir: string, baseDir: string): FileEntry[] {
   const result: FileEntry[] = [];
 
   for (const entry of entries) {
-    // Skip node_modules and hidden directories
-    if (entry.name === 'node_modules' || entry.name.startsWith('.')) {
+    // Skip node_modules, hidden directories, and sidecar package files
+    if (entry.name === 'node_modules' || entry.name.startsWith('.') || entry.name.endsWith('.package.json')) {
       continue;
     }
 
