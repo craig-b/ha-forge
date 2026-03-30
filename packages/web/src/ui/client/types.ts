@@ -49,6 +49,21 @@ export interface LogEntry {
   caller?: string;
 }
 
+export interface HistoryEntry {
+  sha: string;
+  timestamp: string;
+  message: string;
+  deployed: boolean;
+}
+
+export type DeployStatus = 'not-deployed' | 'current' | 'behind' | 'error';
+
+export interface DeployManifestEntry {
+  commit: string;
+  deployedAt: string;
+  bundlePath: string;
+}
+
 // Minimal Monaco types for what we use
 export interface MonacoModel {
   getValue(): string;

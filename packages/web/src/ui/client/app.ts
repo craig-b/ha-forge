@@ -1,6 +1,6 @@
 import { LitElement, html } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
-import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry } from './types.js';
+import type { FileEntry, OpenFile, BuildStep, EntityInfo, LogEntry, DeployManifestEntry } from './types.js';
 import { setAstAnalyzerActive } from './analyzers.js';
 import { setTypeScriptApi, isReady as isAstReady } from './ast-helpers.js';
 import { findEntityDefinitions, findScenarios, type EntityDefinitionLocation, type ScenarioLocation } from './ast-finders.js';
@@ -37,6 +37,7 @@ export class TseApp extends LitElement {
   @state() private _simEntities: EntityDefinitionLocation[] = [];
   @state() private _simScenarios: ScenarioLocation[] = [];
   @state() private _shimResult: SimulationShimResult | null = null;
+  @state() private _deployManifest: Record<string, DeployManifestEntry> = {};
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
   private _simSelectedScenario = '';
@@ -78,6 +79,36 @@ export class TseApp extends LitElement {
       if (e.detail.scenario) this._simSelectedScenario = e.detail.scenario;
       this._runShimSimulation();
     }) as EventListener);
+    this.addEventListener('tse-deploy-version', (async (e: CustomEvent) => {
+      const { file, commit } = e.detail;
+      this._statusText = `Deploying ${file}...`;
+      this._statusClass = 'building';
+      try {
+        const result = await this._api('POST', `/api/build/deploy/${file}`, { commit });
+        if (result.success) {
+          this._statusText = 'Deployed';
+          this._statusClass = 'ready';
+          this._loadEntities();
+          this._loadDeployManifest();
+        } else {
+          this._statusText = 'Deploy failed';
+          this._statusClass = 'error';
+        }
+      } catch {
+        this._statusText = 'Deploy error';
+        this._statusClass = 'error';
+      }
+    }) as EventListener);
+    this.addEventListener('tse-undeploy', (async (e: CustomEvent) => {
+      const { file } = e.detail;
+      try {
+        await this._api('DELETE', `/api/build/deploy/${file}`);
+        this._statusText = 'Undeployed';
+        this._statusClass = 'ready';
+        this._loadEntities();
+        this._loadDeployManifest();
+      } catch { /* silent */ }
+    }) as EventListener);
     this.addEventListener('tse-capture-saved', (async () => {
       await this._loadCaptures();
       await this._loadFileTree();
@@ -99,7 +130,7 @@ export class TseApp extends LitElement {
       ></tse-header>
 
       <div id="main">
-        <tse-sidebar .files=${this._files} .activeFile=${this._activeFile} .entities=${this._entities}></tse-sidebar>
+        <tse-sidebar .files=${this._files} .activeFile=${this._activeFile} .entities=${this._entities} .deployManifest=${this._deployManifest}></tse-sidebar>
 
         <div id="content">
           <div id="editor-container">
@@ -117,6 +148,8 @@ export class TseApp extends LitElement {
             .simEntities=${this._simEntities}
             .simScenarios=${this._simScenarios}
             .shimResult=${this._shimResult}
+            .activeFile=${this._activeFile ?? ''}
+            .basePath=${this._base}
           ></tse-bottom-panel>
         </div>
       </div>
@@ -197,6 +230,7 @@ export class TseApp extends LitElement {
       this._loadExtraTypes();
       this._loadFileTree();
       this._loadEntities();
+      this._loadDeployManifest();
       this._loadTypeScriptApi();
     });
   }
@@ -277,6 +311,13 @@ export class TseApp extends LitElement {
   private async _loadFileTree() {
     const data = await this._api('GET', '/api/files');
     this._files = (data.files as FileEntry[]) ?? [];
+  }
+
+  private async _loadDeployManifest() {
+    try {
+      const data = await this._api('GET', '/api/build/deploy');
+      this._deployManifest = (data.files as Record<string, DeployManifestEntry>) ?? {};
+    } catch { /* silent */ }
   }
 
   // ---- File operations ----

@@ -342,11 +342,13 @@ describe('tse-bottom-panel', () => {
   it('renders panel tabs', async () => {
     const el = await renderElement('tse-bottom-panel');
     const tabs = el.querySelectorAll('.panel-tab');
-    expect(tabs.length).toBe(4);
+    expect(tabs.length).toBe(6);
     expect(tabs[0].textContent).toContain('Build Output');
     expect(tabs[1].textContent).toContain('Exports');
     expect(tabs[2].textContent).toContain('Logs');
     expect(tabs[3].textContent).toContain('Simulate');
+    expect(tabs[4].textContent).toContain('History');
+    expect(tabs[5].textContent).toContain('Dependencies');
   });
 
   it('switches active panel on tab click', async () => {

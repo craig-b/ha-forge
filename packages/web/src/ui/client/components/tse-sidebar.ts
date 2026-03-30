@@ -1,12 +1,13 @@
 import { LitElement, html, nothing } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
-import type { EntityInfo, FileEntry } from '../types.js';
+import type { EntityInfo, FileEntry, DeployManifestEntry } from '../types.js';
 
 @customElement('tse-sidebar')
 export class TseSidebar extends LitElement {
   @property({ type: Array }) files: FileEntry[] = [];
   @property() activeFile: string | null = null;
   @property({ type: Array }) entities: EntityInfo[] = [];
+  @property({ type: Object }) deployManifest: Record<string, DeployManifestEntry> = {};
 
   @state() private _ctxMenu: { x: number; y: number; path: string; name: string } | null = null;
   @state() private _renaming: string | null = null;
@@ -111,6 +112,7 @@ export class TseSidebar extends LitElement {
               @blur=${(e: FocusEvent) => this._commitRename(e, entry)}
               @click=${(e: Event) => e.stopPropagation()} />
           ` : html`<span>${entry.name}</span>`}
+          ${!isDir && this.deployManifest[entry.path] ? html`<span class="deploy-dot" title="Deployed"></span>` : nothing}
         </div>
         ${isDir && isExpanded && entry.children ? this._renderEntries(entry.children, depth + 1) : nothing}
       `;

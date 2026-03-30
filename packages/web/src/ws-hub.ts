@@ -3,7 +3,7 @@
  * Channels: build, entities, logs
  */
 
-export type WSChannel = 'build' | 'entities' | 'logs';
+export type WSChannel = 'build' | 'entities' | 'logs' | 'deploy';
 
 export interface WSMessage {
   channel: WSChannel;

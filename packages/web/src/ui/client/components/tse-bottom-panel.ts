@@ -8,6 +8,8 @@ import './tse-build-output.js';
 import './tse-exports-panel.js';
 import './tse-log-viewer.js';
 import './tse-simulate-panel.js';
+import './tse-history-panel.js';
+import './tse-dependencies-panel.js';
 
 @customElement('tse-bottom-panel')
 export class TseBottomPanel extends LitElement {
@@ -19,6 +21,8 @@ export class TseBottomPanel extends LitElement {
   @property({ type: Array }) simEntities: EntityDefinitionLocation[] = [];
   @property({ type: Array }) simScenarios: ScenarioLocation[] = [];
   @property({ type: Object }) shimResult: SimulationShimResult | null = null;
+  @property({ type: String }) activeFile = '';
+  @property({ type: String }) basePath = '';
   @state() private _activePanel = 'build-output';
 
   createRenderRoot() { return this; }
@@ -34,10 +38,10 @@ export class TseBottomPanel extends LitElement {
       <div class="panel-resize-handle"
         @mousedown=${this._onResizeStart}></div>
       <div class="panel-tabs">
-        ${['build-output', 'exports', 'logs', 'simulate'].map((panel) => html`
+        ${['build-output', 'exports', 'logs', 'simulate', 'history', 'deps'].map((panel) => html`
           <button class="panel-tab ${this._activePanel === panel ? 'active' : ''}"
             @click=${() => this._switchPanel(panel)}>
-            ${{ 'build-output': 'Build Output', exports: 'Exports', logs: 'Logs', simulate: 'Simulate' }[panel]}
+            ${{ 'build-output': 'Build Output', exports: 'Exports', logs: 'Logs', simulate: 'Simulate', history: 'History', deps: 'Dependencies' }[panel]}
           </button>
         `)}
       </div>
@@ -57,6 +61,12 @@ export class TseBottomPanel extends LitElement {
           .scenarios=${this.simScenarios}
           .shimResult=${this.shimResult}>
         </tse-simulate-panel>
+      </div>
+      <div class="panel-content ${this._activePanel === 'history' ? 'active' : ''}">
+        <tse-history-panel .filePath=${this.activeFile} .basePath=${this.basePath}></tse-history-panel>
+      </div>
+      <div class="panel-content ${this._activePanel === 'deps' ? 'active' : ''}">
+        <tse-dependencies-panel .filePath=${this.activeFile} .basePath=${this.basePath}></tse-dependencies-panel>
       </div>
     `;
   }
