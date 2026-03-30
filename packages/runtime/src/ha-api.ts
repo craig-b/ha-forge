@@ -75,6 +75,7 @@ export class HAApiImpl implements HAApi {
   private stateCache = new Map<string, HAStateObject>();
   private validators: ValidatorMap | null;
   private httpFetch: ((path: string) => Promise<Response>) | null;
+  private respondingServices = new Set<string>();
   readonly log: EntityLogger;
 
   constructor(wsClient: HAWebSocketClient, logger: EntityLogger, validators?: ValidatorMap | null, httpFetch?: (path: string) => Promise<Response>) {
@@ -82,6 +83,11 @@ export class HAApiImpl implements HAApi {
     this.log = logger;
     this.validators = validators ?? null;
     this.httpFetch = httpFetch ?? null;
+  }
+
+  /** Update the set of services that support return_response. Called after type generation. */
+  setRespondingServices(services: string[]): void {
+    this.respondingServices = new Set(services);
   }
 
   /**
@@ -175,9 +181,10 @@ export class HAApiImpl implements HAApi {
     const domain = isEntity ? entity.split('.')[0] : entity;
     const serviceData = data ?? {};
 
+    const serviceKey = `${domain}.${service}`;
+
     // Validate parameters using generated validators if available
     if (this.validators) {
-      const serviceKey = `${domain}.${service}`;
       const serviceValidators = this.validators[serviceKey];
       if (serviceValidators) {
         for (const [field, validator] of Object.entries(serviceValidators)) {
@@ -199,9 +206,15 @@ export class HAApiImpl implements HAApi {
       payload.target = { entity_id: entity };
     }
 
-    const result = await this.wsClient.sendCommand('call_service', payload) as Record<string, unknown> | null;
+    // Only request response data for services that support it — HA rejects
+    // return_response=true for services that don't.
+    if (this.respondingServices.has(serviceKey)) {
+      payload.return_response = true;
+    }
 
-    return result;
+    const result = await this.wsClient.sendCommand('call_service', payload) as { response?: Record<string, unknown> } | null;
+
+    return result?.response ?? null;
   }
 
   async getState(entityId: string): Promise<{

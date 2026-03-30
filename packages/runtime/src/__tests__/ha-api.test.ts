@@ -205,6 +205,31 @@ describe('HAApiImpl', () => {
       const payload = wsClient.sendCommand.mock.calls[0][1] as Record<string, unknown>;
       expect(payload).not.toHaveProperty('target');
     });
+
+    it('does not send return_response for normal services', async () => {
+      await api.callService('light.kitchen', 'turn_on');
+
+      const payload = wsClient.sendCommand.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload).not.toHaveProperty('return_response');
+    });
+
+    it('sends return_response for responding services', async () => {
+      api.setRespondingServices(['conversation.process']);
+      wsClient.sendCommand.mockResolvedValueOnce({ response: { speech: { plain: { speech: 'Done' } } } });
+
+      const result = await api.callService('conversation.agent', 'process', { text: 'hello' });
+
+      const payload = wsClient.sendCommand.mock.calls[0][1] as Record<string, unknown>;
+      expect(payload.return_response).toBe(true);
+      expect(result).toEqual({ speech: { plain: { speech: 'Done' } } });
+    });
+
+    it('returns null for non-responding services', async () => {
+      wsClient.sendCommand.mockResolvedValueOnce({ context: { id: 'abc' } });
+
+      const result = await api.callService('light.kitchen', 'turn_on');
+      expect(result).toBeNull();
+    });
   });
 
   describe('callService() — runtime validation', () => {

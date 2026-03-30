@@ -187,8 +187,22 @@ async function main(): Promise<void> {
       log(`npm install failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Generate types on first boot if .generated doesn't exist
+    // Load responding services from meta JSON into HAApiImpl
     const fsCheck = await import('node:fs');
+    const loadServiceMeta = () => {
+      if (!haApi) return;
+      try {
+        const metaPath = '/config/.generated/ha-registry-meta.json';
+        if (fsCheck.existsSync(metaPath)) {
+          const meta = JSON.parse(fsCheck.readFileSync(metaPath, 'utf-8'));
+          if (Array.isArray(meta.respondingServices)) {
+            haApi.setRespondingServices(meta.respondingServices);
+          }
+        }
+      } catch { /* non-fatal */ }
+    };
+
+    // Generate types on first boot if .generated doesn't exist
     if (!fsCheck.existsSync('/config/.generated/ha-registry.d.ts') && wsClient) {
       try {
         log('First boot: generating types...');
@@ -200,6 +214,7 @@ async function main(): Promise<void> {
         log(`Type generation failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
+    loadServiceMeta();
 
     if (mqttTransport) {
       healthEntities = new HealthEntities(mqttTransport);
@@ -306,7 +321,9 @@ async function main(): Promise<void> {
         if (!wsClient) return { success: false, entityCount: 0, serviceCount: 0, errors: ['No WebSocket connection'] };
         const { generateTypes, fetchRegistryData } = await import('@ha-forge/build');
         const data = await fetchRegistryData(wsClient);
-        return generateTypes(data, '/config/.generated', '/config/captures');
+        const result = generateTypes(data, '/config/.generated', '/config/captures');
+        loadServiceMeta();
+        return result;
       },
     });
 
@@ -423,6 +440,7 @@ async function main(): Promise<void> {
           const { generateTypes, fetchRegistryData, runValidation } = await import('@ha-forge/build');
           const data = await fetchRegistryData(wsClient!);
           const typeResult = generateTypes(data, '/config/.generated', '/config/captures');
+          loadServiceMeta();
           logger.info('Types regenerated', { entityCount: typeResult.entityCount, serviceCount: typeResult.serviceCount });
 
           const valResult = await runValidation({ scriptsDir: '/config', generatedDir: '/config/.generated', wsClient: wsClient! });

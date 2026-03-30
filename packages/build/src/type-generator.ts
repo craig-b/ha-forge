@@ -305,8 +305,9 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
     servicesByDomain.set(domain, svcMap);
   }
 
-  // Collect validators
+  // Collect validators and responding services
   const validatorEntries: string[] = [];
+  const respondingServices = new Set<string>();
 
   for (const entityId of entityIds) {
     const state = stateMap.get(entityId);
@@ -323,7 +324,7 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
     // Determine services type for this entity's domain
     const domainServices = servicesByDomain.get(domain);
     const servicesType = domainServices
-      ? generateServicesType(domain, domainServices, entityIds, validatorEntries, entityId)
+      ? generateServicesType(domain, domainServices, entityIds, validatorEntries, respondingServices, entityId)
       : '{}';
 
     entityMapEntries.push(
@@ -414,7 +415,7 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
       if (existingNotifyEntities.has(syntheticId)) continue;
 
       // Generate typed data for this legacy service
-      const svcType = generateServicesType('notify', new Map([[serviceName, service]]), entityIds, validatorEntries);
+      const svcType = generateServicesType('notify', new Map([[serviceName, service]]), entityIds, validatorEntries, respondingServices);
 
       // Add to HAEntityMap so autocomplete works for entity IDs
       entityMapEntries.push(
@@ -625,6 +626,7 @@ export function generateTypes(data: HARegistryData, outputDir: string, capturesD
     areaCount: data.areas.length,
     deviceCount: data.devices.length,
     labelCount: data.labels.length,
+    respondingServices: [...respondingServices].sort(),
   };
 
   // Write files
@@ -887,6 +889,7 @@ function generateServicesType(
   services: Map<string, HAService>,
   entityIds: string[],
   validatorEntries: string[],
+  respondingServices: Set<string>,
   entityId?: string,
 ): string {
   const svcFields: string[] = [];
@@ -925,6 +928,10 @@ function generateServicesType(
       : '{}';
     const hasResponse = service.response ? 'true' : 'false';
     svcFields.push(`      ${safeKey(serviceName)}: { data: ${fieldsStr}; responds: ${hasResponse} };`);
+
+    if (service.response) {
+      respondingServices.add(`${domain}.${serviceName}`);
+    }
 
     // Add validator entry for this service
     if (validatorFields.length > 0) {
