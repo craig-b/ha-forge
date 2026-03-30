@@ -18,6 +18,11 @@ export class TseHistoryPanel extends LitElement {
     }
   }
 
+  /** Re-fetch history (called externally after deploy/undeploy). */
+  refresh() {
+    if (this.filePath) this._fetchHistory();
+  }
+
   render() {
     if (!this.filePath) {
       return html`<div class="history-empty">Select a file to view history</div>`;
@@ -32,7 +37,18 @@ export class TseHistoryPanel extends LitElement {
       return html`<div class="history-empty">No version history</div>`;
     }
 
+    const deployedIndex = this._history.findIndex((e) => e.deployed);
+    const isDeployed = deployedIndex >= 0;
+    const commitsBehind = deployedIndex > 0 ? deployedIndex : 0;
+    const isCurrent = deployedIndex === 0;
+
     return html`
+      <div class="history-status">
+        ${!isDeployed ? html`<span class="history-status-text">Not deployed</span>` : ''}
+        ${isCurrent ? html`<span class="history-status-text deployed">Deployed (current)</span>` : ''}
+        ${isDeployed && !isCurrent ? html`<span class="history-status-text behind">Deployed (${commitsBehind} behind)</span>` : ''}
+        ${isDeployed ? html`<button class="history-btn" @click=${this._undeploy}>Undeploy</button>` : ''}
+      </div>
       <div class="history-list">
         ${this._history.map((entry) => html`
           <div class="history-entry ${entry.deployed ? 'deployed' : ''}">
@@ -72,6 +88,13 @@ export class TseHistoryPanel extends LitElement {
     this.dispatchEvent(new CustomEvent('tse-deploy-version', {
       bubbles: true, composed: true,
       detail: { file: this.filePath, commit: sha },
+    }));
+  }
+
+  private _undeploy() {
+    this.dispatchEvent(new CustomEvent('tse-undeploy', {
+      bubbles: true, composed: true,
+      detail: { file: this.filePath },
     }));
   }
 

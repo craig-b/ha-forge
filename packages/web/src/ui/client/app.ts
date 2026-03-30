@@ -38,6 +38,8 @@ export class TseApp extends LitElement {
   @state() private _simScenarios: ScenarioLocation[] = [];
   @state() private _shimResult: SimulationShimResult | null = null;
   @state() private _deployManifest: Record<string, DeployManifestEntry> = {};
+  @state() private _diffVisible = false;
+  private _diffEditor: unknown = null;
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
   private _simTimeRangeMs = 60_000;
   private _simSelectedScenario = '';
@@ -90,6 +92,7 @@ export class TseApp extends LitElement {
           this._statusClass = 'ready';
           this._loadEntities();
           this._loadDeployManifest();
+          this._refreshHistoryPanel();
         } else {
           this._statusText = 'Deploy failed';
           this._statusClass = 'error';
@@ -107,7 +110,12 @@ export class TseApp extends LitElement {
         this._statusClass = 'ready';
         this._loadEntities();
         this._loadDeployManifest();
+        this._refreshHistoryPanel();
       } catch { /* silent */ }
+    }) as EventListener);
+    this.addEventListener('tse-view-diff', (async (e: CustomEvent) => {
+      const { file, commit } = e.detail;
+      await this._showDiff(file, commit);
     }) as EventListener);
     this.addEventListener('tse-capture-saved', (async () => {
       await this._loadCaptures();
@@ -138,6 +146,9 @@ export class TseApp extends LitElement {
               <tse-editor-tabs .openFiles=${openFilesForTabs} .activeFile=${this._activeFile}></tse-editor-tabs>
             </div>
             <div id="monaco-editor"></div>
+            <div id="diff-editor" style="display:${this._diffVisible ? 'block' : 'none'};position:absolute;top:0;left:0;right:0;bottom:0;z-index:10;background:var(--bg-primary)">
+              <button class="diff-close-btn" style="position:absolute;top:8px;right:8px;z-index:11;background:var(--bg-tertiary);border:1px solid var(--border);color:var(--text-primary);padding:4px 12px;border-radius:3px;cursor:pointer" @click=${this._closeDiff}>Close Diff</button>
+            </div>
           </div>
           <tse-bottom-panel
             .buildSteps=${this._buildSteps}
@@ -318,6 +329,60 @@ export class TseApp extends LitElement {
       const data = await this._api('GET', '/api/build/deploy');
       this._deployManifest = (data.files as Record<string, DeployManifestEntry>) ?? {};
     } catch { /* silent */ }
+  }
+
+  private _refreshHistoryPanel() {
+    const panel = this.querySelector('tse-history-panel') as { refresh?(): void } | null;
+    panel?.refresh?.();
+  }
+
+  // ---- Diff editor ----
+
+  private async _showDiff(filePath: string, commit: string) {
+    try {
+      // Fetch the old version from git
+      const histData = await this._api('GET', `/api/history/${filePath}/${commit}`);
+      const oldContent = histData.content as string ?? '';
+
+      // Get current content from the open file or fetch it
+      const openFile = this._openFiles.find((f) => f.path === filePath);
+      const currentContent = openFile?.model?.getValue() ?? openFile?.content ?? '';
+
+      // Create diff editor
+      const diffEl = this.querySelector('#diff-editor') as HTMLElement;
+      if (!diffEl) return;
+
+      // Clean up previous diff editor
+      if (this._diffEditor && typeof (this._diffEditor as { dispose(): void }).dispose === 'function') {
+        (this._diffEditor as { dispose(): void }).dispose();
+      }
+
+      const originalModel = monaco.editor.createModel(oldContent, 'typescript');
+      const modifiedModel = monaco.editor.createModel(currentContent, 'typescript');
+
+      this._diffEditor = monaco.editor.createDiffEditor(diffEl, {
+        readOnly: true,
+        renderSideBySide: true,
+        automaticLayout: true,
+        theme: 'vs-dark',
+      });
+      (this._diffEditor as { setModel(m: unknown): void }).setModel({
+        original: originalModel,
+        modified: modifiedModel,
+      });
+
+      this._diffVisible = true;
+    } catch {
+      // silent
+    }
+  }
+
+  private _closeDiff() {
+    if (this._diffEditor && typeof (this._diffEditor as { dispose(): void }).dispose === 'function') {
+      (this._diffEditor as { dispose(): void }).dispose();
+      this._diffEditor = null;
+    }
+    this._diffVisible = false;
   }
 
   // ---- File operations ----

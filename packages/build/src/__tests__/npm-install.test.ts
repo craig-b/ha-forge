@@ -164,7 +164,9 @@ describe('npmInstall', () => {
       await npmInstall(tmpDir, nodeModulesDir);
 
       expect(fs.existsSync(path.join(nodeModulesDir, 'package.json'))).toBe(true);
-      expect(fs.readFileSync(path.join(nodeModulesDir, 'package.json'), 'utf-8')).toBe(packageJson);
+      const written = JSON.parse(fs.readFileSync(path.join(nodeModulesDir, 'package.json'), 'utf-8'));
+      expect(written.name).toBe('test-pkg');
+      expect(written.version).toBe('1.0.0');
     });
   });
 });

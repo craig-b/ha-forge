@@ -38,8 +38,11 @@ export async function npmInstall(scriptsDir: string, nodeModulesDir?: string, st
   const installDir = nodeModulesDir ?? scriptsDir;
   const effectiveNodeModules = path.join(installDir, 'node_modules');
 
-  // Hash package.json and lockfile (if exists) together
-  const currentHash = hashInstallInputs(scriptsDir);
+  // Collect sidecar deps to merge into the install
+  const sidecarDeps = collectSidecarDependencies(scriptsDir);
+
+  // Hash package.json, lockfile, and sidecar deps together
+  const currentHash = hashInstallInputs(scriptsDir, sidecarDeps);
   const hashFilePath = path.join(effectiveNodeModules, '.package-json-hash');
 
   if (fs.existsSync(hashFilePath)) {
@@ -61,8 +64,12 @@ export async function npmInstall(scriptsDir: string, nodeModulesDir?: string, st
   try {
     if (nodeModulesDir) {
       fs.mkdirSync(nodeModulesDir, { recursive: true });
-      // Copy package.json and lockfile to the install directory
-      fs.copyFileSync(packageJsonPath, path.join(nodeModulesDir, 'package.json'));
+      // Copy package.json to the install directory, merging in sidecar deps
+      const pkg = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+      if (Object.keys(sidecarDeps).length > 0) {
+        pkg.dependencies = { ...(pkg.dependencies ?? {}), ...sidecarDeps };
+      }
+      fs.writeFileSync(path.join(nodeModulesDir, 'package.json'), JSON.stringify(pkg, null, 2) + '\n', 'utf-8');
       const lockPath = path.join(scriptsDir, 'pnpm-lock.yaml');
       if (fs.existsSync(lockPath)) {
         fs.copyFileSync(lockPath, path.join(nodeModulesDir, 'pnpm-lock.yaml'));
@@ -124,13 +131,16 @@ function ensureNodeModulesSymlink(scriptsDir: string, target: string): void {
   fs.symlinkSync(target, symlinkPath, 'dir');
 }
 
-/** Hash package.json and pnpm-lock.yaml (if present) together for change detection. */
-function hashInstallInputs(scriptsDir: string): string {
+/** Hash package.json, pnpm-lock.yaml, and sidecar deps together for change detection. */
+function hashInstallInputs(scriptsDir: string, sidecarDeps?: Record<string, string>): string {
   const hash = crypto.createHash('sha256');
   hash.update(fs.readFileSync(path.join(scriptsDir, 'package.json'), 'utf-8'));
   const lockPath = path.join(scriptsDir, 'pnpm-lock.yaml');
   if (fs.existsSync(lockPath)) {
     hash.update(fs.readFileSync(lockPath, 'utf-8'));
+  }
+  if (sidecarDeps && Object.keys(sidecarDeps).length > 0) {
+    hash.update(JSON.stringify(sidecarDeps));
   }
   return hash.digest('hex');
 }

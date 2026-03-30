@@ -1,5 +1,5 @@
 import type { MqttCredentials } from '@ha-forge/runtime';
-import { GitService, migrateToGitVersioning } from '@ha-forge/runtime';
+import { GitService, migrateToGitVersioning, DeployManifestManager } from '@ha-forge/runtime';
 
 export interface AddonOptions {
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -236,11 +236,14 @@ async function main(): Promise<void> {
       await (healthEntities as InstanceType<typeof HealthEntities>).register();
     }
 
+    // Deploy manifest for per-file versioned deploys
+    const manifestManager = new DeployManifestManager('/data/deploy-manifest.json');
+
     // Late-bound entity state broadcast — set after wsHub is created
     let broadcastEntityState: ((entityId: string, state: unknown) => void) | null = null;
     const buildManager = mqttTransport
       ? new BuildManager({
-          bundleDir: '/data/last-build', transport: mqttTransport, logger, rawMqtt: mqttTransport,
+          bundleDir: '/data/deployed-bundles', transport: mqttTransport, logger, rawMqtt: mqttTransport,
           onEntityStateChange: (entityId, state) => broadcastEntityState?.(entityId, state),
           haApi,
         })
@@ -322,6 +325,32 @@ async function main(): Promise<void> {
           return { success: false, entityCount: 0, errors: [{ file: '', error: errorMsg }], duration: 0 };
         }
       },
+      manifestManager,
+      deployFile: async (filename: string, commit: string) => {
+        if (!buildManager) return { success: false, entityCount: 0, errors: [{ file: filename, error: 'No MQTT connection' }], duration: 0 };
+        const { bundle } = await import('@ha-forge/build');
+        const { npmInstall } = await import('@ha-forge/build');
+        const result = await buildManager.deploySingleFile({
+          filename, commit, gitService, manifestManager,
+          deployedBundlesDir: '/data/deployed-bundles',
+          buildFn: async (stagingDir, fname, outputDir) => {
+            // Install sidecar deps if present
+            await npmInstall(stagingDir, '/data/node_modules', '/data/pnpm-store');
+            // Bundle the single file
+            await bundle({ inputDir: stagingDir, outputDir, files: [fname] });
+          },
+        });
+        wsHub.broadcast('deploy', 'file_deployed', { filename, commit, success: result.success });
+        wsHub.broadcast('entities', 'deployed', { entityCount: result.entityCount });
+        return result;
+      },
+      undeployFile: async (filename: string) => {
+        if (!buildManager) return;
+        await buildManager.undeployFile(filename, manifestManager, '/data/deployed-bundles');
+        wsHub.broadcast('deploy', 'file_undeployed', { filename });
+        wsHub.broadcast('entities', 'deployed', { entityCount: buildManager.getEntityIds().length });
+      },
+      getDeployManifest: () => manifestManager.read(),
       getBuildStatus: () => ({ building, lastBuild: lastBuildResult }),
       getEntities: () => {
         if (!buildManager) return [];
@@ -372,6 +401,7 @@ async function main(): Promise<void> {
             wsHub.subscribe('build', ws),
             wsHub.subscribe('entities', ws),
             wsHub.subscribe('logs', ws),
+            wsHub.subscribe('deploy', ws),
           ];
           ws.on('close', () => unsubs.forEach((fn) => fn()));
         });
@@ -383,14 +413,19 @@ async function main(): Promise<void> {
     server.listen(8099);
     log('Web server listening on port 8099');
 
-    // Step 5: Load cached build (reuses buildManager from step 4)
+    // Step 5: Load deployed bundles from manifest (or fall back to last-build for migration)
     const fs = await import('node:fs');
-    if (fs.existsSync('/data/last-build') && buildManager) {
-      try {
-        const result = await buildManager.deploy();
-        log(`Cached build loaded: ${result.entityCount} entities`);
-      } catch (err) {
-        log(`Cached build failed: ${err instanceof Error ? err.message : String(err)}`);
+    if (buildManager) {
+      const manifest = manifestManager.read();
+      const hasManifest = Object.keys(manifest.files).length > 0;
+      const bundleDir = hasManifest ? '/data/deployed-bundles' : '/data/last-build';
+      if (fs.existsSync(bundleDir)) {
+        try {
+          const result = await buildManager.deploy();
+          log(`${hasManifest ? 'Manifest' : 'Cached'} build loaded: ${result.entityCount} entities`);
+        } catch (err) {
+          log(`Build load failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
       }
     }
 
