@@ -2,9 +2,10 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { ingressGuard, ingressPath, getIngressPath } from './middleware.js';
 import { createFilesRoutes } from './routes/files.js';
-import type { GitService } from '@ha-forge/runtime';
+import type { GitService, DeployManifestManager } from '@ha-forge/runtime';
 import { createBuildRoutes } from './routes/build.js';
-import type { BuildTriggerFn, BuildStatusFn, DeployTriggerFn } from './routes/build.js';
+import type { BuildTriggerFn, BuildStatusFn, DeployTriggerFn, DeployFileFn, UndeployFileFn, GetDeployManifestFn } from './routes/build.js';
+import { createHistoryRoutes } from './routes/history.js';
 import { createEntitiesRoutes } from './routes/entities.js';
 import type { GetEntitiesFn } from './routes/entities.js';
 import { createLogsRoutes } from './routes/logs.js';
@@ -47,6 +48,14 @@ export interface WebServerConfig {
   capturesDir?: string;
   /** Git service for auto-commit on save */
   gitService?: GitService;
+  /** Deploy manifest manager */
+  manifestManager?: DeployManifestManager;
+  /** Deploy a specific version of a file */
+  deployFile?: DeployFileFn;
+  /** Undeploy a file */
+  undeployFile?: UndeployFileFn;
+  /** Get the deploy manifest */
+  getDeployManifest?: GetDeployManifestFn;
 }
 
 // ---- Server creation ----
@@ -72,6 +81,9 @@ export function createServer(config: WebServerConfig) {
     triggerBuild: config.triggerBuild,
     getBuildStatus: config.getBuildStatus,
     triggerDeploy: config.triggerDeploy,
+    deployFile: config.deployFile,
+    undeployFile: config.undeployFile,
+    getDeployManifest: config.getDeployManifest,
   }));
   app.route('/api/entities', createEntitiesRoutes(config.getEntities));
   app.route('/api/logs', createLogsRoutes(config.queryLogs, config.getLogEntityIds));
@@ -85,6 +97,13 @@ export function createServer(config: WebServerConfig) {
   }
   if (config.capturesDir) {
     app.route('/api/captures', createCapturesRoutes({ capturesDir: config.capturesDir }));
+  }
+  if (config.gitService && config.manifestManager) {
+    app.route('/api/history', createHistoryRoutes({
+      scriptsDir: config.scriptsDir,
+      gitService: config.gitService,
+      manifestManager: config.manifestManager,
+    }));
   }
 
   // UI — serve the single-page application
