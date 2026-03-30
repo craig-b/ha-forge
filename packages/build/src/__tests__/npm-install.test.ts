@@ -5,6 +5,17 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import { npmInstall } from '../npm-install.js';
 
+/** Compute the same hash that npmInstall uses internally. */
+function computeInstallHash(scriptsDir: string): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(path.join(scriptsDir, 'package.json'), 'utf-8'));
+  const lockPath = path.join(scriptsDir, 'pnpm-lock.yaml');
+  if (fs.existsSync(lockPath)) {
+    hash.update(fs.readFileSync(lockPath, 'utf-8'));
+  }
+  return hash.digest('hex');
+}
+
 describe('npmInstall', () => {
   let tmpDir: string;
 
@@ -27,8 +38,8 @@ describe('npmInstall', () => {
     const packageJson = JSON.stringify({ name: 'test', dependencies: {} });
     fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
 
-    // Pre-create hash file
-    const hash = crypto.createHash('sha256').update(packageJson).digest('hex');
+    // Pre-create hash file with matching hash
+    const hash = computeInstallHash(tmpDir);
     const hashDir = path.join(tmpDir, 'node_modules');
     fs.mkdirSync(hashDir, { recursive: true });
     fs.writeFileSync(path.join(hashDir, '.package-json-hash'), hash, 'utf-8');
@@ -51,11 +62,10 @@ describe('npmInstall', () => {
     fs.mkdirSync(hashDir, { recursive: true });
     fs.writeFileSync(path.join(hashDir, '.package-json-hash'), 'stale-hash', 'utf-8');
 
-    // npm install will actually run — this may fail in CI without npm, but we can
-    // verify it was not skipped by checking the result
+    // pnpm install will actually run
     const result = await npmInstall(tmpDir);
 
-    // It ran (not skipped), though may fail if npm isn't available
+    // It ran (not skipped), though may fail if pnpm isn't available
     expect(result.skipped).toBe(false);
   });
 
@@ -64,17 +74,19 @@ describe('npmInstall', () => {
     const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
     fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
 
+    // Compute the hash before install (same as what npmInstall sees)
+    const expectedHash = computeInstallHash(tmpDir);
+
     const result = await npmInstall(tmpDir);
 
     if (result.success) {
       const hashFile = path.join(tmpDir, 'node_modules', '.package-json-hash');
       expect(fs.existsSync(hashFile)).toBe(true);
 
-      const expectedHash = crypto.createHash('sha256').update(packageJson).digest('hex');
       const storedHash = fs.readFileSync(hashFile, 'utf-8').trim();
       expect(storedHash).toBe(expectedHash);
     }
-    // If npm not available, just ensure it didn't throw
+    // If pnpm not available, just ensure it didn't throw
     expect(result).toHaveProperty('success');
   });
 
@@ -106,7 +118,7 @@ describe('npmInstall', () => {
       fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
 
       // Pre-create hash file in nodeModulesDir/node_modules
-      const hash = crypto.createHash('sha256').update(packageJson).digest('hex');
+      const hash = computeInstallHash(tmpDir);
       const nmSubdir = path.join(nodeModulesDir, 'node_modules');
       fs.mkdirSync(nmSubdir, { recursive: true });
       fs.writeFileSync(path.join(nmSubdir, '.package-json-hash'), hash, 'utf-8');
@@ -145,7 +157,7 @@ describe('npmInstall', () => {
       expect(fs.readlinkSync(path.join(tmpDir, 'node_modules'))).toBe(path.join(nodeModulesDir, 'node_modules'));
     });
 
-    it('copies package.json to nodeModulesDir for npm install', async () => {
+    it('copies package.json to nodeModulesDir for pnpm install', async () => {
       const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
       fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
 

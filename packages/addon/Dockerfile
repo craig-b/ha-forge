@@ -36,6 +36,9 @@ RUN chmod a+x /app/run.sh
 # Remove build dependencies to shrink image
 RUN apk del python3 make g++
 
+# Verify pnpm is available at runtime (used for user script dependencies)
+RUN pnpm --version
+
 # Ensure /data and /config directories exist
 RUN mkdir -p /data /config
 

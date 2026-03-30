@@ -11,16 +11,17 @@ export interface NpmInstallResult {
 }
 
 /**
- * Runs `npm install` in the user scripts directory if package.json has changed.
+ * Runs `pnpm install` in the user scripts directory if package.json has changed.
  * Uses a hash file to detect changes and skip redundant installs.
  *
  * @param scriptsDir Directory containing package.json
  * @param nodeModulesDir Optional separate directory for node_modules.
- *   When provided, package.json is copied there, npm install runs there,
+ *   When provided, package.json is copied there, pnpm install runs there,
  *   and a symlink is created at `scriptsDir/node_modules` pointing to
  *   `nodeModulesDir/node_modules` so that esbuild/tsc resolve transparently.
+ * @param storeDir Optional pnpm content-addressable store directory.
  */
-export async function npmInstall(scriptsDir: string, nodeModulesDir?: string): Promise<NpmInstallResult> {
+export async function npmInstall(scriptsDir: string, nodeModulesDir?: string, storeDir?: string): Promise<NpmInstallResult> {
   const startTime = Date.now();
 
   const packageJsonPath = path.join(scriptsDir, 'package.json');
@@ -32,13 +33,13 @@ export async function npmInstall(scriptsDir: string, nodeModulesDir?: string): P
     };
   }
 
-  // When nodeModulesDir is set, npm runs there (with a copy of package.json)
+  // When nodeModulesDir is set, pnpm runs there (with a copy of package.json)
   // and scriptsDir/node_modules is symlinked to nodeModulesDir/node_modules.
   const installDir = nodeModulesDir ?? scriptsDir;
   const effectiveNodeModules = path.join(installDir, 'node_modules');
 
-  // Check if package.json changed since last install
-  const currentHash = hashFile(packageJsonPath);
+  // Hash package.json and lockfile (if exists) together
+  const currentHash = hashInstallInputs(scriptsDir);
   const hashFilePath = path.join(effectiveNodeModules, '.package-json-hash');
 
   if (fs.existsSync(hashFilePath)) {
@@ -56,27 +57,27 @@ export async function npmInstall(scriptsDir: string, nodeModulesDir?: string): P
     }
   }
 
-  // Run npm install
+  // Run pnpm install
   try {
     if (nodeModulesDir) {
       fs.mkdirSync(nodeModulesDir, { recursive: true });
       // Copy package.json and lockfile to the install directory
       fs.copyFileSync(packageJsonPath, path.join(nodeModulesDir, 'package.json'));
-      const lockPath = path.join(scriptsDir, 'package-lock.json');
+      const lockPath = path.join(scriptsDir, 'pnpm-lock.yaml');
       if (fs.existsSync(lockPath)) {
-        fs.copyFileSync(lockPath, path.join(nodeModulesDir, 'package-lock.json'));
+        fs.copyFileSync(lockPath, path.join(nodeModulesDir, 'pnpm-lock.yaml'));
       }
     }
 
-    await runNpmInstall(installDir);
+    await runPnpmInstall(installDir, storeDir);
 
     // Symlink scriptsDir/node_modules → nodeModulesDir/node_modules
     if (nodeModulesDir) {
       ensureNodeModulesSymlink(scriptsDir, effectiveNodeModules);
-      // Copy lockfile back to scriptsDir if npm generated/updated one
-      const lockPath = path.join(nodeModulesDir, 'package-lock.json');
+      // Copy lockfile back to scriptsDir if pnpm generated/updated one
+      const lockPath = path.join(nodeModulesDir, 'pnpm-lock.yaml');
       if (fs.existsSync(lockPath)) {
-        fs.copyFileSync(lockPath, path.join(scriptsDir, 'package-lock.json'));
+        fs.copyFileSync(lockPath, path.join(scriptsDir, 'pnpm-lock.yaml'));
       }
     }
 
@@ -123,20 +124,30 @@ function ensureNodeModulesSymlink(scriptsDir: string, target: string): void {
   fs.symlinkSync(target, symlinkPath, 'dir');
 }
 
-function hashFile(filePath: string): string {
-  const content = fs.readFileSync(filePath, 'utf-8');
-  return crypto.createHash('sha256').update(content).digest('hex');
+/** Hash package.json and pnpm-lock.yaml (if present) together for change detection. */
+function hashInstallInputs(scriptsDir: string): string {
+  const hash = crypto.createHash('sha256');
+  hash.update(fs.readFileSync(path.join(scriptsDir, 'package.json'), 'utf-8'));
+  const lockPath = path.join(scriptsDir, 'pnpm-lock.yaml');
+  if (fs.existsSync(lockPath)) {
+    hash.update(fs.readFileSync(lockPath, 'utf-8'));
+  }
+  return hash.digest('hex');
 }
 
-function runNpmInstall(cwd: string): Promise<string> {
+function runPnpmInstall(cwd: string, storeDir?: string): Promise<string> {
+  const args = ['install', '--no-frozen-lockfile'];
+  if (storeDir) {
+    args.push('--store-dir', storeDir);
+  }
   return new Promise((resolve, reject) => {
     execFile(
-      'npm',
-      ['install', '--no-audit', '--no-fund'],
+      'pnpm',
+      args,
       { cwd, timeout: 120_000, maxBuffer: 10 * 1024 * 1024 },
       (error, stdout, stderr) => {
         if (error) {
-          reject(new Error(`npm install failed: ${stderr || error.message}`));
+          reject(new Error(`pnpm install failed: ${stderr || error.message}`));
           return;
         }
         resolve(stdout);

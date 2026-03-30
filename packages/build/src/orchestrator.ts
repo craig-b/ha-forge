@@ -47,6 +47,8 @@ export interface OrchestratorOptions {
   skipTscCheck?: boolean;
   /** Separate directory for node_modules (default: scriptsDir/node_modules) */
   nodeModulesDir?: string;
+  /** pnpm content-addressable store directory */
+  storeDir?: string;
   /** When set, only bundle these specific files (paths relative to scriptsDir) */
   files?: string[];
 }
@@ -101,7 +103,7 @@ export async function runBuild(opts: OrchestratorOptions): Promise<BuildResult> 
   if (!opts.skipNpmInstall) {
     const stepStart = Date.now();
     try {
-      npmResult = await npmInstall(opts.scriptsDir, opts.nodeModulesDir);
+      npmResult = await npmInstall(opts.scriptsDir, opts.nodeModulesDir, opts.storeDir);
       const step: BuildStepResult = {
         step: 'npm-install',
         success: npmResult.success,
