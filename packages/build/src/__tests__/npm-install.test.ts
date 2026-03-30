@@ -77,4 +77,82 @@ describe('npmInstall', () => {
     // If npm not available, just ensure it didn't throw
     expect(result).toHaveProperty('success');
   });
+
+  describe('nodeModulesDir', () => {
+    let nodeModulesDir: string;
+
+    beforeEach(() => {
+      nodeModulesDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nm-separate-'));
+    });
+
+    afterEach(() => {
+      fs.rmSync(nodeModulesDir, { recursive: true, force: true });
+    });
+
+    it('creates symlink at scriptsDir/node_modules pointing to nodeModulesDir/node_modules', async () => {
+      const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
+
+      await npmInstall(tmpDir, nodeModulesDir);
+
+      const symlinkPath = path.join(tmpDir, 'node_modules');
+      const stat = fs.lstatSync(symlinkPath);
+      expect(stat.isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(symlinkPath)).toBe(path.join(nodeModulesDir, 'node_modules'));
+    });
+
+    it('stores hash in nodeModulesDir/node_modules', async () => {
+      const packageJson = JSON.stringify({ name: 'test', dependencies: {} });
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
+
+      // Pre-create hash file in nodeModulesDir/node_modules
+      const hash = crypto.createHash('sha256').update(packageJson).digest('hex');
+      const nmSubdir = path.join(nodeModulesDir, 'node_modules');
+      fs.mkdirSync(nmSubdir, { recursive: true });
+      fs.writeFileSync(path.join(nmSubdir, '.package-json-hash'), hash, 'utf-8');
+
+      const result = await npmInstall(tmpDir, nodeModulesDir);
+
+      expect(result.success).toBe(true);
+      expect(result.skipped).toBe(true);
+    });
+
+    it('replaces existing real node_modules directory with symlink', async () => {
+      // Create a real node_modules directory
+      const realNm = path.join(tmpDir, 'node_modules');
+      fs.mkdirSync(realNm, { recursive: true });
+      fs.writeFileSync(path.join(realNm, 'dummy'), 'old', 'utf-8');
+
+      const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
+
+      await npmInstall(tmpDir, nodeModulesDir);
+
+      const stat = fs.lstatSync(path.join(tmpDir, 'node_modules'));
+      expect(stat.isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(path.join(tmpDir, 'node_modules'))).toBe(path.join(nodeModulesDir, 'node_modules'));
+    });
+
+    it('is idempotent when symlink already correct', async () => {
+      const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
+
+      await npmInstall(tmpDir, nodeModulesDir);
+      await npmInstall(tmpDir, nodeModulesDir);
+
+      const stat = fs.lstatSync(path.join(tmpDir, 'node_modules'));
+      expect(stat.isSymbolicLink()).toBe(true);
+      expect(fs.readlinkSync(path.join(tmpDir, 'node_modules'))).toBe(path.join(nodeModulesDir, 'node_modules'));
+    });
+
+    it('copies package.json to nodeModulesDir for npm install', async () => {
+      const packageJson = JSON.stringify({ name: 'test-pkg', version: '1.0.0' });
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), packageJson, 'utf-8');
+
+      await npmInstall(tmpDir, nodeModulesDir);
+
+      expect(fs.existsSync(path.join(nodeModulesDir, 'package.json'))).toBe(true);
+      expect(fs.readFileSync(path.join(nodeModulesDir, 'package.json'), 'utf-8')).toBe(packageJson);
+    });
+  });
 });

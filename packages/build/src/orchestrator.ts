@@ -45,6 +45,8 @@ export interface OrchestratorOptions {
   skipNpmInstall?: boolean;
   /** Skip tsc check step */
   skipTscCheck?: boolean;
+  /** Separate directory for node_modules (default: scriptsDir/node_modules) */
+  nodeModulesDir?: string;
 }
 
 /**
@@ -97,7 +99,7 @@ export async function runBuild(opts: OrchestratorOptions): Promise<BuildResult> 
   if (!opts.skipNpmInstall) {
     const stepStart = Date.now();
     try {
-      npmResult = await npmInstall(opts.scriptsDir);
+      npmResult = await npmInstall(opts.scriptsDir, opts.nodeModulesDir);
       const step: BuildStepResult = {
         step: 'npm-install',
         success: npmResult.success,

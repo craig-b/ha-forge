@@ -177,7 +177,7 @@ async function main(): Promise<void> {
     // Run npm install on startup so user deps survive restarts
     try {
       const { npmInstall } = await import('@ha-forge/build');
-      const npmResult = await npmInstall('/config');
+      const npmResult = await npmInstall('/config', '/data/node_modules');
       if (npmResult.skipped) {
         log('npm install skipped (no changes)');
       } else {
@@ -256,6 +256,7 @@ async function main(): Promise<void> {
           const result = await runBuild({
             scriptsDir: '/config', generatedDir: '/config/.generated',
             outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            nodeModulesDir: '/data/node_modules',
             onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
           });
           if (healthEntities && result.tscCheck) {
@@ -381,6 +382,7 @@ async function main(): Promise<void> {
           const result = await runBuild({
             scriptsDir: '/config', generatedDir: '/config/.generated',
             outputDir: '/data/last-build', wsClient: wsClient ?? undefined,
+            nodeModulesDir: '/data/node_modules',
             onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
           });
           if (healthEntities && result.tscCheck) {
