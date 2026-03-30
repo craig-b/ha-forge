@@ -176,7 +176,7 @@ describe('HAApiImpl', () => {
         service: 'turn_on',
         service_data: { brightness: 200 },
         target: { entity_id: 'light.living_room' },
-        return_response: true,
+
       });
     });
 
@@ -188,7 +188,7 @@ describe('HAApiImpl', () => {
         service: 'turn_off',
         service_data: {},
         target: { entity_id: 'switch.pump' },
-        return_response: true,
+
       });
     });
 
@@ -199,7 +199,7 @@ describe('HAApiImpl', () => {
         domain: 'light',
         service: 'turn_on',
         service_data: { brightness: 255 },
-        return_response: true,
+
       });
       // Should NOT have target key at all
       const payload = wsClient.sendCommand.mock.calls[0][1] as Record<string, unknown>;

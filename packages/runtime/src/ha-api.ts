@@ -199,12 +199,9 @@ export class HAApiImpl implements HAApi {
       payload.target = { entity_id: entity };
     }
 
-    const result = await this.wsClient.sendCommand('call_service', {
-      ...payload,
-      return_response: true,
-    }) as { response?: Record<string, unknown> } | null;
+    const result = await this.wsClient.sendCommand('call_service', payload) as Record<string, unknown> | null;
 
-    return result?.response ?? null;
+    return result;
   }
 
   async getState(entityId: string): Promise<{
