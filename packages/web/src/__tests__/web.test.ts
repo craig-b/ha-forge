@@ -26,12 +26,17 @@ function createTestConfig(overrides: Partial<WebServerConfig> = {}): WebServerCo
         ],
         typeErrors: 0,
         bundleErrors: 0,
-        entityCount: 2,
       },
     })),
     getBuildStatus: vi.fn(() => ({
       building: false,
       lastBuild: null,
+    })),
+    triggerDeploy: vi.fn(async () => ({
+      success: true,
+      entityCount: 2,
+      errors: [],
+      duration: 100,
     })),
     getEntities: vi.fn(() => []),
     queryLogs: vi.fn(() => []),
@@ -193,6 +198,21 @@ describe('Build API', () => {
     const data = await res.json() as { building: boolean };
 
     expect(data.building).toBe(false);
+
+    fs.rmSync(config.scriptsDir, { recursive: true, force: true });
+    fs.rmSync(config.generatedDir, { recursive: true, force: true });
+  });
+
+  it('POST /api/build/deploy triggers deploy', async () => {
+    const config = createTestConfig();
+    const { app } = createServer(config);
+
+    const res = await app.request('/api/build/deploy', { method: 'POST' });
+    const data = await res.json() as { success: boolean; entityCount: number };
+
+    expect(config.triggerDeploy).toHaveBeenCalled();
+    expect(data.success).toBe(true);
+    expect(data.entityCount).toBe(2);
 
     fs.rmSync(config.scriptsDir, { recursive: true, force: true });
     fs.rmSync(config.generatedDir, { recursive: true, force: true });

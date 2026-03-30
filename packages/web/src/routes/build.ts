@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 export type BuildTriggerFn = () => Promise<BuildStatusResponse>;
 export type BuildStatusFn = () => BuildStatusResponse;
+export type DeployTriggerFn = () => Promise<DeployResponse>;
 
 export interface BuildStatusResponse {
   building: boolean;
@@ -25,19 +26,26 @@ export interface BuildStatusResponse {
     }>;
     typeErrors: number;
     bundleErrors: number;
-    entityCount: number;
   } | null;
+}
+
+export interface DeployResponse {
+  success: boolean;
+  entityCount: number;
+  errors: Array<{ file: string; error: string }>;
+  duration: number;
 }
 
 export interface BuildRouteOptions {
   triggerBuild: BuildTriggerFn;
   getBuildStatus: BuildStatusFn;
+  triggerDeploy: DeployTriggerFn;
 }
 
 export function createBuildRoutes(opts: BuildRouteOptions) {
   const app = new Hono();
 
-  // Trigger build
+  // Trigger build (no deploy)
   app.post('/', async (c) => {
     try {
       const result = await opts.triggerBuild();
@@ -50,6 +58,16 @@ export function createBuildRoutes(opts: BuildRouteOptions) {
   // Get build status
   app.get('/status', (c) => {
     return c.json(opts.getBuildStatus());
+  });
+
+  // Trigger deploy (separate from build)
+  app.post('/deploy', async (c) => {
+    try {
+      const result = await opts.triggerDeploy();
+      return c.json(result);
+    } catch (err) {
+      return c.json({ error: 'Deploy failed to start' }, 500);
+    }
   });
 
   return app;

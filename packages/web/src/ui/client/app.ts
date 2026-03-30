@@ -57,6 +57,7 @@ export class TseApp extends LitElement {
     this._connectWebSocket();
 
     this.addEventListener('tse-build', () => this._triggerBuild());
+    this.addEventListener('tse-deploy', () => this._triggerDeploy());
     this.addEventListener('tse-regen-types', () => this._regenTypes());
     this.addEventListener('tse-open-packages', () => console.log('tse-open-packages: not yet implemented'));
     this.addEventListener('tse-open-settings', () => console.log('tse-open-settings: not yet implemented'));
@@ -430,9 +431,6 @@ export class TseApp extends LitElement {
       const lastBuild = result.lastBuild as Record<string, unknown> | undefined;
       if (lastBuild) {
         this._buildSteps = (lastBuild.steps as BuildStep[]) ?? [];
-        if (lastBuild.entityCount !== undefined) {
-          this._buildMessages = [...this._buildMessages, `Deployed ${lastBuild.entityCount} entities`];
-        }
       }
       const success = lastBuild?.success;
       this._statusText = success ? 'Build OK' : 'Build Failed';
@@ -443,6 +441,31 @@ export class TseApp extends LitElement {
       this._statusClass = 'error';
     } finally {
       this._building = false;
+    }
+  }
+
+  private async _triggerDeploy() {
+    this._statusText = 'Deploying...';
+    this._statusClass = 'building';
+    this._buildMessages = [...this._buildMessages, 'Deploying...'];
+
+    try {
+      const result = await this._api('POST', '/api/build/deploy');
+      if (result.success) {
+        this._buildMessages = [...this._buildMessages, `Deployed ${result.entityCount} entities`];
+        this._statusText = 'Deployed';
+        this._statusClass = 'success';
+      } else {
+        const errors = (result.errors as Array<{ file: string; error: string }>) ?? [];
+        this._buildMessages = [...this._buildMessages, `Deploy failed: ${errors.map((e) => e.error).join(', ')}`];
+        this._statusText = 'Deploy Failed';
+        this._statusClass = 'error';
+      }
+    } catch (err) {
+      this._buildMessages = [...this._buildMessages, `Deploy request failed: ${(err as Error).message}`];
+      this._statusText = 'Error';
+      this._statusClass = 'error';
+    } finally {
       this._loadEntities();
     }
   }

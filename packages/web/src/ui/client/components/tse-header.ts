@@ -38,8 +38,12 @@ export class TseHeader extends LitElement {
           ${this._buildMenuOpen ? html`
             <div class="header-dropdown-menu">
               <div class="ctx-item" @click=${this._onBuild}>
-                Rebuild All
-                <div class="ctx-item-desc">Full teardown and redeploy</div>
+                Build
+                <div class="ctx-item-desc">Type-check and bundle scripts</div>
+              </div>
+              <div class="ctx-item" @click=${this._onDeploy}>
+                Deploy
+                <div class="ctx-item-desc">Deploy built bundles to HA</div>
               </div>
               <div class="ctx-item ctx-danger">
                 Undeploy All
@@ -80,6 +84,10 @@ export class TseHeader extends LitElement {
 
   private _onBuild() {
     this.dispatchEvent(new CustomEvent('tse-build', { bubbles: true, composed: true }));
+  }
+
+  private _onDeploy() {
+    this.dispatchEvent(new CustomEvent('tse-deploy', { bubbles: true, composed: true }));
   }
 
   private _onRegenTypes() {

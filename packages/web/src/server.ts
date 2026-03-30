@@ -3,7 +3,7 @@ import { cors } from 'hono/cors';
 import { ingressGuard, ingressPath, getIngressPath } from './middleware.js';
 import { createFilesRoutes } from './routes/files.js';
 import { createBuildRoutes } from './routes/build.js';
-import type { BuildTriggerFn, BuildStatusFn } from './routes/build.js';
+import type { BuildTriggerFn, BuildStatusFn, DeployTriggerFn } from './routes/build.js';
 import { createEntitiesRoutes } from './routes/entities.js';
 import type { GetEntitiesFn } from './routes/entities.js';
 import { createLogsRoutes } from './routes/logs.js';
@@ -30,6 +30,8 @@ export interface WebServerConfig {
   triggerBuild: BuildTriggerFn;
   /** Function to get current build status */
   getBuildStatus: BuildStatusFn;
+  /** Function to trigger a deploy */
+  triggerDeploy: DeployTriggerFn;
   /** Function to get registered entities */
   getEntities: GetEntitiesFn;
   /** Function to query logs */
@@ -66,6 +68,7 @@ export function createServer(config: WebServerConfig) {
   app.route('/api/build', createBuildRoutes({
     triggerBuild: config.triggerBuild,
     getBuildStatus: config.getBuildStatus,
+    triggerDeploy: config.triggerDeploy,
   }));
   app.route('/api/entities', createEntitiesRoutes(config.getEntities));
   app.route('/api/logs', createLogsRoutes(config.queryLogs, config.getLogEntityIds));

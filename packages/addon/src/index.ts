@@ -235,7 +235,7 @@ async function main(): Promise<void> {
     let lastBuildResult: {
       success: boolean; timestamp: string; totalDuration: number;
       steps: Array<{ step: string; success: boolean; duration: number; error?: string; diagnostics?: Array<{ file: string; line: number; column: number; code: number; message: string; severity: 'error' | 'warning' }> }>;
-      typeErrors: number; bundleErrors: number; entityCount: number;
+      typeErrors: number; bundleErrors: number;
     } | null = null;
 
     const { app, wsHub } = createServer({
@@ -262,11 +262,6 @@ async function main(): Promise<void> {
           if (healthEntities && result.tscCheck) {
             await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
           }
-          let entityCount = 0;
-          if (result.bundle?.files.some((f) => f.success) && buildManager) {
-            entityCount = (await buildManager.smartDeploy()).entityCount;
-            wsHub.broadcast('entities', 'deployed', { entityCount });
-          }
           const stepsWithDiagnostics = result.steps.map((step) => {
             if (step.step === 'tsc-check' && result.tscCheck?.diagnostics.length) {
               return { ...step, diagnostics: result.tscCheck.diagnostics };
@@ -290,13 +285,26 @@ async function main(): Promise<void> {
             success: result.success, timestamp: result.timestamp, totalDuration: result.totalDuration,
             steps: stepsWithDiagnostics,
             typeErrors: result.tscCheck?.diagnostics.filter((d) => d.severity === 'error').length ?? 0,
-            bundleErrors: (result.bundle ? result.bundle.errors.length + result.bundle.files.filter((f) => !f.success).length : 0), entityCount,
+            bundleErrors: (result.bundle ? result.bundle.errors.length + result.bundle.files.filter((f) => !f.success).length : 0),
           };
-          logger.info('Build complete', { success: result.success, entityCount, duration: result.totalDuration });
+          logger.info('Build complete', { success: result.success, duration: result.totalDuration });
         } catch (err) {
           logger.error('Build failed', { error: err instanceof Error ? err.message : String(err) });
         } finally { building = false; }
         return { building: false, lastBuild: lastBuildResult };
+      },
+      triggerDeploy: async () => {
+        if (!buildManager) return { success: false, entityCount: 0, errors: [{ file: '', error: 'No MQTT connection' }], duration: 0 };
+        try {
+          const result = await buildManager.smartDeploy();
+          wsHub.broadcast('entities', 'deployed', { entityCount: result.entityCount });
+          logger.info('Deploy complete', { entityCount: result.entityCount, duration: result.duration });
+          return result;
+        } catch (err) {
+          const errorMsg = err instanceof Error ? err.message : String(err);
+          logger.error('Deploy failed', { error: errorMsg });
+          return { success: false, entityCount: 0, errors: [{ file: '', error: errorMsg }], duration: 0 };
+        }
       },
       getBuildStatus: () => ({ building, lastBuild: lastBuildResult }),
       getEntities: () => {
@@ -388,11 +396,7 @@ async function main(): Promise<void> {
           if (healthEntities && result.tscCheck) {
             await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
           }
-          if (result.bundle?.files.some((f) => f.success) && buildManager) {
-            const deployResult = await buildManager.smartDeploy();
-            wsHub.broadcast('entities', 'deployed', { entityCount: deployResult.entityCount });
-            logger.info('Auto-build complete', { entityCount: deployResult.entityCount, duration: result.totalDuration });
-          }
+          logger.info('Auto-build complete', { success: result.success, duration: result.totalDuration });
         } catch (err) {
           logger.error('Auto-build failed', { error: err instanceof Error ? err.message : String(err) });
         } finally { building = false; }
