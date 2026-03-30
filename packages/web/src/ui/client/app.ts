@@ -634,6 +634,7 @@ export class TseApp extends LitElement {
     if (panel === 'exports') this._loadEntities();
     if (panel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
     if (panel === 'simulate') { this._loadCaptures(); this._updateSimulationData(); }
+    if (panel === 'history') this._refreshHistoryPanel();
   }
 
   // ---- Captures ----

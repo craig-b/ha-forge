@@ -332,7 +332,7 @@ async function main(): Promise<void> {
         const { npmInstall } = await import('@ha-forge/build');
         const result = await buildManager.deploySingleFile({
           filename, commit, gitService, manifestManager,
-          deployedBundlesDir: '/data/deployed-bundles',
+          deployedBundlesDir: '/data/deployed-bundles', scriptsDir: '/config',
           buildFn: async (stagingDir, fname, outputDir) => {
             // Install sidecar deps if present
             await npmInstall(stagingDir, '/data/node_modules', '/data/pnpm-store');

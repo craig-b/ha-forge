@@ -338,17 +338,18 @@ export class BuildManager {
     gitService: GitService;
     manifestManager: DeployManifestManager;
     deployedBundlesDir: string;
+    scriptsDir: string;
     buildFn: (stagingDir: string, filename: string, outputDir: string) => Promise<void>;
   }): Promise<DeployResult> {
     const startTime = Date.now();
-    const { filename, commit, gitService, manifestManager, deployedBundlesDir } = opts;
+    const { filename, commit, gitService, manifestManager, deployedBundlesDir, scriptsDir } = opts;
     const os = await import('node:os');
 
     const stagingDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ha-forge-deploy-'));
 
     try {
       // Extract file at the target commit
-      const content = await gitService.getFileAtCommit(commit, path.join(this.bundleDir, '..', filename));
+      const content = await gitService.getFileAtCommit(commit, path.join(scriptsDir, filename));
       if (content === null) {
         return {
           success: false, entityCount: 0, duration: Date.now() - startTime,
@@ -360,7 +361,7 @@ export class BuildManager {
       // Extract sidecar if it exists at that commit
       const sidecarName = filename.replace(/\.ts$/, '.package.json');
       const sidecarContent = await gitService.getFileAtCommit(
-        commit, path.join(this.bundleDir, '..', sidecarName),
+        commit, path.join(scriptsDir, sidecarName),
       );
       if (sidecarContent !== null) {
         fs.writeFileSync(path.join(stagingDir, sidecarName), sidecarContent, 'utf-8');

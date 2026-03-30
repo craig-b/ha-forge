@@ -83,6 +83,11 @@ export class GitService {
           await this.gitExec(['add', relSidecar]);
         }
       }
+      // Skip commit if nothing staged (e.g. file saved without changes)
+      const status = await this.gitExec(['status', '--porcelain']);
+      if (!status.trim()) {
+        return this.getHeadSha();
+      }
       const timestamp = new Date().toISOString();
       const basename = path.basename(relFile);
       await this.gitExec(['commit', '-m', `${basename} — ${timestamp}`]);

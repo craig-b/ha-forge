@@ -61,7 +61,7 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
       // Auto-commit to git (fire-and-forget)
       if (opts.gitService) {
         const sidecar = fullPath.replace(/\.ts$/, '.package.json');
-        opts.gitService.commitFile(fullPath, sidecar).catch(() => {});
+        opts.gitService.commitFile(fullPath, sidecar).catch((err) => console.error('[git]', err instanceof Error ? err.message : err));
       }
 
       return c.json({ success: true, path: filePath });
@@ -108,7 +108,7 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
         opts.gitService.commitRename(
           fullPath, newFullPath,
           oldSidecar, fs.existsSync(newSidecar) ? newSidecar : undefined,
-        ).catch(() => {});
+        ).catch((err) => console.error('[git]', err instanceof Error ? err.message : err));
       }
 
       return c.json({ success: true, path: body.newPath });
@@ -139,7 +139,7 @@ export function createFilesRoutes(opts: FilesRouteOptions) {
 
       // Auto-commit deletion to git (fire-and-forget)
       if (opts.gitService) {
-        opts.gitService.commitDelete(fullPath, sidecar).catch(() => {});
+        opts.gitService.commitDelete(fullPath, sidecar).catch((err) => console.error('[git]', err instanceof Error ? err.message : err));
       }
 
       return c.json({ success: true });
