@@ -30,3 +30,5 @@ export type { CommitInfo } from './git-service.js';
 
 export { DeployManifestManager } from './deploy-manifest.js';
 export type { DeployManifest, DeployManifestEntry } from './deploy-manifest.js';
+
+export { migrateToGitVersioning } from './migration.js';

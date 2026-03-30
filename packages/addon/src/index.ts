@@ -1,5 +1,5 @@
 import type { MqttCredentials } from '@ha-forge/runtime';
-import { GitService } from '@ha-forge/runtime';
+import { GitService, migrateToGitVersioning } from '@ha-forge/runtime';
 
 export interface AddonOptions {
   log_level: 'debug' | 'info' | 'warn' | 'error';
@@ -188,13 +188,18 @@ async function main(): Promise<void> {
       log(`npm install failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Initialize git repo for file versioning
+    // Initialize git repo for file versioning + migrate existing installations
     const gitService = new GitService('/config');
     try {
-      await gitService.ensureRepo();
+      await migrateToGitVersioning({
+        scriptsDir: '/config',
+        dataDir: '/data',
+        gitService,
+        logger: { info: log },
+      });
       log('Git repo initialized for /config');
     } catch (err) {
-      log(`Git init failed: ${err instanceof Error ? err.message : String(err)}`);
+      log(`Git init/migration failed: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     // Load responding services from meta JSON into HAApiImpl
