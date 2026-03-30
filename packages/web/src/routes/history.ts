@@ -43,20 +43,23 @@ export function createHistoryRoutes(opts: HistoryRouteOptions) {
 
     // Otherwise, return commit history
     const fullPath = path.join(opts.scriptsDir, filePath);
+    let commits: CommitInfo[];
     try {
-      const commits = await opts.gitService.getFileHistory(fullPath, limit);
-      const deployEntry = opts.manifestManager.getFile(filePath);
-      const deployedCommit = deployEntry?.commit;
-
-      const entries: HistoryEntry[] = commits.map((c) => ({
-        ...c,
-        deployed: c.sha === deployedCommit,
-      }));
-
-      return c.json({ path: filePath, history: entries });
-    } catch (err) {
-      return c.json({ error: 'Failed to get history' }, 500);
+      commits = await opts.gitService.getFileHistory(fullPath, limit);
+    } catch {
+      // No git history for this file (not yet committed, or repo just initialized)
+      commits = [];
     }
+
+    const deployEntry = opts.manifestManager.getFile(filePath);
+    const deployedCommit = deployEntry?.commit;
+
+    const entries: HistoryEntry[] = commits.map((c) => ({
+      ...c,
+      deployed: c.sha === deployedCommit,
+    }));
+
+    return c.json({ path: filePath, history: entries });
   });
 
   return app;
