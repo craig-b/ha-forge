@@ -18,6 +18,7 @@
     "typescript": "^5.7.0"
   },
   "dependencies": {
+    "@ha-forge/runtime": "workspace:*",
     "@ha-forge/sdk": "workspace:*",
     "hono": "^4.12.8",
     "lit": "^3.3.2"

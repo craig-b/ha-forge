@@ -116,6 +116,9 @@ importers:
 
   packages/web:
     dependencies:
+      '@ha-forge/runtime':
+        specifier: workspace:*
+        version: link:../runtime
       '@ha-forge/sdk':
         specifier: workspace:*
         version: link:../sdk
