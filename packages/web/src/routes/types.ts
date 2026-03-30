@@ -70,10 +70,12 @@ export function createTypesRoutes(opts: TypesRouteOptions) {
         return c.json({ error: 'SDK types chunk not found' }, 404);
       }
 
-      // Read all chunks and strip mangled export lines
+      // Read all chunks, strip cross-chunk imports and mangled export lines
       let types = typeChunks
+        .sort()  // core before device — ensures types are declared before use
         .map(f => fs.readFileSync(path.join(sdkDist!, f), 'utf-8'))
         .join('\n');
+      types = types.replace(/^import .*;\s*$/gm, '');
       types = types.replace(/^export type \{.*\};\s*$/gm, '');
 
       // Replace base types with generated typed versions in EntityContext/DeviceContext
