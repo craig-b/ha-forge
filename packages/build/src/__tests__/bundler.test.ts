@@ -233,6 +233,45 @@ describe('bundle', () => {
     expect(result.files[0].success).toBe(true);
   });
 
+  it('bundles only specified files when files option is set', async () => {
+    const inputDir = path.join(tmpDir, 'input');
+    const outputDir = path.join(tmpDir, 'output');
+    fs.mkdirSync(inputDir);
+
+    fs.writeFileSync(path.join(inputDir, 'a.ts'), `export const a = 1;\n`);
+    fs.writeFileSync(path.join(inputDir, 'b.ts'), `export const b = 2;\n`);
+    fs.writeFileSync(path.join(inputDir, 'c.ts'), `export const c = 3;\n`);
+
+    const result = await bundle({ inputDir, outputDir, files: ['a.ts'] });
+
+    expect(result.success).toBe(true);
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].inputFile).toContain('a.ts');
+    expect(fs.existsSync(path.join(outputDir, 'a.js'))).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, 'b.js'))).toBe(false);
+    expect(fs.existsSync(path.join(outputDir, 'c.js'))).toBe(false);
+  });
+
+  it('does not clean output dir when files option is set', async () => {
+    const inputDir = path.join(tmpDir, 'input');
+    const outputDir = path.join(tmpDir, 'output');
+    fs.mkdirSync(inputDir);
+    fs.mkdirSync(outputDir, { recursive: true });
+
+    // Pre-create an existing bundle
+    fs.writeFileSync(path.join(outputDir, 'existing.js'), 'old bundle', 'utf-8');
+
+    fs.writeFileSync(path.join(inputDir, 'a.ts'), `export const a = 1;\n`);
+
+    const result = await bundle({ inputDir, outputDir, files: ['a.ts'] });
+
+    expect(result.success).toBe(true);
+    expect(fs.existsSync(path.join(outputDir, 'a.js'))).toBe(true);
+    // Existing bundle should survive
+    expect(fs.existsSync(path.join(outputDir, 'existing.js'))).toBe(true);
+    expect(fs.readFileSync(path.join(outputDir, 'existing.js'), 'utf-8')).toBe('old bundle');
+  });
+
   it('generates sourcemap files alongside output .js files', async () => {
     const inputDir = path.join(tmpDir, 'input');
     const outputDir = path.join(tmpDir, 'output');

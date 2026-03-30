@@ -47,6 +47,8 @@ export interface OrchestratorOptions {
   skipTscCheck?: boolean;
   /** Separate directory for node_modules (default: scriptsDir/node_modules) */
   nodeModulesDir?: string;
+  /** When set, only bundle these specific files (paths relative to scriptsDir) */
+  files?: string[];
 }
 
 /**
@@ -153,6 +155,7 @@ export async function runBuild(opts: OrchestratorOptions): Promise<BuildResult> 
     bundleResult = await bundle({
       inputDir: opts.scriptsDir,
       outputDir: opts.outputDir,
+      files: opts.files,
     });
     const step: BuildStepResult = {
       step: 'bundle',

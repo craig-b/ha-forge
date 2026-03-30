@@ -9,6 +9,9 @@ export interface BundleOptions {
   outputDir: string;
   /** Additional external modules (always includes 'ha-forge') */
   external?: string[];
+  /** When set, only bundle these specific files (paths relative to inputDir or absolute).
+   *  Skips output directory cleanup to preserve other bundles. */
+  files?: string[];
 }
 
 export interface BundleResult {
@@ -30,31 +33,41 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
   const results: BundleFileResult[] = [];
   const globalErrors: string[] = [];
 
-  // Find all .ts files in inputDir (not in node_modules, not in .generated)
+  // Determine which files to bundle
   let tsFiles: string[];
-  try {
-    tsFiles = findTsFiles(options.inputDir);
-  } catch (err) {
-    return {
-      success: false,
-      files: [],
-      errors: [`Failed to scan input directory: ${err instanceof Error ? err.message : String(err)}`],
-      duration: Date.now() - startTime,
-    };
-  }
+  if (options.files) {
+    // Bundle only specified files — resolve relative paths against inputDir
+    tsFiles = options.files.map((f) =>
+      path.isAbsolute(f) ? f : path.join(options.inputDir, f),
+    );
+    // Ensure output directory exists without cleaning it
+    fs.mkdirSync(options.outputDir, { recursive: true });
+  } else {
+    // Find all .ts files in inputDir (not in node_modules, not in .generated)
+    try {
+      tsFiles = findTsFiles(options.inputDir);
+    } catch (err) {
+      return {
+        success: false,
+        files: [],
+        errors: [`Failed to scan input directory: ${err instanceof Error ? err.message : String(err)}`],
+        duration: Date.now() - startTime,
+      };
+    }
 
-  if (tsFiles.length === 0) {
-    return {
-      success: true,
-      files: [],
-      errors: [],
-      duration: Date.now() - startTime,
-    };
-  }
+    if (tsFiles.length === 0) {
+      return {
+        success: true,
+        files: [],
+        errors: [],
+        duration: Date.now() - startTime,
+      };
+    }
 
-  // Clean and recreate output directory to remove stale bundles from deleted/renamed files
-  fs.rmSync(options.outputDir, { recursive: true, force: true });
-  fs.mkdirSync(options.outputDir, { recursive: true });
+    // Clean and recreate output directory to remove stale bundles from deleted/renamed files
+    fs.rmSync(options.outputDir, { recursive: true, force: true });
+    fs.mkdirSync(options.outputDir, { recursive: true });
+  }
 
   const external = ['@ha-forge/sdk', ...(options.external ?? [])];
 
