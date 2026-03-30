@@ -54,15 +54,16 @@ export async function migrateToGitVersioning(opts: {
     } catch { /* non-fatal: global package.json may be malformed */ }
   }
 
-  // Step 3: Commit all .ts and .package.json files
+  // Step 3: Commit all .ts and .package.json files in a single bulk commit
   const filesToCommit = findCommittableFiles(scriptsDir);
   if (filesToCommit.length > 0) {
-    for (const file of filesToCommit) {
-      try {
-        await gitService.commitFile(path.join(scriptsDir, file));
-      } catch { /* skip files that fail to commit */ }
+    try {
+      const fullPaths = filesToCommit.map((f) => path.join(scriptsDir, f));
+      await gitService.commitAll(fullPaths, 'Initial commit — migration from pre-versioning');
+      logger?.info(`Initial commit: ${filesToCommit.length} files`);
+    } catch (err) {
+      logger?.info(`Initial commit failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-    logger?.info(`Initial commit: ${filesToCommit.length} files`);
   }
 
   // Step 4: Copy last-build bundles to deployed-bundles and create manifest

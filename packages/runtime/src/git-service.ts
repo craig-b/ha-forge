@@ -54,6 +54,21 @@ export class GitService {
   }
 
   /**
+   * Stage multiple files and commit them in a single commit.
+   * Returns the commit SHA.
+   */
+  async commitAll(files: string[], message: string): Promise<string> {
+    return this.withMutex(async () => {
+      for (const file of files) {
+        const relFile = path.relative(this.repoDir, file);
+        await this.gitExec(['add', relFile]);
+      }
+      await this.gitExec(['commit', '-m', message]);
+      return this.getHeadSha();
+    });
+  }
+
+  /**
    * Stage and commit a file (and optional sidecar).
    * Commit message: `<filename> — <ISO timestamp>`
    * Returns the commit SHA.
