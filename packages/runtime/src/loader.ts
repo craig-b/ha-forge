@@ -176,7 +176,7 @@ export async function loadBundles(bundleDir: string): Promise<LoadResult> {
   return { entities, devices, automations, tasks, modes, crons, errors };
 }
 
-async function loadSingleBundle(
+export async function loadSingleBundle(
   filePath: string,
   bundleDir: string,
 ): Promise<{ entities: ResolvedEntity[]; devices: ResolvedDevice[]; automations: ResolvedAutomation[]; tasks: ResolvedTask[]; modes: ResolvedMode[]; crons: ResolvedCron[] }> {
