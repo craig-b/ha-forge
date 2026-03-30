@@ -24,3 +24,6 @@ export type { SQLiteLoggerOptions, LogEntry } from './sqlite-logger.js';
 
 export { HealthEntities } from './health-entities.js';
 export type { TscDiagnostic } from './health-entities.js';
+
+export { GitService } from './git-service.js';
+export type { CommitInfo } from './git-service.js';
