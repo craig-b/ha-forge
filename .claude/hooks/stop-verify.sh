@@ -5,12 +5,13 @@ cd "$(git rev-parse --show-toplevel)" || exit 0
 
 # Skip if no source changes vs remote (uncommitted or committed-but-unpushed)
 remote_ref=$(git rev-parse --verify origin/main 2>/dev/null || echo "")
+check_paths='packages/*/src/** packages/*/package.json packages/*/tsconfig.json tsconfig.base.json pnpm-lock.yaml'
 if [ -n "$remote_ref" ]; then
-  if git diff --quiet "$remote_ref" -- 'packages/*/src/**' && git diff --quiet -- 'packages/*/src/**'; then
+  if git diff --quiet "$remote_ref" -- $check_paths && git diff --quiet -- $check_paths; then
     exit 0
   fi
 else
-  if git diff --quiet HEAD -- 'packages/*/src/**'; then
+  if git diff --quiet HEAD -- $check_paths; then
     exit 0
   fi
 fi
