@@ -58,6 +58,20 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
 
   const external = ['@ha-forge/sdk', ...(options.external ?? [])];
 
+  // Plugin to block relative imports between user scripts
+  const blockRelativeImports: esbuild.Plugin = {
+    name: 'block-relative-imports',
+    setup(build) {
+      build.onResolve({ filter: /^\.\.?\// }, (args) => {
+        return {
+          errors: [{
+            text: 'Cross-file imports are not supported. Each script must be self-contained.',
+          }],
+        };
+      });
+    },
+  };
+
   // Bundle each file independently
   for (const file of tsFiles) {
     const relativePath = path.relative(options.inputDir, file);
@@ -75,6 +89,7 @@ export async function bundle(options: BundleOptions): Promise<BundleResult> {
         format: 'esm',
         outfile: outputFile,
         external,
+        plugins: [blockRelativeImports],
         sourcemap: true,
         logLevel: 'silent',
         absWorkingDir: options.inputDir,

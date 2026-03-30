@@ -185,6 +185,54 @@ describe('bundle', () => {
     }
   });
 
+  it('blocks relative imports between user scripts', async () => {
+    const inputDir = path.join(tmpDir, 'input');
+    const outputDir = path.join(tmpDir, 'output');
+    fs.mkdirSync(inputDir);
+
+    fs.writeFileSync(path.join(inputDir, 'helper.ts'), `export const x = 1;\n`);
+    fs.writeFileSync(path.join(inputDir, 'main.ts'), `import { x } from './helper';\nexport const y = x;\n`);
+
+    const result = await bundle({ inputDir, outputDir });
+
+    // main.ts should fail, helper.ts should also fail (if it has no relative imports it succeeds)
+    const mainFile = result.files.find((f) => f.inputFile.includes('main.ts'));
+    expect(mainFile).toBeDefined();
+    expect(mainFile!.success).toBe(false);
+    expect(mainFile!.errors.some((e) => e.includes('Cross-file imports are not supported'))).toBe(true);
+  });
+
+  it('blocks parent-relative imports (../)', async () => {
+    const inputDir = path.join(tmpDir, 'input');
+    const outputDir = path.join(tmpDir, 'output');
+    const subDir = path.join(inputDir, 'sub');
+    fs.mkdirSync(subDir, { recursive: true });
+
+    fs.writeFileSync(path.join(inputDir, 'shared.ts'), `export const z = 99;\n`);
+    fs.writeFileSync(path.join(subDir, 'child.ts'), `import { z } from '../shared';\nexport const w = z;\n`);
+
+    const result = await bundle({ inputDir, outputDir });
+
+    const childFile = result.files.find((f) => f.inputFile.includes('child.ts'));
+    expect(childFile).toBeDefined();
+    expect(childFile!.success).toBe(false);
+    expect(childFile!.errors.some((e) => e.includes('Cross-file imports are not supported'))).toBe(true);
+  });
+
+  it('allows bare specifier imports (npm packages)', async () => {
+    const inputDir = path.join(tmpDir, 'input');
+    const outputDir = path.join(tmpDir, 'output');
+    fs.mkdirSync(inputDir);
+
+    // external modules are not resolved, so this should succeed
+    fs.writeFileSync(path.join(inputDir, 'uses-lib.ts'), `import foo from 'some-lib';\nexport default foo;\n`);
+
+    const result = await bundle({ inputDir, outputDir, external: ['some-lib'] });
+
+    expect(result.success).toBe(true);
+    expect(result.files[0].success).toBe(true);
+  });
+
   it('generates sourcemap files alongside output .js files', async () => {
     const inputDir = path.join(tmpDir, 'input');
     const outputDir = path.join(tmpDir, 'output');
