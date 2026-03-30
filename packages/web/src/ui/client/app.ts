@@ -464,6 +464,7 @@ export class TseApp extends LitElement {
     file.content = content;
     file.modified = false;
     this.requestUpdate();
+    this._refreshHistoryPanel();
   }
 
   private async _saveFileAs(filePath: string) {
