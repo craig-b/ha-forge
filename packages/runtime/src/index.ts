@@ -27,3 +27,6 @@ export type { TscDiagnostic } from './health-entities.js';
 
 export { GitService } from './git-service.js';
 export type { CommitInfo } from './git-service.js';
+
+export { DeployManifestManager } from './deploy-manifest.js';
+export type { DeployManifest, DeployManifestEntry } from './deploy-manifest.js';
