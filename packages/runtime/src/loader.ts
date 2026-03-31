@@ -113,6 +113,9 @@ export async function installGlobals(haClient?: HAApiImpl, logger?: EntityLogger
   g.max = sdk.max;
   g.last = sdk.last;
   g.count = sdk.count;
+  // capture() is used in simulate.scenario() to load recorded history data.
+  // At runtime it's a no-op — return an empty recorded signal so modules can load.
+  g.capture = () => sdk.signals.recorded([]);
 
   // Always provide ha global — stateless only (no on/reactions).
   // Use this.events for lifecycle-managed subscriptions instead.
