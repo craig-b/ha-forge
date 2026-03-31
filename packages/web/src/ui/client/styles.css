@@ -84,6 +84,14 @@ tse-header h1 { font-size: 14px; font-weight: 600; color: var(--text-bright); }
 .status-badge.success { background: #2d4a2d; color: var(--success); }
 .status-badge.error { background: #4a2d2d; color: var(--error); }
 
+.system-warning-banner {
+  background: var(--error);
+  color: #fff;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+}
 #main { display: flex; flex: 1; overflow: hidden; }
 
 tse-sidebar {

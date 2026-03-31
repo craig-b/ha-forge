@@ -98,6 +98,18 @@ export function createServer(config: WebServerConfig) {
   if (config.capturesDir) {
     app.route('/api/captures', createCapturesRoutes({ capturesDir: config.capturesDir }));
   }
+  // System status endpoint — reports warnings for missing dependencies
+  app.get('/api/status', async (c) => {
+    const warnings: string[] = [];
+    try {
+      const { execFileSync } = await import('node:child_process');
+      execFileSync('git', ['--version'], { stdio: 'pipe' });
+    } catch {
+      warnings.push('git is not installed — file history, deploy versioning, and diff features are unavailable');
+    }
+    return c.json({ warnings });
+  });
+
   if (config.gitService && config.manifestManager) {
     app.route('/api/history', createHistoryRoutes({
       scriptsDir: config.scriptsDir,

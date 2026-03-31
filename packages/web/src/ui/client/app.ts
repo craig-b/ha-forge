@@ -38,6 +38,7 @@ export class TseApp extends LitElement {
   @state() private _simScenarios: ScenarioLocation[] = [];
   @state() private _shimResult: SimulationShimResult | null = null;
   @state() private _deployManifest: Record<string, DeployManifestEntry> = {};
+  @state() private _systemWarnings: string[] = [];
   @state() private _diffVisible = false;
   private _diffEditor: unknown = null;
   private _logFilter: { level?: string; entity_id?: string; search?: string } = {};
@@ -58,6 +59,7 @@ export class TseApp extends LitElement {
     this._initMonaco();
     this._setupKeyboard();
     this._connectWebSocket();
+    this._checkSystemStatus();
 
     this.addEventListener('tse-build', () => this._triggerBuild());
     this.addEventListener('tse-deploy', () => this._triggerDeploy());
@@ -137,6 +139,7 @@ export class TseApp extends LitElement {
         .statusClass=${this._statusClass}
       ></tse-header>
 
+      ${this._systemWarnings.map((w) => html`<div class="system-warning-banner">${w}</div>`)}
       <div id="main">
         <tse-sidebar .files=${this._files} .activeFile=${this._activeFile} .entities=${this._entities} .deployManifest=${this._deployManifest}></tse-sidebar>
 
@@ -322,6 +325,13 @@ export class TseApp extends LitElement {
   private async _loadFileTree() {
     const data = await this._api('GET', '/api/files');
     this._files = (data.files as FileEntry[]) ?? [];
+  }
+
+  private async _checkSystemStatus() {
+    try {
+      const data = await this._api('GET', '/api/status');
+      this._systemWarnings = (data.warnings as string[]) ?? [];
+    } catch { /* silent */ }
   }
 
   private async _loadDeployManifest() {
