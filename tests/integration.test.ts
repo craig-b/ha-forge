@@ -3,13 +3,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { bundle } from '../packages/build/src/bundler.js';
-import { runBuild } from '../packages/build/src/orchestrator.js';
-import { loadBundles } from '../packages/runtime/src/loader.js';
+import { loadSingleBundle } from '../packages/runtime/src/loader.js';
 import { EntityLifecycleManager } from '../packages/runtime/src/lifecycle.js';
 import { BuildManager } from '../packages/runtime/src/build-manager.js';
+import { DeployManifestManager } from '../packages/runtime/src/deploy-manifest.js';
 import type { Transport } from '../packages/runtime/src/transport.js';
 import type { ResolvedEntity } from '../packages/sdk/src/types.js';
-import type { RegistryWSClient } from '../packages/build/src/registry-fetcher.js';
 
 function createMockTransport() {
   const registered: ResolvedEntity[] = [];
@@ -40,6 +39,16 @@ function createMockLogger() {
     warn: vi.fn(),
     error: vi.fn(),
   };
+}
+
+async function loadAllBundles(outputDir: string) {
+  const jsFiles = fs.readdirSync(outputDir).filter((f) => f.endsWith('.js') && !f.endsWith('.js.map'));
+  const entities: ResolvedEntity[] = [];
+  for (const file of jsFiles) {
+    const result = await loadSingleBundle(path.join(outputDir, file), outputDir);
+    entities.push(...result.entities);
+  }
+  return entities;
 }
 
 describe('End-to-end: TS → bundle → load → register → state', () => {
@@ -79,9 +88,9 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     expect(bundleResult.files).toHaveLength(1);
     expect(bundleResult.files[0].success).toBe(true);
 
-    // Step 3: Load the bundles
-    const loadResult = await loadBundles(outputDir);
-    expect(loadResult.errors).toHaveLength(0);
+    // Step 3: Load the bundle
+    const bundlePath = path.join(outputDir, 'weather.js');
+    const loadResult = await loadSingleBundle(bundlePath, outputDir);
     expect(loadResult.entities).toHaveLength(1);
 
     const entity = loadResult.entities[0];
@@ -125,13 +134,13 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     const bundleResult = await bundle({ inputDir, outputDir });
     expect(bundleResult.success).toBe(true);
 
-    const loadResult = await loadBundles(outputDir);
-    expect(loadResult.entities).toHaveLength(3);
+    const entities = await loadAllBundles(outputDir);
+    expect(entities).toHaveLength(3);
 
     const { transport, states } = createMockTransport();
     const lifecycle = new EntityLifecycleManager(transport, createMockLogger());
 
-    await lifecycle.deploy(loadResult.entities);
+    await lifecycle.deploy(entities);
 
     expect(states).toHaveLength(3);
     expect(lifecycle.getEntityIds().sort()).toEqual(['sensor_a', 'sensor_b', 'sensor_c']);
@@ -155,14 +164,14 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     const bundleResult = await bundle({ inputDir, outputDir });
     expect(bundleResult.success).toBe(true);
 
-    const loadResult = await loadBundles(outputDir);
-    expect(loadResult.entities).toHaveLength(2);
+    const entities = await loadAllBundles(outputDir);
+    expect(entities).toHaveLength(2);
 
     const { transport, states } = createMockTransport();
     const logger = createMockLogger();
     const lifecycle = new EntityLifecycleManager(transport, logger);
 
-    await lifecycle.deploy(loadResult.entities);
+    await lifecycle.deploy(entities);
 
     // Good sensor should work
     expect(lifecycle.isInitialized('good_sensor')).toBe(true);
@@ -180,7 +189,7 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
         name: 'Pump',
         type: 'switch' as const,
         config: { device_class: 'switch' },
-        onCommand(cmd) {
+        onCommand(cmd: string) {
           if (cmd === 'ON') {
             this.update('on');
           } else {
@@ -197,10 +206,10 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     const bundleResult = await bundle({ inputDir, outputDir });
     expect(bundleResult.success).toBe(true);
 
-    const loadResult = await loadBundles(outputDir);
+    const loadResult = await loadSingleBundle(path.join(outputDir, 'pump.js'), outputDir);
     expect(loadResult.entities).toHaveLength(1);
     expect(loadResult.entities[0].definition.type).toBe('switch');
-    expect(typeof (loadResult.entities[0].definition as any).onCommand).toBe('function');
+    expect('onCommand' in loadResult.entities[0].definition).toBe(true);
 
     const { transport, states, commandHandlers } = createMockTransport();
     const lifecycle = new EntityLifecycleManager(transport, createMockLogger());
@@ -240,13 +249,13 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     const v1 = `export const s = { id: 'v1', name: 'V1', type: 'sensor' as const, init() { return 1; } };`;
     fs.writeFileSync(path.join(inputDir, 'app.ts'), v1);
 
-    let bundleResult = await bundle({ inputDir, outputDir });
-    let loadResult = await loadBundles(outputDir);
+    await bundle({ inputDir, outputDir });
+    let entities = await loadAllBundles(outputDir);
 
     const { transport, states } = createMockTransport();
     const lifecycle = new EntityLifecycleManager(transport, createMockLogger());
 
-    await lifecycle.deploy(loadResult.entities);
+    await lifecycle.deploy(entities);
     expect(lifecycle.getEntityIds()).toEqual(['v1']);
 
     // Second deploy with different entity
@@ -254,10 +263,10 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
     const v2 = `export const s = { id: 'v2', name: 'V2', type: 'sensor' as const, init() { return 2; } };`;
     fs.writeFileSync(path.join(inputDir, 'app.ts'), v2);
 
-    bundleResult = await bundle({ inputDir, outputDir: outputDir2 });
-    loadResult = await loadBundles(outputDir2);
+    await bundle({ inputDir, outputDir: outputDir2 });
+    entities = await loadAllBundles(outputDir2);
 
-    await lifecycle.deploy(loadResult.entities);
+    await lifecycle.deploy(entities);
 
     // Old entity torn down, new entity running
     expect(lifecycle.getEntityIds()).toEqual(['v2']);
@@ -268,46 +277,22 @@ describe('End-to-end: TS → bundle → load → register → state', () => {
   });
 });
 
-describe('Full pipeline: orchestrator → BuildManager → deploy', () => {
+describe('Full pipeline: BuildManager.deployFromManifest', () => {
   let tmpDir: string;
-  let scriptsDir: string;
-  let generatedDir: string;
   let bundleOutputDir: string;
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pipeline-e2e-'));
-    scriptsDir = path.join(tmpDir, 'scripts');
-    generatedDir = path.join(tmpDir, '.generated');
     bundleOutputDir = path.join(tmpDir, 'dist');
-    fs.mkdirSync(scriptsDir, { recursive: true });
+    fs.mkdirSync(bundleOutputDir, { recursive: true });
   });
 
-  function createMockWSClient(): RegistryWSClient {
-    return {
-      sendCommand: vi.fn(async (type: string) => {
-        switch (type) {
-          case 'get_services': return {
-            light: { turn_on: { fields: {} }, turn_off: { fields: {} } },
-            sensor: {},
-          };
-          case 'get_states': return [
-            { entity_id: 'light.test', state: 'on', attributes: {}, last_changed: '', last_updated: '' },
-          ];
-          case 'config/entity_registry/list': return [];
-          case 'config/device_registry/list': return [];
-          case 'config/area_registry/list': return [];
-          case 'config/label_registry/list': return [];
-          default: return null;
-        }
-      }),
-      getHAVersion: vi.fn(() => '2024.3.0'),
-    };
-  }
+  it('deploys entities from manifest after bundle', async () => {
+    const inputDir = path.join(tmpDir, 'scripts');
+    fs.mkdirSync(inputDir, { recursive: true });
 
-  it('orchestrator builds, then BuildManager deploys', async () => {
-    // Write user scripts
     fs.writeFileSync(
-      path.join(scriptsDir, 'monitor.ts'),
+      path.join(inputDir, 'monitor.ts'),
       `
       export const cpuTemp = {
         id: 'sensor.cpu_temp',
@@ -325,27 +310,20 @@ describe('Full pipeline: orchestrator → BuildManager → deploy', () => {
       'utf-8',
     );
 
-    // Step 1: Run build pipeline
-    const buildResult = await runBuild({
-      scriptsDir,
-      generatedDir,
-      outputDir: bundleOutputDir,
-      wsClient: createMockWSClient(),
-      skipNpmInstall: true,
-      skipTscCheck: true,
+    // Bundle
+    const bundleResult = await bundle({ inputDir, outputDir: bundleOutputDir });
+    expect(bundleResult.success).toBe(true);
+
+    // Set up manifest
+    const manifestManager = new DeployManifestManager(path.join(tmpDir, 'manifest.json'));
+    manifestManager.setFile('monitor.ts', {
+      commit: 'abc123',
+      deployedAt: new Date().toISOString(),
+      bundlePath: path.join(bundleOutputDir, 'monitor.js'),
     });
 
-    expect(buildResult.success).toBe(true);
-    expect(buildResult.typeGen).not.toBeNull();
-    expect(buildResult.typeGen!.success).toBe(true);
-    expect(buildResult.bundle).not.toBeNull();
-    expect(buildResult.bundle!.success).toBe(true);
-
-    // Generated types should exist
-    expect(fs.existsSync(path.join(generatedDir, 'ha-registry.d.ts'))).toBe(true);
-
-    // Step 2: Deploy via BuildManager
-    const { transport, states } = createMockTransport();
+    // Deploy via BuildManager
+    const { transport } = createMockTransport();
     const logger = createMockLogger();
 
     const manager = new BuildManager({
@@ -354,61 +332,14 @@ describe('Full pipeline: orchestrator → BuildManager → deploy', () => {
       logger,
     });
 
-    const deployResult = await manager.deploy();
+    const deployResult = await manager.deployFromManifest(manifestManager);
 
     expect(deployResult.success).toBe(true);
     expect(deployResult.entityCount).toBe(2);
     expect(deployResult.errors).toHaveLength(0);
 
-    // Both entities should be running with initial states
     expect(manager.getEntityIds().sort()).toEqual(['sensor.cpu_temp', 'sensor.mem_usage']);
     expect(manager.getEntityState('sensor.cpu_temp')).toBe(45.2);
     expect(manager.getEntityState('sensor.mem_usage')).toBe(67);
-
-    // Step 3: Verify all pipeline steps ran
-    const stepNames = buildResult.steps.map((s) => s.step);
-    expect(stepNames).toContain('type-gen');
-    expect(stepNames).toContain('bundle');
-  });
-
-  it('handles full pipeline with type gen failure gracefully', async () => {
-    fs.writeFileSync(
-      path.join(scriptsDir, 'simple.ts'),
-      `export const s = { id: 'sensor.ok', name: 'OK', type: 'sensor' as const, init() { return 1; } };`,
-      'utf-8',
-    );
-
-    const failingClient: RegistryWSClient = {
-      sendCommand: vi.fn(async () => { throw new Error('disconnected'); }),
-      getHAVersion: vi.fn(() => null),
-    };
-
-    // Build still produces bundles even when type gen fails
-    const buildResult = await runBuild({
-      scriptsDir,
-      generatedDir,
-      outputDir: bundleOutputDir,
-      wsClient: failingClient,
-      skipNpmInstall: true,
-      skipTscCheck: true,
-    });
-
-    // Build reports failure (type-gen is blocking)
-    expect(buildResult.success).toBe(false);
-
-    // But bundle was still produced
-    expect(buildResult.bundle).not.toBeNull();
-    expect(buildResult.bundle!.success).toBe(true);
-
-    // Deploy can still work with existing/stale types
-    const { transport } = createMockTransport();
-    const manager = new BuildManager({
-      bundleDir: bundleOutputDir,
-      transport,
-      logger: createMockLogger(),
-    });
-
-    const deployResult = await manager.deploy();
-    expect(deployResult.entityCount).toBe(1);
   });
 });

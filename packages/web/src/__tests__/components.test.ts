@@ -45,30 +45,17 @@ describe('tse-header', () => {
   it('renders regen types button and status badge', async () => {
     const el = await renderElement('tse-header');
     const buttons = el.querySelectorAll('.btn');
+    expect(buttons).toHaveLength(1);
     expect(buttons[0]?.textContent).toContain('Regen Types');
-    expect(buttons[1]?.textContent).toContain('Build');
     expect(el.querySelector('.status-badge')?.textContent).toBe('Ready');
   });
 
-  it('shows building state', async () => {
+  it('shows status text and class', async () => {
     const el = await renderElement('tse-header', {
-      building: true, statusText: 'Building...', statusClass: 'building',
+      statusText: 'Deployed', statusClass: 'success',
     });
-    expect(el.querySelector('.status-badge')?.textContent).toBe('Building...');
-    expect(el.querySelector('.status-badge')?.classList.contains('building')).toBe(true);
-  });
-
-  it('dispatches tse-build event via build dropdown', async () => {
-    const el = await renderElement('tse-header');
-    const handler = vi.fn();
-    el.addEventListener('tse-build', handler);
-    // Open the build dropdown
-    const buildBtn = el.querySelectorAll('.btn')[1] as HTMLButtonElement;
-    buildBtn.click();
-    await el.updateComplete;
-    // Click "Rebuild All" menu item
-    (el.querySelector('.header-dropdown-menu .ctx-item') as HTMLElement).click();
-    expect(handler).toHaveBeenCalledOnce();
+    expect(el.querySelector('.status-badge')?.textContent).toBe('Deployed');
+    expect(el.querySelector('.status-badge')?.classList.contains('success')).toBe(true);
   });
 
   it('dispatches tse-regen-types event', async () => {

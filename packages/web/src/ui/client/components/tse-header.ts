@@ -3,11 +3,9 @@ import { customElement, property, state } from 'lit/decorators.js';
 
 @customElement('tse-header')
 export class TseHeader extends LitElement {
-  @property({ type: Boolean }) building = false;
   @property() statusText = 'Ready';
   @property() statusClass = 'ready';
 
-  @state() private _buildMenuOpen = false;
   @state() private _gearMenuOpen = false;
 
   createRenderRoot() { return this; }
@@ -24,7 +22,6 @@ export class TseHeader extends LitElement {
   }
 
   private _onDocClick() {
-    if (this._buildMenuOpen) this._buildMenuOpen = false;
     if (this._gearMenuOpen) this._gearMenuOpen = false;
   }
 
@@ -33,25 +30,6 @@ export class TseHeader extends LitElement {
       <h1>HA Forge</h1>
       <div class="header-actions">
         <button class="btn" @click=${this._onRegenTypes}>Regen Types</button>
-        <div class="header-dropdown">
-          <button class="btn" @click=${this._toggleBuildMenu}>Build &#9662;</button>
-          ${this._buildMenuOpen ? html`
-            <div class="header-dropdown-menu">
-              <div class="ctx-item" @click=${this._onBuild}>
-                Build
-                <div class="ctx-item-desc">Type-check and bundle scripts</div>
-              </div>
-              <div class="ctx-item" @click=${this._onDeploy}>
-                Deploy
-                <div class="ctx-item-desc">Deploy built bundles to HA</div>
-              </div>
-              <div class="ctx-item ctx-danger">
-                Undeploy All
-                <div class="ctx-item-desc">Remove all entities from HA</div>
-              </div>
-            </div>
-          ` : nothing}
-        </div>
       </div>
       <div class="header-right">
         <span class="status-badge ${this.statusClass}">${this.statusText}</span>
@@ -68,26 +46,10 @@ export class TseHeader extends LitElement {
     `;
   }
 
-  private _toggleBuildMenu(e: Event) {
-    e.stopPropagation();
-    const opening = !this._buildMenuOpen;
-    this._buildMenuOpen = opening;
-    this._gearMenuOpen = false;
-  }
-
   private _toggleGearMenu(e: Event) {
     e.stopPropagation();
     const opening = !this._gearMenuOpen;
     this._gearMenuOpen = opening;
-    this._buildMenuOpen = false;
-  }
-
-  private _onBuild() {
-    this.dispatchEvent(new CustomEvent('tse-build', { bubbles: true, composed: true }));
-  }
-
-  private _onDeploy() {
-    this.dispatchEvent(new CustomEvent('tse-deploy', { bubbles: true, composed: true }));
   }
 
   private _onRegenTypes() {

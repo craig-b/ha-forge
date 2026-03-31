@@ -1,36 +1,8 @@
 import { Hono } from 'hono';
 
-export type BuildTriggerFn = () => Promise<BuildStatusResponse>;
-export type BuildStatusFn = () => BuildStatusResponse;
-export type DeployTriggerFn = () => Promise<DeployResponse>;
 export type DeployFileFn = (filename: string, commit: string) => Promise<DeployResponse>;
 export type UndeployFileFn = (filename: string) => Promise<void>;
 export type GetDeployManifestFn = () => DeployManifestResponse;
-
-export interface BuildStatusResponse {
-  building: boolean;
-  lastBuild: {
-    success: boolean;
-    timestamp: string;
-    totalDuration: number;
-    steps: Array<{
-      step: string;
-      success: boolean;
-      duration: number;
-      error?: string;
-      diagnostics?: Array<{
-        file: string;
-        line: number;
-        column: number;
-        code: number;
-        message: string;
-        severity: 'error' | 'warning';
-      }>;
-    }>;
-    typeErrors: number;
-    bundleErrors: number;
-  } | null;
-}
 
 export interface DeployResponse {
   success: boolean;
@@ -48,9 +20,6 @@ export interface DeployManifestResponse {
 }
 
 export interface BuildRouteOptions {
-  triggerBuild: BuildTriggerFn;
-  getBuildStatus: BuildStatusFn;
-  triggerDeploy: DeployTriggerFn;
   deployFile?: DeployFileFn;
   undeployFile?: UndeployFileFn;
   getDeployManifest?: GetDeployManifestFn;
@@ -58,31 +27,6 @@ export interface BuildRouteOptions {
 
 export function createBuildRoutes(opts: BuildRouteOptions) {
   const app = new Hono();
-
-  // Trigger build (no deploy)
-  app.post('/', async (c) => {
-    try {
-      const result = await opts.triggerBuild();
-      return c.json(result);
-    } catch (err) {
-      return c.json({ error: 'Build failed to start' }, 500);
-    }
-  });
-
-  // Get build status
-  app.get('/status', (c) => {
-    return c.json(opts.getBuildStatus());
-  });
-
-  // Trigger deploy (separate from build)
-  app.post('/deploy', async (c) => {
-    try {
-      const result = await opts.triggerDeploy();
-      return c.json(result);
-    } catch (err) {
-      return c.json({ error: 'Deploy failed to start' }, 500);
-    }
-  });
 
   // Get deploy manifest (all files and their deployed status)
   app.get('/deploy', (c) => {

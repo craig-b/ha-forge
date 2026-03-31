@@ -15,29 +15,6 @@ function createTestConfig(overrides: Partial<WebServerConfig> = {}): WebServerCo
   return {
     scriptsDir: fs.mkdtempSync(path.join(os.tmpdir(), 'web-test-scripts-')),
     generatedDir: fs.mkdtempSync(path.join(os.tmpdir(), 'web-test-gen-')),
-    triggerBuild: vi.fn(async () => ({
-      building: false,
-      lastBuild: {
-        success: true,
-        timestamp: new Date().toISOString(),
-        totalDuration: 500,
-        steps: [
-          { step: 'bundle', success: true, duration: 200 },
-        ],
-        typeErrors: 0,
-        bundleErrors: 0,
-      },
-    })),
-    getBuildStatus: vi.fn(() => ({
-      building: false,
-      lastBuild: null,
-    })),
-    triggerDeploy: vi.fn(async () => ({
-      success: true,
-      entityCount: 2,
-      errors: [],
-      duration: 100,
-    })),
     getEntities: vi.fn(() => []),
     queryLogs: vi.fn(() => []),
     regenerateTypes: vi.fn(async () => ({
@@ -175,44 +152,15 @@ describe('File API', () => {
   });
 });
 
-describe('Build API', () => {
-  it('POST /api/build triggers build', async () => {
+describe('Deploy API', () => {
+  it('GET /api/build/deploy returns empty manifest', async () => {
     const config = createTestConfig();
     const { app } = createServer(config);
 
-    const res = await app.request('/api/build', { method: 'POST' });
-    const data = await res.json() as { lastBuild: { success: boolean } };
+    const res = await app.request('/api/build/deploy');
+    const data = await res.json() as { files: Record<string, unknown> };
 
-    expect(config.triggerBuild).toHaveBeenCalled();
-    expect(data.lastBuild.success).toBe(true);
-
-    fs.rmSync(config.scriptsDir, { recursive: true, force: true });
-    fs.rmSync(config.generatedDir, { recursive: true, force: true });
-  });
-
-  it('GET /api/build/status returns status', async () => {
-    const config = createTestConfig();
-    const { app } = createServer(config);
-
-    const res = await app.request('/api/build/status');
-    const data = await res.json() as { building: boolean };
-
-    expect(data.building).toBe(false);
-
-    fs.rmSync(config.scriptsDir, { recursive: true, force: true });
-    fs.rmSync(config.generatedDir, { recursive: true, force: true });
-  });
-
-  it('POST /api/build/deploy triggers deploy', async () => {
-    const config = createTestConfig();
-    const { app } = createServer(config);
-
-    const res = await app.request('/api/build/deploy', { method: 'POST' });
-    const data = await res.json() as { success: boolean; entityCount: number };
-
-    expect(config.triggerDeploy).toHaveBeenCalled();
-    expect(data.success).toBe(true);
-    expect(data.entityCount).toBe(2);
+    expect(data.files).toEqual({});
 
     fs.rmSync(config.scriptsDir, { recursive: true, force: true });
     fs.rmSync(config.generatedDir, { recursive: true, force: true });

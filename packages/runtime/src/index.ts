@@ -13,7 +13,7 @@ export type { HAApi, HAClient, StateChangedEvent, StateChangedCallback, Reaction
 export { EntityLifecycleManager } from './lifecycle.js';
 export type { LifecycleLogger, RawMqttAccess } from './lifecycle.js';
 
-export { loadBundles, loadSingleBundle, installGlobals, setSecrets } from './loader.js';
+export { loadSingleBundle, installGlobals, setSecrets } from './loader.js';
 export type { LoadResult, LoadError, ResolvedDevice } from './loader.js';
 
 export { BuildManager } from './build-manager.js';

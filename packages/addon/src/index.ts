@@ -5,7 +5,6 @@ export interface AddonOptions {
   log_level: 'debug' | 'info' | 'warn' | 'error';
   log_retention_days: number;
   validation_schedule_minutes: number;
-  auto_build_on_save: boolean;
   auto_rebuild_on_registry_change: boolean;
   mqtt_host: string;
   mqtt_port: number;
@@ -18,7 +17,6 @@ const DEFAULT_OPTIONS: AddonOptions = {
   log_level: 'info',
   log_retention_days: 7,
   validation_schedule_minutes: 60,
-  auto_build_on_save: false,
   auto_rebuild_on_registry_change: false,
   mqtt_host: '',
   mqtt_port: 1883,
@@ -155,7 +153,6 @@ async function main(): Promise<void> {
     log('Starting web server...');
     const { createServer } = await import('@ha-forge/web');
     const { BuildManager, HealthEntities, HAApiImpl, installGlobals } = await import('@ha-forge/runtime');
-    const { runBuild } = await import('@ha-forge/build');
 
     const haLogger = logger.forEntity ? logger.forEntity('_ha', '_global') as typeof logger : logger;
     let haApi: import('@ha-forge/runtime').HAApiImpl | null = null;
@@ -249,13 +246,6 @@ async function main(): Promise<void> {
         })
       : null;
 
-    let building = false;
-    let lastBuildResult: {
-      success: boolean; timestamp: string; totalDuration: number;
-      steps: Array<{ step: string; success: boolean; duration: number; error?: string; diagnostics?: Array<{ file: string; line: number; column: number; code: number; message: string; severity: 'error' | 'warning' }> }>;
-      typeErrors: number; bundleErrors: number;
-    } | null = null;
-
     const { app, wsHub } = createServer({
       scriptsDir: '/config',
       generatedDir: '/config/.generated',
@@ -267,63 +257,6 @@ async function main(): Promise<void> {
         return fetch(`http://supervisor/core/api${path}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
-      },
-      triggerBuild: async () => {
-        if (building) return { building: true, lastBuild: lastBuildResult };
-        building = true;
-        try {
-          const result = await runBuild({
-            scriptsDir: '/config', generatedDir: '/config/.generated',
-            outputDir: '/data/deployed-bundles', wsClient: wsClient ?? undefined,
-            nodeModulesDir: '/data/node_modules', storeDir: '/data/pnpm-store',
-            onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
-          });
-          if (healthEntities && result.tscCheck) {
-            await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
-          }
-          const stepsWithDiagnostics = result.steps.map((step) => {
-            if (step.step === 'tsc-check' && result.tscCheck?.diagnostics.length) {
-              return { ...step, diagnostics: result.tscCheck.diagnostics };
-            }
-            if (step.step === 'bundle' && result.bundle) {
-              const bundleDiags = result.bundle.files
-                .filter((f) => !f.success)
-                .map((f) => ({
-                  file: f.inputFile.replace(/^\/config\//, ''),
-                  line: 1,
-                  column: 1,
-                  code: 0,
-                  message: f.errors.join('; '),
-                  severity: 'error' as const,
-                }));
-              if (bundleDiags.length) return { ...step, diagnostics: bundleDiags };
-            }
-            return step;
-          });
-          lastBuildResult = {
-            success: result.success, timestamp: result.timestamp, totalDuration: result.totalDuration,
-            steps: stepsWithDiagnostics,
-            typeErrors: result.tscCheck?.diagnostics.filter((d) => d.severity === 'error').length ?? 0,
-            bundleErrors: (result.bundle ? result.bundle.errors.length + result.bundle.files.filter((f) => !f.success).length : 0),
-          };
-          logger.info('Build complete', { success: result.success, duration: result.totalDuration });
-        } catch (err) {
-          logger.error('Build failed', { error: err instanceof Error ? err.message : String(err) });
-        } finally { building = false; }
-        return { building: false, lastBuild: lastBuildResult };
-      },
-      triggerDeploy: async () => {
-        if (!buildManager) return { success: false, entityCount: 0, errors: [{ file: '', error: 'No MQTT connection' }], duration: 0 };
-        try {
-          const result = await buildManager.smartDeploy();
-          wsHub.broadcast('entities', 'deployed', { entityCount: result.entityCount });
-          logger.info('Deploy complete', { entityCount: result.entityCount, duration: result.duration });
-          return result;
-        } catch (err) {
-          const errorMsg = err instanceof Error ? err.message : String(err);
-          logger.error('Deploy failed', { error: errorMsg });
-          return { success: false, entityCount: 0, errors: [{ file: '', error: errorMsg }], duration: 0 };
-        }
       },
       manifestManager,
       deployFile: async (filename: string, commit: string) => {
@@ -351,7 +284,6 @@ async function main(): Promise<void> {
         wsHub.broadcast('entities', 'deployed', { entityCount: buildManager.getEntityIds().length });
       },
       getDeployManifest: () => manifestManager.read(),
-      getBuildStatus: () => ({ building, lastBuild: lastBuildResult }),
       getEntities: () => {
         if (!buildManager) return [];
         return buildManager.getEntityIds().map((id) => {
@@ -413,57 +345,17 @@ async function main(): Promise<void> {
     server.listen(8099);
     log('Web server listening on port 8099');
 
-    // Step 5: Load deployed bundles (migration copies last-build → deployed-bundles)
-    const fs = await import('node:fs');
-    if (buildManager && fs.existsSync('/data/deployed-bundles')) {
+    // Step 5: Load deployed entities from manifest
+    if (buildManager) {
       try {
-        const result = await buildManager.deploy();
-        log(`Deployed build loaded: ${result.entityCount} entities`);
+        const result = await buildManager.deployFromManifest(manifestManager);
+        log(`Deployed from manifest: ${result.entityCount} entities`);
       } catch (err) {
-        log(`Build load failed: ${err instanceof Error ? err.message : String(err)}`);
+        log(`Manifest deploy failed: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
 
-    // Step 6: File watcher for auto-build on save
-    if (options.auto_build_on_save) {
-      const DEBOUNCE_MS = 500;
-      let debounceTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-
-      const triggerAutoBuild = async () => {
-        if (building) return;
-        building = true;
-        try {
-          const result = await runBuild({
-            scriptsDir: '/config', generatedDir: '/config/.generated',
-            outputDir: '/data/deployed-bundles', wsClient: wsClient ?? undefined,
-            nodeModulesDir: '/data/node_modules', storeDir: '/data/pnpm-store',
-            onStep: (step) => wsHub.broadcast('build', 'step_complete', step),
-          });
-          if (healthEntities && result.tscCheck) {
-            await healthEntities.update({ diagnostics: result.tscCheck.diagnostics, trigger: 'build' });
-          }
-          logger.info('Auto-build complete', { success: result.success, duration: result.totalDuration });
-        } catch (err) {
-          logger.error('Auto-build failed', { error: err instanceof Error ? err.message : String(err) });
-        } finally { building = false; }
-      };
-
-      try {
-        fs.watch('/config', { recursive: true }, (_event, filename) => {
-          if (!filename) return;
-          const name = String(filename);
-          if (!name.endsWith('.ts')) return;
-          if (name.startsWith('.') || name.includes('node_modules') || name.includes('.generated') || name.includes('.git')) return;
-          if (debounceTimer) clearTimeout(debounceTimer);
-          debounceTimer = globalThis.setTimeout(triggerAutoBuild, DEBOUNCE_MS);
-        });
-        log('File watcher active on /config (auto-build on save)');
-      } catch (err) {
-        log(`File watcher failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-
-    // Step 6b: Auto-rebuild on registry change (validation only — no entity redeploy)
+    // Step 6: Auto-rebuild on registry change (validation only — no entity redeploy)
     if (options.auto_rebuild_on_registry_change && wsClient && haApi) {
       const REGISTRY_CHECK_INTERVAL = 60_000; // Check every 60s
       let knownEntityIds: Set<string> | null = null;

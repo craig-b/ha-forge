@@ -26,7 +26,6 @@ export class TseApp extends LitElement {
   @state() private _files: FileEntry[] = [];
   @state() private _openFiles: OpenFileInternal[] = [];
   @state() private _activeFile: string | null = null;
-  @state() private _building = false;
   @state() private _statusText = 'Ready';
   @state() private _statusClass = 'ready';
   @state() private _buildSteps: BuildStep[] = [];
@@ -61,8 +60,6 @@ export class TseApp extends LitElement {
     this._connectWebSocket();
     this._checkSystemStatus();
 
-    this.addEventListener('tse-build', () => this._triggerBuild());
-    this.addEventListener('tse-deploy', () => this._triggerDeploy());
     this.addEventListener('tse-regen-types', () => this._regenTypes());
     this.addEventListener('tse-open-packages', () => console.log('tse-open-packages: not yet implemented'));
     this.addEventListener('tse-open-settings', () => console.log('tse-open-settings: not yet implemented'));
@@ -138,7 +135,6 @@ export class TseApp extends LitElement {
 
     return html`
       <tse-header
-        ?building=${this._building}
         .statusText=${this._statusText}
         .statusClass=${this._statusClass}
       ></tse-header>
@@ -548,64 +544,6 @@ export class TseApp extends LitElement {
 
   // ---- Build ----
 
-  private async _triggerBuild() {
-    if (this._building) return;
-    this._building = true;
-    this._statusText = 'Building...';
-    this._statusClass = 'building';
-    this._buildSteps = [];
-    this._buildMessages = ['Starting build pipeline...'];
-
-    // Save modified files first
-    const savePromises = this._openFiles
-      .filter((f) => f.modified)
-      .map((f) => this._saveFile(f.path));
-    await Promise.all(savePromises);
-
-    try {
-      const result = await this._api('POST', '/api/build');
-      const lastBuild = result.lastBuild as Record<string, unknown> | undefined;
-      if (lastBuild) {
-        this._buildSteps = (lastBuild.steps as BuildStep[]) ?? [];
-      }
-      const success = lastBuild?.success;
-      this._statusText = success ? 'Build OK' : 'Build Failed';
-      this._statusClass = success ? 'success' : 'error';
-    } catch (err) {
-      this._buildMessages = [...this._buildMessages, `Build request failed: ${(err as Error).message}`];
-      this._statusText = 'Error';
-      this._statusClass = 'error';
-    } finally {
-      this._building = false;
-    }
-  }
-
-  private async _triggerDeploy() {
-    this._statusText = 'Deploying...';
-    this._statusClass = 'building';
-    this._buildMessages = [...this._buildMessages, 'Deploying...'];
-
-    try {
-      const result = await this._api('POST', '/api/build/deploy');
-      if (result.success) {
-        this._buildMessages = [...this._buildMessages, `Deployed ${result.entityCount} entities`];
-        this._statusText = 'Deployed';
-        this._statusClass = 'success';
-      } else {
-        const errors = (result.errors as Array<{ file: string; error: string }>) ?? [];
-        this._buildMessages = [...this._buildMessages, `Deploy failed: ${errors.map((e) => e.error).join(', ')}`];
-        this._statusText = 'Deploy Failed';
-        this._statusClass = 'error';
-      }
-    } catch (err) {
-      this._buildMessages = [...this._buildMessages, `Deploy request failed: ${(err as Error).message}`];
-      this._statusText = 'Error';
-      this._statusClass = 'error';
-    } finally {
-      this._loadEntities();
-    }
-  }
-
   private async _regenTypes() {
     this._buildMessages = [...this._buildMessages, 'Regenerating types...'];
     try {
@@ -786,9 +724,6 @@ export class TseApp extends LitElement {
           const msg = JSON.parse(event.data);
           if (msg.channel === 'entities') this._loadEntities();
           if (msg.channel === 'logs') { this._loadLogs(this._logFilter); this._loadLogEntityIds(); }
-          if (msg.channel === 'build' && msg.event === 'step_complete' && msg.data) {
-            this._buildSteps = [...this._buildSteps, msg.data as BuildStep];
-          }
         } catch (e) { console.warn('[ha-forge] WebSocket message parse error', e); }
       };
       ws.onopen = () => console.log('[ha-forge] WebSocket connected');

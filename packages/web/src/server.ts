@@ -4,7 +4,7 @@ import { ingressGuard, ingressPath, getIngressPath } from './middleware.js';
 import { createFilesRoutes } from './routes/files.js';
 import type { GitService, DeployManifestManager } from '@ha-forge/runtime';
 import { createBuildRoutes } from './routes/build.js';
-import type { BuildTriggerFn, BuildStatusFn, DeployTriggerFn, DeployFileFn, UndeployFileFn, GetDeployManifestFn } from './routes/build.js';
+import type { DeployFileFn, UndeployFileFn, GetDeployManifestFn } from './routes/build.js';
 import { createHistoryRoutes } from './routes/history.js';
 import { createEntitiesRoutes } from './routes/entities.js';
 import type { GetEntitiesFn } from './routes/entities.js';
@@ -28,12 +28,6 @@ export interface WebServerConfig {
   scriptsDir: string;
   /** Directory containing generated types */
   generatedDir: string;
-  /** Function to trigger a build */
-  triggerBuild: BuildTriggerFn;
-  /** Function to get current build status */
-  getBuildStatus: BuildStatusFn;
-  /** Function to trigger a deploy */
-  triggerDeploy: DeployTriggerFn;
   /** Function to get registered entities */
   getEntities: GetEntitiesFn;
   /** Function to query logs */
@@ -78,9 +72,6 @@ export function createServer(config: WebServerConfig) {
   // API routes
   app.route('/api/files', createFilesRoutes({ scriptsDir: config.scriptsDir, gitService: config.gitService }));
   app.route('/api/build', createBuildRoutes({
-    triggerBuild: config.triggerBuild,
-    getBuildStatus: config.getBuildStatus,
-    triggerDeploy: config.triggerDeploy,
     deployFile: config.deployFile,
     undeployFile: config.undeployFile,
     getDeployManifest: config.getDeployManifest,
