@@ -84,21 +84,26 @@ export class TseApp extends LitElement {
       const { file, commit } = e.detail;
       this._statusText = `Deploying ${file}...`;
       this._statusClass = 'building';
+      this._buildMessages = [...this._buildMessages, `Deploying ${file} at ${commit.slice(0, 7)}...`];
       try {
         const result = await this._api('POST', `/api/build/deploy/${file}`, { commit });
         if (result.success) {
           this._statusText = 'Deployed';
           this._statusClass = 'ready';
+          this._buildMessages = [...this._buildMessages, `Deployed ${file}: ${result.entityCount} entities`];
           this._loadEntities();
           this._loadDeployManifest();
           this._refreshHistoryPanel();
         } else {
           this._statusText = 'Deploy failed';
           this._statusClass = 'error';
+          const errors = (result.errors as Array<{ file: string; error: string }>) ?? [];
+          this._buildMessages = [...this._buildMessages, `Failed to deploy ${file}: ${errors.map((e) => e.error).join(', ')}`];
         }
-      } catch {
+      } catch (err) {
         this._statusText = 'Deploy error';
         this._statusClass = 'error';
+        this._buildMessages = [...this._buildMessages, `Deploy error: ${(err as Error).message}`];
       }
     }) as EventListener);
     this.addEventListener('tse-undeploy', (async (e: CustomEvent) => {
@@ -107,6 +112,7 @@ export class TseApp extends LitElement {
         await this._api('DELETE', `/api/build/deploy/${file}`);
         this._statusText = 'Undeployed';
         this._statusClass = 'ready';
+        this._buildMessages = [...this._buildMessages, `Undeployed ${file}`];
         this._loadEntities();
         this._loadDeployManifest();
         this._refreshHistoryPanel();
