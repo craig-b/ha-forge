@@ -115,9 +115,13 @@ export class TseApp extends LitElement {
         this._refreshHistoryPanel();
       } catch { /* silent */ }
     }) as EventListener);
+    this.addEventListener('tse-view-changes', (async (e: CustomEvent) => {
+      const { file, commit, parentCommit } = e.detail;
+      await this._showChanges(file, commit, parentCommit);
+    }) as EventListener);
     this.addEventListener('tse-view-diff', (async (e: CustomEvent) => {
       const { file, commit } = e.detail;
-      await this._showDiff(file, commit);
+      await this._showDiffVsCurrent(file, commit);
     }) as EventListener);
     this.addEventListener('tse-capture-saved', (async () => {
       await this._loadCaptures();
@@ -348,43 +352,58 @@ export class TseApp extends LitElement {
 
   // ---- Diff editor ----
 
-  private async _showDiff(filePath: string, commit: string) {
+  /** Show what a commit changed (commit vs its parent). */
+  private async _showChanges(filePath: string, commit: string, parentCommit: string | null) {
     try {
-      // Fetch the old version from git
+      const commitData = await this._api('GET', `/api/history/${filePath}/${commit}`);
+      const newContent = commitData.content as string ?? '';
+
+      let oldContent = '';
+      if (parentCommit) {
+        const parentData = await this._api('GET', `/api/history/${filePath}/${parentCommit}`);
+        oldContent = parentData.content as string ?? '';
+      }
+
+      this._openDiffEditor(oldContent, newContent);
+    } catch { /* silent */ }
+  }
+
+  /** Show commit vs current editor content. */
+  private async _showDiffVsCurrent(filePath: string, commit: string) {
+    try {
       const histData = await this._api('GET', `/api/history/${filePath}/${commit}`);
       const oldContent = histData.content as string ?? '';
 
-      // Get current content from the open file or fetch it
       const openFile = this._openFiles.find((f) => f.path === filePath);
       const currentContent = openFile?.model?.getValue() ?? openFile?.content ?? '';
 
-      // Create diff editor
-      const diffEl = this.querySelector('#diff-editor') as HTMLElement;
-      if (!diffEl) return;
+      this._openDiffEditor(oldContent, currentContent);
+    } catch { /* silent */ }
+  }
 
-      // Clean up previous diff editor
-      if (this._diffEditor && typeof (this._diffEditor as { dispose(): void }).dispose === 'function') {
-        (this._diffEditor as { dispose(): void }).dispose();
-      }
+  private _openDiffEditor(left: string, right: string) {
+    const diffEl = this.querySelector('#diff-editor') as HTMLElement;
+    if (!diffEl) return;
 
-      const originalModel = monaco.editor.createModel(oldContent, 'typescript');
-      const modifiedModel = monaco.editor.createModel(currentContent, 'typescript');
-
-      this._diffEditor = monaco.editor.createDiffEditor(diffEl, {
-        readOnly: true,
-        renderSideBySide: true,
-        automaticLayout: true,
-        theme: 'vs-dark',
-      });
-      (this._diffEditor as { setModel(m: unknown): void }).setModel({
-        original: originalModel,
-        modified: modifiedModel,
-      });
-
-      this._diffVisible = true;
-    } catch {
-      // silent
+    if (this._diffEditor && typeof (this._diffEditor as { dispose(): void }).dispose === 'function') {
+      (this._diffEditor as { dispose(): void }).dispose();
     }
+
+    const originalModel = monaco.editor.createModel(left, 'typescript');
+    const modifiedModel = monaco.editor.createModel(right, 'typescript');
+
+    this._diffEditor = monaco.editor.createDiffEditor(diffEl, {
+      readOnly: true,
+      renderSideBySide: true,
+      automaticLayout: true,
+      theme: 'vs-dark',
+    });
+    (this._diffEditor as { setModel(m: unknown): void }).setModel({
+      original: originalModel,
+      modified: modifiedModel,
+    });
+
+    this._diffVisible = true;
   }
 
   private _closeDiff() {

@@ -60,8 +60,10 @@ export class TseHistoryPanel extends LitElement {
             <div class="history-actions">
               <button class="history-btn" @click=${() => this._deployVersion(entry.sha)}
                 title="Deploy this version">Deploy</button>
+              <button class="history-btn" @click=${() => this._viewChanges(entry.sha)}
+                title="What this save changed">Changes</button>
               <button class="history-btn" @click=${() => this._viewDiff(entry.sha)}
-                title="View diff">Diff</button>
+                title="Compare to current editor content">vs Current</button>
             </div>
           </div>
         `)}
@@ -95,6 +97,17 @@ export class TseHistoryPanel extends LitElement {
     this.dispatchEvent(new CustomEvent('tse-undeploy', {
       bubbles: true, composed: true,
       detail: { file: this.filePath },
+    }));
+  }
+
+  private _viewChanges(sha: string) {
+    const idx = this._history.findIndex((e) => e.sha === sha);
+    const parentSha = idx >= 0 && idx < this._history.length - 1
+      ? this._history[idx + 1].sha
+      : null;
+    this.dispatchEvent(new CustomEvent('tse-view-changes', {
+      bubbles: true, composed: true,
+      detail: { file: this.filePath, commit: sha, parentCommit: parentSha },
     }));
   }
 
