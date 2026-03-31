@@ -21,15 +21,16 @@ export async function migrateToGitVersioning(opts: {
 }): Promise<void> {
   const { scriptsDir, dataDir, gitService, logger } = opts;
 
-  // Already migrated if .git exists
-  if (fs.existsSync(path.join(scriptsDir, '.git'))) {
+  // Step 1: Initialize git repo (idempotent)
+  await gitService.ensureRepo();
+
+  // Already migrated if marker file exists
+  const markerPath = path.join(scriptsDir, '.git', 'ha-forge-migrated');
+  if (fs.existsSync(markerPath)) {
     return;
   }
 
   logger?.info('Migrating to git-backed versioning...');
-
-  // Step 1: Initialize git repo
-  await gitService.ensureRepo();
 
   // Step 2: Generate per-file sidecar files from global package.json
   const globalPkgPath = path.join(scriptsDir, 'package.json');
@@ -98,6 +99,8 @@ export async function migrateToGitVersioning(opts: {
     }
   }
 
+  // Write marker so migration doesn't re-run
+  fs.writeFileSync(markerPath, new Date().toISOString(), 'utf-8');
   logger?.info('Migration complete');
 }
 

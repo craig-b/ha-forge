@@ -46,7 +46,7 @@ RUN pnpm install --frozen-lockfile --prod
 
 # Clean up build artifacts and tools
 RUN rm -rf /tmp/src && \
-    apk del git python3 make g++
+    apk del python3 make g++
 
 # Ensure persistent directories exist
 RUN mkdir -p /data /config
